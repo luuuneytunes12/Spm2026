@@ -1,0 +1,14 @@
+# This repo is split into frontend/ and backend/, each with its own
+# .gitignore for stack-specific patterns. This file only covers things
+# that can show up at the repo root regardless of stack.
+
+.DS_Store
+.vscode/
+.idea/
+
+# Catch-all safety net: never commit real env files from anywhere in
+# the repo, only committed *.example templates.
+.env
+.env.*
+!.env.example
+!**/.env.example
