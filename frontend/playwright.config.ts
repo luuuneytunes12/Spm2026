@@ -38,6 +38,20 @@ export const E2E_ORGANISER = {
   password: 'e2e-password-123',
 }
 
+// Dedicated ports, deliberately NOT the 5173/8000 a developer runs `npm run
+// dev` and uvicorn on.
+//
+// The earlier version used the defaults with `reuseExistingServer` enabled
+// outside CI. That silently defeated everything above: if a dev server was
+// already running, Playwright attached to it instead of starting its own,
+// so DATABASE_URL below was never applied and the specs ran against
+// whatever backend/.env points at -- in practice, the shared Supabase
+// project. Separate ports plus reuseExistingServer:false means Playwright
+// always starts servers it configured itself, and a stray dev server causes
+// an obvious port clash rather than a silent switch to the wrong database.
+const E2E_API_PORT = 8001
+const E2E_WEB_PORT = 5174
+
 export default defineConfig({
   testDir: './e2e',
   // Kept out of tsconfig.app.json (which includes only src/), so `npm run
@@ -49,7 +63,7 @@ export default defineConfig({
   reporter: [['html', { open: 'never' }], ['list']],
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${E2E_WEB_PORT}`,
     // Kept on failure only -- a trace per passing test would bloat the
     // artifact for no benefit.
     trace: 'retain-on-failure',
@@ -66,23 +80,24 @@ export default defineConfig({
       // DATABASE_URL is passed explicitly so the backend never falls back to
       // backend/.env -- environment variables outrank the .env file in
       // pydantic-settings, which is what makes this override reliable.
-      command: 'uv run uvicorn app.main:app --port 8000',
+      command: `uv run uvicorn app.main:app --port ${E2E_API_PORT}`,
       cwd: '../backend',
-      url: 'http://localhost:8000/health',
-      reuseExistingServer: !process.env.CI,
+      url: `http://localhost:${E2E_API_PORT}/health`,
+      // Never reuse: see the note by E2E_API_PORT above.
+      reuseExistingServer: false,
       timeout: 120_000,
       env: {
         DATABASE_URL: E2E_DATABASE_URL,
-        JWT_SECRET: 'e2e-not-a-real-secret',
-        CORS_ORIGINS: 'http://localhost:5173',
+        JWT_SECRET: 'e2e-not-a-real-secret-just-for-local-and-ci-tests',
+        CORS_ORIGINS: `http://localhost:${E2E_WEB_PORT}`,
       },
     },
     {
-      command: 'npm run dev -- --port 5173',
-      url: 'http://localhost:5173',
-      reuseExistingServer: !process.env.CI,
+      command: `npm run dev -- --port ${E2E_WEB_PORT} --strictPort`,
+      url: `http://localhost:${E2E_WEB_PORT}`,
+      reuseExistingServer: false,
       timeout: 120_000,
-      env: { VITE_API_URL: 'http://localhost:8000' },
+      env: { VITE_API_URL: `http://localhost:${E2E_API_PORT}` },
     },
   ],
 })

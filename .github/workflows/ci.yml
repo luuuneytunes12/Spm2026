@@ -108,7 +108,7 @@ jobs:
       # psql speaks the plain URL; SQLAlchemy needs the +psycopg driver.
       PGURL: postgresql://postgres:postgres@localhost:5432/connectsphere_test
       E2E_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/connectsphere_test
-      JWT_SECRET: e2e-not-a-real-secret
+      JWT_SECRET: e2e-not-a-real-secret-just-for-local-and-ci-tests
 
     steps:
       - uses: actions/checkout@v4
