@@ -46,15 +46,23 @@ create table events (
     id bigint generated always as identity primary key,
     organiser_id bigint not null references users (id) on delete restrict,
     coordinator_id bigint references users (id) on delete set null,
-    name text not null,
+    -- name / proposed_* / expected_attendance are nullable so an
+    -- INCOMPLETE request can be stored as a draft. Completeness is
+    -- enforced at submit time by the API, which reports which mandatory
+    -- fields are missing. See sql/003_events_draft_fields.sql.
+    name text,
     purpose text,
+    event_type text,
     description text,
-    proposed_start timestamptz not null,
-    proposed_end timestamptz not null,
-    expected_attendance integer not null check (expected_attendance > 0),
+    programme text,
+    proposed_start timestamptz,
+    proposed_end timestamptz,
+    expected_attendance integer check (expected_attendance > 0),
     venue_requirements text,
+    room_layout_preference text,
     accessibility_needs text,
     equipment_requirements text,
+    special_arrangements text,
     registration_enabled boolean not null default false,
     status event_status not null default 'draft',
     submitted_at timestamptz,

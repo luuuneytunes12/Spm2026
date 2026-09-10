@@ -1,0 +1,54 @@
+name: CI
+
+# Runs on every branch and every pull request, so a broken change is caught
+# at push time rather than at the sprint review.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      # Deliberately fake. `app/core/config.py` builds Settings() at import
+      # time and `app/core/db.py` calls create_engine() at import time, so
+      # both variables must exist or the app cannot even be imported.
+      #
+      # Nothing here reaches a real database: create_engine() does not
+      # connect eagerly, and tests/conftest.py swaps in an in-memory SQLite
+      # session for every test. That is why this job needs no Supabase
+      # secret and no service container.
+      DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      JWT_SECRET: ci-not-a-real-secret-just-for-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      # --locked fails if uv.lock is out of step with pyproject.toml, so a
+      # dependency added without relocking cannot slip through CI.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run pytest -q --junitxml=pytest-results.xml
+
+      # Uploaded even on failure -- the report is the evidence, and it is
+      # most useful precisely when something went red.
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-results
+          path: backend/pytest-results.xml

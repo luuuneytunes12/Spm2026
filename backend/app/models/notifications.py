@@ -6,7 +6,7 @@ from sqlalchemy.sql import func
 
 from app.core.db import Base
 from app.models.events import Event
-from app.models.users import User
+from app.models.user import User
 
 
 class Notification(Base):

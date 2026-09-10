@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from sqlalchemy import ARRAY, BigInteger, Enum, ForeignKey, Text
+from sqlalchemy import ARRAY, JSON, BigInteger, Enum, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.db import Base
 from app.models.enums import BookingStatus
 from app.models.events import Event
-from app.models.users import User
+from app.models.user import User
 
 
 class Venue(Base):
@@ -17,9 +17,15 @@ class Venue(Base):
     name: Mapped[str] = mapped_column(Text)
     location: Mapped[str] = mapped_column(Text)
     capacity: Mapped[int]
-    facilities: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
-    accessibility_features: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
-    supported_layouts: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    facilities: Mapped[list[str]] = mapped_column(
+        ARRAY(Text).with_variant(JSON, "sqlite"), default=list
+    )
+    accessibility_features: Mapped[list[str]] = mapped_column(
+        ARRAY(Text).with_variant(JSON, "sqlite"), default=list
+    )
+    supported_layouts: Mapped[list[str]] = mapped_column(
+        ARRAY(Text).with_variant(JSON, "sqlite"), default=list
+    )
     operating_hours: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(default=True)
 
