@@ -526,3 +526,209 @@
   border: 1px solid var(--danger-border);
   color: var(--danger);
 }
+
+/* --- Event requests --------------------------------------------------- */
+
+/* Header with an action button on the right; stacks on narrow screens. */
+.page-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* A <Link> that should read as a primary button. */
+.btn-link {
+  text-decoration: none;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--text-h);
+  border: 1px solid var(--border-strong);
+
+  &:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+}
+
+/* Cards group ~4 fields each; this is the gap between them. */
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stack-tight h2 {
+  margin-bottom: 14px;
+}
+
+/* Two fields side by side (start/end date), collapsing on narrow screens. */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.form-cancel {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+/* A field the server flagged as required-but-empty on submit. */
+.field-invalid input,
+.field-invalid textarea {
+  border-color: var(--danger-border);
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 5px;
+}
+
+/* --- Tabs ------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+
+  &:hover {
+    color: var(--text-h);
+    background: var(--surface-2);
+  }
+}
+
+.tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* --- Request list ----------------------------------------------------- */
+
+.request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.request-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.request-title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.request-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.request-side {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.notice-empty {
+  text-align: center;
+  padding: 30px 20px;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* --- Read-only detail list -------------------------------------------- */
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-row dt {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.detail-row dd {
+  margin: 0;
+  color: var(--text-h);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 560px) {
+  .detail-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}

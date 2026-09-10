@@ -8,6 +8,9 @@ import { Forbidden } from './pages/Forbidden'
 import { Login } from './pages/Login'
 import { My } from './pages/My'
 import { Register } from './pages/Register'
+import { EventForm } from './pages/events/EventForm'
+import { EventView } from './pages/events/EventView'
+import { MyRequests } from './pages/events/MyRequests'
 import { Attendee } from './pages/roles/Attendee'
 import { Coordinator } from './pages/roles/Coordinator'
 import { Organiser } from './pages/roles/Organiser'
@@ -29,6 +32,12 @@ function App() {
 
           <Route element={<RequireRole roles={[Role.ORGANISER]} />}>
             <Route path="/organiser" element={<Organiser />} />
+            {/* Static "new" is declared before the ":id" params so it is
+                never captured as an event id. */}
+            <Route path="/organiser/events" element={<MyRequests />} />
+            <Route path="/organiser/events/new" element={<EventForm />} />
+            <Route path="/organiser/events/:id" element={<EventView />} />
+            <Route path="/organiser/events/:id/edit" element={<EventForm />} />
           </Route>
           <Route element={<RequireRole roles={[Role.COORDINATOR]} />}>
             <Route path="/coordinator" element={<Coordinator />} />

@@ -152,6 +152,12 @@ code {
 
 /* --- Form controls ---------------------------------------------------- */
 
+textarea {
+  display: block;
+  resize: vertical;
+  min-height: 76px;
+}
+
 label {
   display: block;
   font-size: 13px;
@@ -163,6 +169,9 @@ label {
 input[type='text'],
 input[type='email'],
 input[type='password'],
+input[type='number'],
+input[type='datetime-local'],
+textarea,
 select {
   width: 100%;
   font: inherit;
