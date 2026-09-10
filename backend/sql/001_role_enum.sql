@@ -1,0 +1,27 @@
+-- Reference only -- NOT required for the current code to work.
+--
+-- `public.users.role` is a NATIVE postgres enum type named `user_role`,
+-- already defined in the database with these labels (British spelling on
+-- the first one -- `organiser`, not `organizer`):
+--
+--     'organiser', 'coordinator', 'venue_staff', 'tech_support', 'attendee'
+--
+-- These labels are the source of truth. `Role` in backend/app/core/roles.py
+-- and `Role` in frontend/src/lib/roles.ts must mirror them exactly; a value
+-- that is not a label here will be rejected by postgres on insert/update.
+--
+-- To ADD a role (cannot run inside a transaction block in older postgres,
+-- and the new value is not usable until the transaction commits):
+--
+--     ALTER TYPE user_role ADD VALUE 'new_role_name';
+--
+-- To RENAME a role -- do this instead of dropping/recreating the type,
+-- which would require rewriting every dependent column:
+--
+--     ALTER TYPE user_role RENAME VALUE 'old_name' TO 'new_name';
+--
+-- Then update roles.py and roles.ts to match, in the same change.
+--
+-- Note: postgres has no direct "remove a label" operation. Removing one
+-- means creating a replacement type, migrating the column, and dropping
+-- the old type -- plan for that before adding labels speculatively.
