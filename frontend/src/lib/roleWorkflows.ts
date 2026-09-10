@@ -10,16 +10,20 @@ export interface PlannedWorkflow {
 /**
  * The workflows each role will own, once the backend serves them.
  *
- * NOTHING HERE IS IMPLEMENTED YET. The backend currently exposes only auth
- * (`/auth/*`) and `/health`; the events, venues, equipment and registration
- * tables exist in the database but no endpoint serves them. Both the role
- * landing pages and the sidebar render these as explicitly "planned", so
- * this file is the single place to edit when a workflow becomes real —
- * update it here and both surfaces follow.
+ * Everything still listed here is PLANNED — remove an entry once its
+ * screens ship, or the sidebar keeps rendering it as disabled text.
+ * ("Create events" was the first to go: the Organiser draft/submit flow
+ * now lives at /organiser/events.)
+ *
+ * The backend currently serves auth (`/auth/*`), `/health` and `/events`;
+ * the venues, equipment and registration tables exist in the database but
+ * no endpoint serves them. Both the role landing pages and the sidebar
+ * render these as explicitly "planned", so this file is the single place
+ * to edit when a workflow becomes real — update it here and both surfaces
+ * follow.
  */
 export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
   [Role.ORGANISER]: [
-    { title: 'Create events', description: 'draft and submit events for review (events).' },
     {
       title: 'Review submissions',
       description: 'approve or reject submitted events (events, event_status_history).',

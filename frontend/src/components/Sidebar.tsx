@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router'
 import { useAuth } from '../auth/useAuth'
-import { ROLE_HOME_PATH, ROLE_LABELS } from '../lib/roles'
+import { ROLE_HOME_PATH, ROLE_LABELS, Role } from '../lib/roles'
 import { ROLE_WORKFLOWS } from '../lib/roleWorkflows'
 
 interface SidebarProps {
@@ -42,6 +42,14 @@ export function Sidebar({ id, open }: SidebarProps) {
           <li>
             <NavLink to={ROLE_HOME_PATH[user.role]}>{roleLabel}</NavLink>
           </li>
+          {/* Only Organisers can reach /organiser/events -- it sits behind
+              RequireRole for that role, so linking it for anyone else
+              would just send them to /forbidden. */}
+          {user.role === Role.ORGANISER && (
+            <li>
+              <NavLink to="/organiser/events">My event requests</NavLink>
+            </li>
+          )}
         </ul>
       </nav>
 

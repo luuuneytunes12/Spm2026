@@ -63,11 +63,16 @@ async function parseBody(res: Response): Promise<unknown> {
  *  show *why* a request failed rather than a generic "request failed". */
 export class ApiError extends Error {
   readonly status: number
+  /** Field names the server rejected, taken from a 422 body's `detail[].loc`.
+   *  Lets a form mark each offending input instead of showing one generic
+   *  message, without the client having to duplicate the server's rules. */
+  readonly fields: string[]
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, fields: string[] = []) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.fields = fields
   }
 }
 
@@ -92,14 +97,28 @@ function formatDetail(body: unknown): string | null {
   return parts.length > 0 ? parts.join('; ') : null
 }
 
+/** Pull the field name out of each `detail[].loc` (e.g. ['body','name'] ->
+ *  'name'), so callers can highlight the exact inputs that failed. */
+function extractFields(body: unknown): string[] {
+  if (typeof body !== 'object' || body === null) return []
+  const detail = (body as { detail?: unknown }).detail
+  if (!Array.isArray(detail)) return []
+  return (detail as ValidationItem[])
+    .map((item) => item.loc?.filter((p) => p !== 'body').join('.'))
+    .filter((f): f is string => Boolean(f))
+}
+
 async function toApiError(res: Response): Promise<ApiError> {
   let detail: string | null = null
+  let fields: string[] = []
   try {
-    detail = formatDetail(await parseBody(res))
+    const body = await parseBody(res)
+    detail = formatDetail(body)
+    fields = extractFields(body)
   } catch {
     // non-JSON error body; fall back to the status line
   }
-  return new ApiError(res.status, detail ?? `${res.status} ${res.statusText}`)
+  return new ApiError(res.status, detail ?? `${res.status} ${res.statusText}`, fields)
 }
 
 async function refreshAccessToken(): Promise<boolean> {

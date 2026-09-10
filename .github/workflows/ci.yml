@@ -52,3 +52,117 @@ jobs:
         with:
           name: pytest-results
           path: backend/pytest-results.xml
+
+  frontend:
+    name: Frontend (lint, build, vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # `tsc -b` runs here, so this also type-checks the components and the
+      # Vitest specs under src/.
+      - name: Build
+        run: npm run build
+
+      # Component tests: jsdom, API mocked. No browser, no server, no database.
+      - name: Unit tests
+        run: npm test
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+
+    # A disposable database, started and destroyed by GitHub on this runner.
+    # Nothing is self-hosted and the team's Supabase project is never touched
+    # -- see the guard rail in frontend/playwright.config.ts.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: connectsphere_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # psql speaks the plain URL; SQLAlchemy needs the +psycopg driver.
+      PGURL: postgresql://postgres:postgres@localhost:5432/connectsphere_test
+      E2E_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/connectsphere_test
+      JWT_SECRET: e2e-not-a-real-secret-just-for-local-and-ci-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Only schema.sql is needed for a fresh database: sql/001_role_enum.sql
+      # is documentation ("Reference only -- NOT required") and sql/002 is a
+      # one-off repair for the live Supabase instance.
+      - name: Create schema
+        run: psql "$PGURL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
+
+      # Registration always assigns the attendee role by design, so the
+      # organiser the specs log in as has to be seeded directly -- the same
+      # bootstrap path a real deployment uses.
+      - name: Seed an organiser
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
+          ADMIN_PASSWORD: e2e-password-123
+        run: uv run python scripts/create_admin.py "E2E Organiser" e2e_organiser@cs.local
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # playwright.config.ts starts uvicorn and vite itself and waits for
+      # both to answer before the first test runs.
+      - name: Run end-to-end tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
