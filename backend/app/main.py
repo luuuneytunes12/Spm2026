@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import auth, health
 
+import app.models  # noqa: F401  (registers models on Base.metadata)
+
 app = FastAPI(title="Spm2026 API")
 
 app.add_middleware(
