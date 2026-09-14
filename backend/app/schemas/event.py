@@ -70,6 +70,16 @@ class EventIn(BaseModel):
         return self
 
 
+class PersonOut(BaseModel):
+    """The minimal shape of an Organiser or Coordinator worth showing on
+    the other side's event page -- who they're dealing with, nothing more."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class EventOut(BaseModel):
     """Full event request, as returned when opening one for editing."""
 
@@ -78,6 +88,12 @@ class EventOut(BaseModel):
     id: int
     organiser_id: int
     coordinator_id: int | None
+    # Populated from the `organiser`/`coordinator` relationships (same
+    # attribute names), so either side's event page can show a name
+    # without a second lookup. `coordinator` is None until one is
+    # assigned; `organiser` is never None -- every event has one.
+    organiser: PersonOut
+    coordinator: PersonOut | None
     name: str | None
     purpose: str | None
     event_type: str | None
@@ -117,3 +133,23 @@ class EventSummary(BaseModel):
     status: EventStatus
     submitted_at: datetime | None
     updated_at: datetime
+
+
+class EventHistoryEntry(BaseModel):
+    """One row of an event's activity log.
+
+    `from_status` equal to `to_status` is not a contradiction -- it marks
+    an entry that happened *while* the event was in that status (e.g. a
+    Coordinator auto-assignment) rather than a status transition. The
+    `note` carries what actually happened; the two status fields carry
+    when in the lifecycle it happened.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    from_status: str | None
+    to_status: str
+    note: str | None
+    changed_by: int
+    created_at: datetime

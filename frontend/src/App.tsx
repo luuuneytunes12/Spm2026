@@ -7,7 +7,9 @@ import { Dashboard } from './pages/Dashboard'
 import { Forbidden } from './pages/Forbidden'
 import { Login } from './pages/Login'
 import { My } from './pages/My'
+import { Notifications } from './pages/Notifications'
 import { Register } from './pages/Register'
+import { AssignedEvents } from './pages/events/AssignedEvents'
 import { EventForm } from './pages/events/EventForm'
 import { EventView } from './pages/events/EventView'
 import { MyRequests } from './pages/events/MyRequests'
@@ -29,6 +31,9 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/my" element={<My />} />
+          {/* Notifications are per-user, not per-role, so this route sits
+              outside every RequireRole group below. */}
+          <Route path="/notifications" element={<Notifications />} />
 
           <Route element={<RequireRole roles={[Role.ORGANISER]} />}>
             <Route path="/organiser" element={<Organiser />} />
@@ -41,6 +46,8 @@ function App() {
           </Route>
           <Route element={<RequireRole roles={[Role.COORDINATOR]} />}>
             <Route path="/coordinator" element={<Coordinator />} />
+            <Route path="/coordinator/events" element={<AssignedEvents />} />
+            <Route path="/coordinator/events/:id" element={<EventView />} />
           </Route>
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />

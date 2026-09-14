@@ -7,6 +7,7 @@ docstrings).
 
 from app.core.roles import Role
 from app.models.events import Event, EventStatusHistory
+from app.models.notifications import Notification
 from app.models.user import User
 
 # A request with every mandatory field filled in.
@@ -38,6 +39,21 @@ def _organiser(client, db_session, email="org@example.com"):
     user.role = Role.ORGANISER.value
     db_session.commit()
     # Re-login so the returned token reflects the new role.
+    token = client.post("/auth/login", json={"email": email, "password": "password123"}).json()[
+        "access_token"
+    ]
+    return user, {"Authorization": f"Bearer {token}"}
+
+
+def _coordinator(client, db_session, email="coord@example.com", name="Coord User"):
+    """Register a user and promote them to Coordinator, mirroring _organiser."""
+    res = client.post(
+        "/auth/register", json={"name": name, "email": email, "password": "password123"}
+    )
+    assert res.status_code == 201
+    user = db_session.query(User).filter(User.email == email).one()
+    user.role = Role.COORDINATOR.value
+    db_session.commit()
     token = client.post("/auth/login", json={"email": email, "password": "password123"}).json()[
         "access_token"
     ]
@@ -246,6 +262,199 @@ def test_submitted_request_cannot_be_edited(client, db_session):
 
     assert res.status_code == 409
     assert db_session.get(Event, event_id).name == COMPLETE["name"]
+
+
+# --------------------------------------------------------------------------
+# Story 3 -- Auto-assign a Coordinator on Submission
+# --------------------------------------------------------------------------
+
+
+def test_submit_auto_assigns_an_available_coordinator(client, db_session):
+    """AC1: on submission, an available Event Coordinator is assigned."""
+    _, headers = _organiser(client, db_session)
+    coordinator, _ = _coordinator(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
+
+    res = client.post(f"/events/{event_id}/submit", headers=headers)
+
+    assert res.status_code == 200
+    assert res.json()["coordinator_id"] == coordinator.id
+    assert db_session.get(Event, event_id).coordinator_id == coordinator.id
+
+
+def test_organiser_event_page_shows_assigned_coordinator(client, db_session):
+    """AC2: viewing the event page shows the assigned coordinator."""
+    _, headers = _organiser(client, db_session)
+    coordinator, _ = _coordinator(client, db_session, name="Priya Coordinator")
+    event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
+    client.post(f"/events/{event_id}/submit", headers=headers)
+
+    res = client.get(f"/events/{event_id}", headers=headers)
+
+    assert res.status_code == 200
+    assert res.json()["coordinator"] == {"id": coordinator.id, "name": "Priya Coordinator"}
+
+
+def test_coordinator_receives_notification_on_assignment(client, db_session):
+    """AC3: the assigned coordinator receives a notification."""
+    _, headers = _organiser(client, db_session)
+    coordinator, _ = _coordinator(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
+
+    client.post(f"/events/{event_id}/submit", headers=headers)
+
+    notifications = db_session.query(Notification).filter_by(user_id=coordinator.id).all()
+    assert len(notifications) == 1
+    assert notifications[0].event_id == event_id
+    assert notifications[0].type == "event_assigned"
+    assert COMPLETE["name"] in notifications[0].message
+
+
+def test_assignment_recorded_in_activity_log_with_timestamp(client, db_session):
+    """AC4: the assignment shows up in the event's activity log with a timestamp."""
+    _, headers = _organiser(client, db_session)
+    coordinator, _ = _coordinator(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
+
+    client.post(f"/events/{event_id}/submit", headers=headers)
+    res = client.get(f"/events/{event_id}/history", headers=headers)
+
+    assert res.status_code == 200
+    entries = res.json()
+    assignment_entries = [e for e in entries if coordinator.name in (e["note"] or "")]
+    assert len(assignment_entries) == 1
+    assert assignment_entries[0]["created_at"] is not None
+
+
+def test_auto_assignment_picks_the_least_loaded_coordinator(client, db_session):
+    """'Available' is read as 'has spare capacity': load is balanced across
+    Coordinators rather than always landing on the same one."""
+    organiser, headers = _organiser(client, db_session)
+    busy, _ = _coordinator(client, db_session, email="busy@example.com", name="Busy Coordinator")
+    free, _ = _coordinator(client, db_session, email="free@example.com", name="Free Coordinator")
+
+    # Give `busy` an existing active assignment, set up directly so the
+    # test isolates the picking logic from a second submission's flow.
+    db_session.add(
+        Event(
+            organiser_id=organiser.id,
+            coordinator_id=busy.id,
+            status="submitted",
+            name="Pre-existing load",
+        )
+    )
+    db_session.commit()
+
+    event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
+    res = client.post(f"/events/{event_id}/submit", headers=headers)
+
+    assert res.json()["coordinator_id"] == free.id
+
+
+def test_submit_succeeds_with_no_coordinator_available(client, db_session):
+    """No Coordinators onboarded yet -- submission still succeeds, just
+    without an assignment, rather than blocking the organiser."""
+    _, headers = _organiser(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
+
+    res = client.post(f"/events/{event_id}/submit", headers=headers)
+
+    assert res.status_code == 200
+    assert res.json()["coordinator_id"] is None
+    assert res.json()["coordinator"] is None
+    assert db_session.query(Notification).count() == 0
+
+
+# --------------------------------------------------------------------------
+# Coordinator-facing visibility of an assigned event
+# --------------------------------------------------------------------------
+
+
+def test_coordinator_sees_assigned_event_in_their_list(client, db_session):
+    """GET /events/assigned is the Coordinator's equivalent of the
+    Organiser's 'My event requests' list."""
+    _, org_headers = _organiser(client, db_session)
+    coordinator, coord_headers = _coordinator(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=org_headers).json()["id"]
+    client.post(f"/events/{event_id}/submit", headers=org_headers)
+
+    res = client.get("/events/assigned", headers=coord_headers)
+
+    assert res.status_code == 200
+    assert [e["id"] for e in res.json()] == [event_id]
+
+
+def test_coordinator_not_assigned_sees_no_events_in_their_list(client, db_session):
+    """A Coordinator who was never assigned anything sees an empty list,
+    not every submitted request."""
+    _, org_headers = _organiser(client, db_session)
+    _, _ = _coordinator(client, db_session, email="c1@example.com")
+    other, other_headers = _coordinator(client, db_session, email="c2@example.com")
+    event_id = client.post("/events", json=COMPLETE, headers=org_headers).json()["id"]
+    client.post(f"/events/{event_id}/submit", headers=org_headers)  # assigns c1, not c2
+
+    res = client.get("/events/assigned", headers=other_headers)
+
+    assert res.status_code == 200
+    assert res.json() == []
+    assert other.id  # sanity: c2 is a real, distinct user
+
+
+def test_assigned_coordinator_can_view_the_event(client, db_session):
+    """The Coordinator now owns this request and must be able to open it,
+    not just see it referenced by id."""
+    _, org_headers = _organiser(client, db_session)
+    coordinator, coord_headers = _coordinator(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=org_headers).json()["id"]
+    client.post(f"/events/{event_id}/submit", headers=org_headers)
+
+    res = client.get(f"/events/{event_id}", headers=coord_headers)
+
+    assert res.status_code == 200
+    assert res.json()["id"] == event_id
+
+
+def test_assigned_coordinator_can_view_the_activity_log(client, db_session):
+    """AC4 read the other way round: the Coordinator can see the log too,
+    not only the Organiser."""
+    _, org_headers = _organiser(client, db_session)
+    coordinator, coord_headers = _coordinator(client, db_session)
+    event_id = client.post("/events", json=COMPLETE, headers=org_headers).json()["id"]
+    client.post(f"/events/{event_id}/submit", headers=org_headers)
+
+    res = client.get(f"/events/{event_id}/history", headers=coord_headers)
+
+    assert res.status_code == 200
+    assert len(res.json()) == 2  # submitted, then auto-assigned
+
+
+def test_unrelated_coordinator_cannot_view_someone_elses_event(client, db_session):
+    """A Coordinator not assigned to this event is treated the same as any
+    other stranger -- 404, not 403, per the existing ownership convention."""
+    _, org_headers = _organiser(client, db_session)
+    _, _ = _coordinator(client, db_session, email="assigned@example.com")
+    _, stranger_headers = _coordinator(client, db_session, email="stranger@example.com")
+    event_id = client.post("/events", json=COMPLETE, headers=org_headers).json()["id"]
+    client.post(f"/events/{event_id}/submit", headers=org_headers)
+
+    res = client.get(f"/events/{event_id}", headers=stranger_headers)
+
+    assert res.status_code == 404
+
+
+def test_coordinator_cannot_see_a_draft_they_would_later_be_assigned_to(client, db_session):
+    """coordinator_id is only ever set at submit time, so a draft stays
+    invisible to every Coordinator -- there is nothing to be assigned to
+    yet."""
+    _, org_headers = _organiser(client, db_session)
+    _, coord_headers = _coordinator(client, db_session)
+    event_id = client.post("/events", json={"purpose": "Still drafting"}, headers=org_headers).json()[
+        "id"
+    ]
+
+    res = client.get(f"/events/{event_id}", headers=coord_headers)
+
+    assert res.status_code == 404
 
 
 # --------------------------------------------------------------------------

@@ -84,6 +84,8 @@ const SAVED: EventDetail = {
   id: 7,
   organiser_id: 5,
   coordinator_id: null,
+  organiser: { id: 5, name: 'Org User' },
+  coordinator: null,
   name: 'Regional Partner Conference',
   purpose: 'Annual partner briefing',
   event_type: 'conference',

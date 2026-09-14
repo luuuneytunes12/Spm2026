@@ -1,15 +1,17 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission
-from app.core.roles import Permission
+from app.core.roles import Permission, Role
 from app.models.enums import EventStatus
 from app.models.events import Event, EventStatusHistory
+from app.models.notifications import Notification
 from app.models.user import User
-from app.schemas.event import MANDATORY_FIELDS, EventIn, EventOut, EventSummary
+from app.schemas.event import MANDATORY_FIELDS, EventHistoryEntry, EventIn, EventOut, EventSummary
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -29,6 +31,58 @@ def _get_own_event(event_id: int, user: User, db: Session) -> Event:
     if event is None or event.organiser_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return event
+
+
+def _get_visible_event(event_id: int, user: User, db: Session) -> Event:
+    """Fetch an event the caller may READ: its Organiser, or its assigned
+    Coordinator.
+
+    Broader than `_get_own_event`, which stays organiser-only and guards
+    every WRITE (edit, submit) -- ownership of the request itself never
+    changes. Reads open up once a Coordinator is assigned, since they now
+    need to see the request they own. A draft's `coordinator_id` is
+    always None, so this cannot expose an unsubmitted request to anyone
+    but its Organiser.
+    """
+    event = db.get(Event, event_id)
+    if event is None or (event.organiser_id != user.id and event.coordinator_id != user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    return event
+
+
+_TERMINAL_STATUSES = {EventStatus.completed, EventStatus.cancelled, EventStatus.rejected}
+
+
+def _pick_available_coordinator(db: Session) -> User | None:
+    """Pick the Coordinator with spare capacity right now.
+
+    There is no availability flag or calendar for Coordinators in the
+    schema, so "available" is read as "not overloaded": the Coordinator
+    currently carrying the fewest non-terminal (still-active) event
+    assignments. Ties -- including "no assignments yet" for everyone --
+    are broken by user id, so the pick is deterministic rather than
+    arbitrary. Returns None if there are no Coordinators at all, e.g. a
+    fresh deployment with none onboarded yet.
+    """
+    coordinators = (
+        db.query(User).filter(User.role == Role.COORDINATOR.value).order_by(User.id).all()
+    )
+    if not coordinators:
+        return None
+
+    load = dict.fromkeys((c.id for c in coordinators), 0)
+    counts = (
+        db.query(Event.coordinator_id, func.count(Event.id))
+        .filter(Event.coordinator_id.isnot(None))
+        .filter(Event.status.notin_(_TERMINAL_STATUSES))
+        .group_by(Event.coordinator_id)
+        .all()
+    )
+    for coordinator_id, count in counts:
+        if coordinator_id in load:
+            load[coordinator_id] = count
+
+    return min(coordinators, key=lambda c: (load[c.id], c.id))
 
 
 def _missing_mandatory(event: Event) -> list[tuple[str, str]]:
@@ -115,14 +169,37 @@ def review_queue(
     return [EventSummary.model_validate(e) for e in events]
 
 
+@router.get("/assigned", response_model=list[EventSummary])
+def list_assigned_events(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_READ)),
+) -> list[EventSummary]:
+    """The events auto-assigned to the calling Coordinator, newest first.
+
+    Mirrors `list_my_events`, but scoped by `coordinator_id` instead of
+    `organiser_id` -- this is what backs a Coordinator's "My events" page.
+    """
+    events = (
+        db.query(Event)
+        .filter(Event.coordinator_id == user.id)
+        .order_by(Event.updated_at.desc())
+        .all()
+    )
+    return [EventSummary.model_validate(e) for e in events]
+
+
 @router.get("/{event_id}", response_model=EventOut)
 def get_event(
     event_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(Permission.EVENT_READ)),
 ) -> EventOut:
-    """Reopen one request, with every previously entered value intact."""
-    return EventOut.model_validate(_get_own_event(event_id, user, db))
+    """Reopen one request, with every previously entered value intact.
+
+    Readable by its Organiser or (once assigned) its Coordinator -- see
+    `_get_visible_event`.
+    """
+    return EventOut.model_validate(_get_visible_event(event_id, user, db))
 
 
 @router.patch("/{event_id}", response_model=EventOut)
@@ -208,6 +285,50 @@ def submit_event(
         )
     )
 
+    # Auto-assign a Coordinator on submission, so the Organiser has an
+    # owner to expect rather than waiting for someone to claim it.
+    coordinator = _pick_available_coordinator(db)
+    if coordinator is not None:
+        event.coordinator_id = coordinator.id
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=EventStatus.submitted,
+                to_status=EventStatus.submitted,
+                note=f"Auto-assigned to {coordinator.name} as event coordinator.",
+            )
+        )
+        db.add(
+            Notification(
+                user_id=coordinator.id,
+                event_id=event.id,
+                type="event_assigned",
+                message=f"You have been assigned as coordinator for '{event.name}'.",
+            )
+        )
+
     db.commit()
     db.refresh(event)
     return EventOut.model_validate(event)
+
+
+@router.get("/{event_id}/history", response_model=list[EventHistoryEntry])
+def get_event_history(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_READ)),
+) -> list[EventHistoryEntry]:
+    """The event's activity log, oldest first.
+
+    Same visibility rule as GET /events/{id}: readable by the Organiser or
+    the assigned Coordinator.
+    """
+    event = _get_visible_event(event_id, user, db)
+    entries = (
+        db.query(EventStatusHistory)
+        .filter(EventStatusHistory.event_id == event.id)
+        .order_by(EventStatusHistory.created_at.asc(), EventStatusHistory.id.asc())
+        .all()
+    )
+    return [EventHistoryEntry.model_validate(e) for e in entries]

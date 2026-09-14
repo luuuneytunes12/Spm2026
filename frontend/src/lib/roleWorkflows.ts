@@ -35,7 +35,6 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     { title: 'Oversight', description: 'full visibility across every venue, booking and request.' },
   ],
   [Role.COORDINATOR]: [
-    { title: 'My events', description: 'plan and update the events assigned to you (events).' },
     { title: 'Book venues', description: 'request a venue for an event (venue_bookings).' },
     {
       title: 'Registrations',
@@ -71,6 +70,5 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
       title: 'My registrations',
       description: 'register for an event or withdraw (registrations).',
     },
-    { title: 'Notifications', description: 'updates about events you registered for (notifications).' },
   ],
 }

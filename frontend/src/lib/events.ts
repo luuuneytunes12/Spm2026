@@ -46,9 +46,18 @@ export interface EventSummary {
   updated_at: string
 }
 
+/** The minimal shape of the other party on an event -- who they're
+ *  dealing with, nothing more. */
+export interface Person {
+  id: number
+  name: string
+}
+
 export interface EventDetail extends EventSummary {
   organiser_id: number
   coordinator_id: number | null
+  organiser: Person
+  coordinator: Person | null
   purpose: string | null
   description: string | null
   programme: string | null
@@ -58,6 +67,19 @@ export interface EventDetail extends EventSummary {
   equipment_requirements: string | null
   special_arrangements: string | null
   registration_enabled: boolean
+  created_at: string
+}
+
+/** One row of an event's activity log -- see GET /events/:id/history.
+ *  `from_status === to_status` marks an entry that happened *while* the
+ *  event was in that status (e.g. a Coordinator auto-assignment) rather
+ *  than an actual status change; `note` carries what happened. */
+export interface EventHistoryEntry {
+  id: number
+  from_status: string | null
+  to_status: string
+  note: string | null
+  changed_by: number
   created_at: string
 }
 
@@ -84,8 +106,18 @@ export function listMyEvents(status?: EventStatus): Promise<EventSummary[]> {
   return apiFetch(`/events${query}`) as Promise<EventSummary[]>
 }
 
+/** The Coordinator's equivalent of listMyEvents -- events auto-assigned
+ *  to the caller, rather than ones they organised. */
+export function listAssignedEvents(): Promise<EventSummary[]> {
+  return apiFetch('/events/assigned') as Promise<EventSummary[]>
+}
+
 export function getEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}`) as Promise<EventDetail>
+}
+
+export function getEventHistory(id: number): Promise<EventHistoryEntry[]> {
+  return apiFetch(`/events/${id}/history`) as Promise<EventHistoryEntry[]>
 }
 
 export function createEvent(input: EventInput): Promise<EventDetail> {
