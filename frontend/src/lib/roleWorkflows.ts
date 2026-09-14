@@ -13,7 +13,8 @@ export interface PlannedWorkflow {
  * Everything still listed here is PLANNED — remove an entry once its
  * screens ship, or the sidebar keeps rendering it as disabled text.
  * ("Create events" was the first to go: the Organiser draft/submit flow
- * now lives at /organiser/events.)
+ * now lives at /organiser/events. "My events" followed it: the Coordinator
+ * now reads their assigned events at /coordinator/events.)
  *
  * The backend currently serves auth (`/auth/*`), `/health` and `/events`;
  * the venues, equipment and registration tables exist in the database but
@@ -35,7 +36,6 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     { title: 'Oversight', description: 'full visibility across every venue, booking and request.' },
   ],
   [Role.COORDINATOR]: [
-    { title: 'My events', description: 'plan and update the events assigned to you (events).' },
     { title: 'Book venues', description: 'request a venue for an event (venue_bookings).' },
     {
       title: 'Registrations',

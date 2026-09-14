@@ -98,6 +98,50 @@ class EventOut(BaseModel):
     updated_at: datetime
 
 
+class OrganiserContact(BaseModel):
+    """Who a Coordinator talks to about an event assigned to them.
+
+    The `users` table carries a name and an email and nothing else, so
+    `email` is the whole of "contact details" today. If the customer later
+    asks for a phone number it goes on that table and then here -- this is
+    deliberately a projection of `users`, not a copy of it held on the event.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+
+
+class ActivityEntry(BaseModel):
+    """One line of an event's activity log, from `event_status_history`.
+
+    The actor is flattened to `changed_by_name` rather than nested as a
+    whole user: the log only ever renders a name, and nesting
+    OrganiserContact here would hand out the email address of everyone who
+    has ever touched the row, which no acceptance criterion asks for.
+    """
+
+    from_status: str | None
+    to_status: str
+    note: str | None
+    changed_by_name: str | None
+    created_at: datetime
+
+
+class AssignedEventDetail(EventOut):
+    """Everything a Coordinator needs to plan an event assigned to them.
+
+    Extends the Organiser-facing EventOut with the two things this story
+    adds -- who to contact, and what has happened so far. Both are
+    assembled by the router; neither is a plain column on `events`.
+    """
+
+    organiser: OrganiserContact
+    activity: list[ActivityEntry]
+
+
 class EventSummary(BaseModel):
     """Lighter shape for the Drafts / Submitted Requests lists.
 

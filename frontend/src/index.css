@@ -34,6 +34,9 @@
   --danger-border: rgba(217, 45, 66, 0.3);
   --success: #1a8f5a;
   --success-bg: rgba(26, 143, 90, 0.1);
+  --warning: #b8720a;
+  --warning-bg: rgba(184, 114, 10, 0.1);
+  --warning-border: rgba(184, 114, 10, 0.32);
 
   --code-bg: #f0f0f5;
 
@@ -82,6 +85,9 @@
     --danger-border: rgba(255, 107, 125, 0.32);
     --success: #4ade9a;
     --success-bg: rgba(74, 222, 154, 0.12);
+    --warning: #e0a542;
+    --warning-bg: rgba(224, 165, 66, 0.14);
+    --warning-border: rgba(224, 165, 66, 0.36);
 
     --code-bg: #1e1e28;
 

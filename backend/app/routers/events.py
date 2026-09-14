@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission
@@ -9,7 +9,15 @@ from app.core.roles import Permission
 from app.models.enums import EventStatus
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
-from app.schemas.event import MANDATORY_FIELDS, EventIn, EventOut, EventSummary
+from app.schemas.event import (
+    MANDATORY_FIELDS,
+    ActivityEntry,
+    AssignedEventDetail,
+    EventIn,
+    EventOut,
+    EventSummary,
+    OrganiserContact,
+)
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -27,6 +35,25 @@ def _get_own_event(event_id: int, user: User, db: Session) -> Event:
     """
     event = db.get(Event, event_id)
     if event is None or event.organiser_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    return event
+
+
+def _get_assigned_event(event_id: int, user: User, db: Session) -> Event:
+    """Fetch an event ASSIGNED to the caller, or raise.
+
+    "Assigned to me" means `coordinator_id == user.id`. Being allowed to
+    read events in general is not the same thing: EVENT_READ is held by
+    every role in the system, so the permission alone would let any signed-in
+    user open any event.
+
+    Like `_get_own_event`, a row belonging to someone else returns 404 rather
+    than 403 -- "no such event" and "not assigned to you" are deliberately
+    indistinguishable, so this endpoint cannot be used to probe which event
+    ids exist or who is coordinating them.
+    """
+    event = db.get(Event, event_id)
+    if event is None or event.coordinator_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return event
 
@@ -113,6 +140,79 @@ def review_queue(
         .all()
     )
     return [EventSummary.model_validate(e) for e in events]
+
+
+@router.get("/assigned", response_model=list[EventSummary])
+def list_assigned_events(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_READ)),
+) -> list[EventSummary]:
+    """The events assigned to the caller as their Coordinator.
+
+    Scoped by row rather than by role. EVENT_READ is held by every role, but
+    only the user named in `coordinator_id` matches, so a caller who
+    coordinates nothing gets an empty list -- which is the honest answer --
+    rather than a 403.
+
+    Declared before `/{event_id}` so that "assigned" is matched as this route
+    and never captured as an event id.
+    """
+    events = (
+        db.query(Event)
+        .filter(Event.coordinator_id == user.id)
+        .order_by(Event.updated_at.desc())
+        .all()
+    )
+    return [EventSummary.model_validate(e) for e in events]
+
+
+@router.get("/assigned/{event_id}", response_model=AssignedEventDetail)
+def get_assigned_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_READ)),
+) -> AssignedEventDetail:
+    """Full detail of one event assigned to the caller.
+
+    Carries everything the Coordinator needs to plan it: the requirements
+    the Organiser captured, who to contact about them, the current status,
+    and every recorded status change.
+
+    This is a separate route rather than a widening of `GET /events/{id}`.
+    That one answers "my own request" for an Organiser and must keep
+    returning 404 for anybody else's; this one answers "the request I am
+    responsible for", and returns a different shape with it.
+    """
+    event = _get_assigned_event(event_id, user, db)
+
+    # Newest first -- an activity log is read as "what happened most
+    # recently". `id` breaks ties, because `created_at` defaults to now()
+    # and two changes in the same transaction share a timestamp.
+    history = (
+        db.query(EventStatusHistory)
+        .options(joinedload(EventStatusHistory.changed_by_user))
+        .filter(EventStatusHistory.event_id == event.id)
+        .order_by(EventStatusHistory.created_at.desc(), EventStatusHistory.id.desc())
+        .all()
+    )
+
+    return AssignedEventDetail(
+        **EventOut.model_validate(event).model_dump(),
+        organiser=OrganiserContact.model_validate(event.organiser),
+        activity=[
+            ActivityEntry(
+                from_status=entry.from_status,
+                to_status=entry.to_status,
+                note=entry.note,
+                # ON DELETE RESTRICT means the actor's row cannot disappear,
+                # but a missing name costs one anonymous log line rather than
+                # a 500 on the whole page.
+                changed_by_name=entry.changed_by_user.name if entry.changed_by_user else None,
+                created_at=entry.created_at,
+            )
+            for entry in history
+        ],
+    )
 
 
 @router.get("/{event_id}", response_model=EventOut)
