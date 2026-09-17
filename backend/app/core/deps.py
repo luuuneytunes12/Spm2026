@@ -3,9 +3,7 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
 
-from app.core.db import get_db
 from app.core.roles import Permission, Role, ROLE_PERMISSIONS
 from app.core.security import decode_token
 from app.models.user import User
@@ -36,11 +34,12 @@ def permissions_for(role: str) -> frozenset[Permission]:
 
 async def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-    db: Session = Depends(get_db),
 ) -> User:
-    """Resolve the caller from the access token, re-reading the User row
-    from the database on every request so that a role change takes
-    effect on the very next request, even with an already-issued token."""
+    """Resolve the caller from the access token's claims alone -- no DB
+    read. `role` is trusted from the JWT, so a DB-side role change does
+    NOT affect an already-issued token until it expires (or the user
+    re-authenticates). Revocation on role change is a known follow-up,
+    not yet implemented."""
     if creds is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -60,10 +59,11 @@ async def get_current_user(
     except (KeyError, ValueError, TypeError):
         raise unauthorized from None
 
-    user = db.get(User, user_id)
-    if user is None:
+    role = payload.get("role")
+    if not role:
         raise unauthorized
-    return user
+
+    return User(id=user_id, role=role)
 
 
 def require_permission(*perms: Permission) -> Callable:
