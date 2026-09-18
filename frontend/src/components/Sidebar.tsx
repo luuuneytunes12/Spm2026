@@ -46,12 +46,12 @@ export function Sidebar({ id, open }: SidebarProps) {
               linking it for anyone else would just send them to /forbidden. */}
           {user.role === Role.ORGANISER && (
             <li>
-              <NavLink to="/organiser/events">My event requests</NavLink>
+              <NavLink to="/organiser/events">My Event Requests</NavLink>
             </li>
           )}
           {user.role === Role.COORDINATOR && (
             <li>
-              <NavLink to="/coordinator/events">My assigned events</NavLink>
+              <NavLink to="/coordinator/events">My Assigned Events</NavLink>
             </li>
           )}
         </ul>

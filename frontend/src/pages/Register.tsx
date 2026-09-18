@@ -37,7 +37,7 @@ export function Register() {
     <div className="auth-screen">
       <div className="auth-card">
         <p className="auth-brand">ConnectSphere</p>
-        <h1>Create an account</h1>
+        <h1>Create an Account</h1>
         <p className="auth-intro">New accounts start with the Attendee role.</p>
 
         <form onSubmit={onSubmit} noValidate>

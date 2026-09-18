@@ -29,7 +29,7 @@ export function Dashboard() {
 
       <div className="card-grid">
         <div className="card">
-          <h2>Your role</h2>
+          <h2>Your Role</h2>
           <p className="page-subtitle">
             {user && <span className="badge badge-accent">{ROLE_LABELS[user.role]}</span>}
           </p>
@@ -69,7 +69,7 @@ export function Dashboard() {
       </div>
 
       <div className="card">
-        <h2>What's next</h2>
+        <h2>What's Next</h2>
         <p className="page-subtitle" style={{ marginBottom: 14 }}>
           Authentication and role-based access are in place. The domain features
           below are not built yet — {plannedCount} planned for your role.

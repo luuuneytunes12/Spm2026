@@ -104,6 +104,31 @@ export function EventView() {
         </dl>
       </section>
 
+      {event.status !== EventStatus.DRAFT && (
+        <section className="card">
+          <h2>Your Assigned Event Coordinator</h2>
+          {event.coordinator ? (
+            <dl className="detail-list">
+              <div className="detail-row">
+                <dt>Name</dt>
+                <dd>{event.coordinator.name}</dd>
+              </div>
+              <div className="detail-row">
+                <dt>Email</dt>
+                <dd>
+                  <a href={`mailto:${event.coordinator.email}`}>{event.coordinator.email}</a>
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="page-subtitle">
+              Not yet assigned. ConnectSphere will assign one automatically once a Coordinator is
+              available.
+            </p>
+          )}
+        </section>
+      )}
+
       <p>
         <Link to="/organiser/events">← Back to my requests</Link>
       </p>

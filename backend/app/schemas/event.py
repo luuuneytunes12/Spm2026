@@ -70,6 +70,25 @@ class EventIn(BaseModel):
         return self
 
 
+class OrganiserContact(BaseModel):
+    """A projection of `users` down to what one party needs to know about
+    another: who they are, and how to reach them.
+
+    Named for its original use (an Organiser's contact details, as seen by
+    the Coordinator assigned to their event) but reused as-is for the
+    reverse direction -- `EventOut.coordinator` below -- since the shape a
+    Coordinator's contact details need is identical. The `users` table
+    carries a name and an email and nothing else, so `email` is the whole
+    of "contact details" today.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+
+
 class EventOut(BaseModel):
     """Full event request, as returned when opening one for editing."""
 
@@ -78,6 +97,10 @@ class EventOut(BaseModel):
     id: int
     organiser_id: int
     coordinator_id: int | None
+    # None until the system (or a reassignment) has picked someone -- see
+    # app/services/assignment.py. This is what lets an Organiser see who is
+    # coordinating their event, straight off GET /events/{id}.
+    coordinator: OrganiserContact | None
     name: str | None
     purpose: str | None
     event_type: str | None
@@ -96,22 +119,6 @@ class EventOut(BaseModel):
     submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime
-
-
-class OrganiserContact(BaseModel):
-    """Who a Coordinator talks to about an event assigned to them.
-
-    The `users` table carries a name and an email and nothing else, so
-    `email` is the whole of "contact details" today. If the customer later
-    asks for a phone number it goes on that table and then here -- this is
-    deliberately a projection of `users`, not a copy of it held on the event.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    email: str
 
 
 class ActivityEntry(BaseModel):

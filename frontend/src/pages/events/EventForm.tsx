@@ -207,7 +207,7 @@ export function EventForm() {
   return (
     <div className="stack">
       <header className="page-header">
-        <h1>{eventId === null ? 'New event request' : 'Edit event request'}</h1>
+        <h1>{eventId === null ? 'New Event Request' : 'Edit Event Request'}</h1>
         <p className="page-subtitle">
           Save as a draft at any point — nothing here is required until you submit.
         </p>
@@ -226,7 +226,7 @@ export function EventForm() {
           and only at submit time. */}
       <form onSubmit={onSaveDraft} noValidate className="stack">
         <section className="card stack-tight">
-          <h2>About the event</h2>
+          <h2>About the Event</h2>
 
           <div className={fieldClass('name')}>
             <label htmlFor="name">Event name</label>
@@ -288,7 +288,7 @@ export function EventForm() {
         </section>
 
         <section className="card stack-tight">
-          <h2>Schedule &amp; size</h2>
+          <h2>Schedule &amp; Size</h2>
 
           <div className="form-row">
             <div className={fieldClass('proposed_start')}>

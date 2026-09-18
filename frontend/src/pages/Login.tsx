@@ -38,7 +38,7 @@ export function Login() {
     <div className="auth-screen">
       <div className="auth-card">
         <p className="auth-brand">ConnectSphere</p>
-        <h1>Welcome back</h1>
+        <h1>Welcome Back</h1>
         <p className="auth-intro">Sign in to continue to your dashboard.</p>
 
         <form onSubmit={onSubmit} noValidate>

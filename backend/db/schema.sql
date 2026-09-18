@@ -37,6 +37,11 @@ create table users (
     email text not null unique,
     password_hash text not null,
     role user_role not null,
+    -- Toggled by an Event Coordinator to say "don't route events to me
+    -- right now" -- see sql/004_coordinator_availability.sql. Every role
+    -- gets the column since users is one shared table; only Coordinators
+    -- ever read or write it.
+    is_available boolean not null default true,
     created_at timestamptz not null default now()
 );
 
