@@ -84,14 +84,24 @@ def _assign(db_session, event_id: int, coordinator: User) -> None:
 
 def _setup(client, db_session):
     """The common fixture: one Organiser, one Coordinator, one event
-    submitted by the former and assigned to the latter."""
+    submitted by the former and assigned to the latter.
+
+    The Coordinator is created and assigned AFTER submission, not before:
+    since the "Mark myself unavailable" story, submitting auto-assigns
+    whichever Coordinator is available at that moment (see
+    app/services/assignment.py), and having one already exist here would
+    have it picked up automatically -- which is exactly what several tests
+    below need NOT to happen, so they can assign deliberately instead. With
+    no Coordinator around yet, submission leaves the event unassigned, same
+    as always.
+    """
     organiser, organiser_headers = _user(
         client, db_session, Role.ORGANISER, "priya@connectsphere.test", name="Priya Menon"
     )
+    event_id = _submitted_event(client, organiser_headers)
     coordinator, coordinator_headers = _user(
         client, db_session, Role.COORDINATOR, "sam@connectsphere.test", name="Sam Tan"
     )
-    event_id = _submitted_event(client, organiser_headers)
     _assign(db_session, event_id, coordinator)
     return organiser, organiser_headers, coordinator, coordinator_headers, event_id
 
@@ -260,31 +270,48 @@ def test_coordinator_cannot_view_an_event_assigned_to_someone_else(client, db_se
 
 
 def test_coordinator_cannot_view_an_unassigned_event(client, db_session):
-    """S3 AC5: an event with no Coordinator at all is not "assigned to me"."""
+    """S3 AC5: an event with no Coordinator at all is not "assigned to me".
+
+    No Coordinator exists yet at submission time, so auto-assignment (see
+    the "Mark myself unavailable" story) finds nobody available and the
+    event stays genuinely unassigned -- the Coordinator created afterward
+    was never the one it went to.
+    """
     organiser, organiser_headers = _user(
         client, db_session, Role.ORGANISER, "org3@connectsphere.test"
     )
-    _, coordinator_headers = _user(client, db_session, Role.COORDINATOR, "coord3@connectsphere.test")
     event_id = _submitted_event(client, organiser_headers)
+    _, coordinator_headers = _user(client, db_session, Role.COORDINATOR, "coord3@connectsphere.test")
 
     assert client.get(f"/events/assigned/{event_id}", headers=coordinator_headers).status_code == 404
 
 
 def test_assigned_list_contains_only_my_events(client, db_session):
     """S3 AC5: the list a Coordinator navigates from is scoped the same way
-    as the detail view, so an unassigned event is never even offered."""
+    as the detail view -- one Coordinator's assignment never bleeds into
+    another's list.
+
+    A second submitted request, made once a second Coordinator exists, is
+    auto-assigned to THEM (the lighter-loaded one, per
+    app/services/assignment.py) rather than to `coordinator` -- see the
+    "Mark myself unavailable" story. That is exactly the scoping this test
+    checks: each Coordinator's list holds only what is actually theirs.
+    """
     _, organiser_headers, coordinator, coordinator_headers, mine = _setup(client, db_session)
     _, other_coordinator_headers = _user(
         client, db_session, Role.COORDINATOR, "other2@connectsphere.test"
     )
-    _submitted_event(client, organiser_headers)  # assigned to nobody
+    other_event_id = _submitted_event(client, organiser_headers)  # auto-assigned to other2
 
     res = client.get("/events/assigned", headers=coordinator_headers)
 
     assert res.status_code == 200
     assert [e["id"] for e in res.json()] == [mine]
-    # And the other Coordinator, who has been assigned nothing, sees nothing.
-    assert client.get("/events/assigned", headers=other_coordinator_headers).json() == []
+    # The other Coordinator sees the request auto-assigned to them, and
+    # nothing that belongs to `coordinator`.
+    assert [e["id"] for e in client.get("/events/assigned", headers=other_coordinator_headers).json()] == [
+        other_event_id
+    ]
 
 
 def test_the_organiser_of_an_event_is_not_its_coordinator(client, db_session):

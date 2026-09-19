@@ -102,6 +102,15 @@ def logout(response: Response) -> None:
 
 
 @router.get("/me", response_model=MeOut)
-def me(user: User = Depends(get_current_user)) -> MeOut:
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> MeOut:
+    # `user` from get_current_user is a transient object carrying only
+    # id/role (trusted from the JWT); profile fields (name, email,
+    # created_at) still need a real fetch. The displayed role must stay
+    # the JWT-trusted one, not the live DB value, so it matches what's
+    # actually enforced by require_permission for this token.
+    full_user = db.get(User, user.id)
+    if full_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    profile = UserOut.model_validate(full_user).model_copy(update={"role": user.role})
     permissions = sorted(permissions_for(user.role))
-    return MeOut(user=UserOut.model_validate(user), permissions=permissions)
+    return MeOut(user=profile, permissions=permissions)

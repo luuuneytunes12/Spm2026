@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Role } from '../../lib/roles'
 import { ROLE_LABELS, ROLE_PERMISSIONS } from '../../lib/roles'
 import type { PlannedWorkflow } from '../../lib/roleWorkflows'
@@ -6,8 +7,21 @@ import type { PlannedWorkflow } from '../../lib/roleWorkflows'
  * is a thin wrapper that supplies its own role + planned-workflow list —
  * see Organiser.tsx etc. Permissions are rendered straight from
  * ROLE_PERMISSIONS so this stays correct if that table changes; nothing
- * here is fetched from the backend, since no domain endpoints exist yet. */
-export function RoleHome({ role, planned }: { role: Role; planned: PlannedWorkflow[] }) {
+ * here is fetched from the backend, since no domain endpoints exist yet.
+ *
+ * `children`, when given, renders between the header and the Permissions
+ * section — for a role page that has grown its own real (backend-backed)
+ * controls, like the Coordinator's availability toggle, ahead of the
+ * still-planned-workflow placeholders below it. */
+export function RoleHome({
+  role,
+  planned,
+  children,
+}: {
+  role: Role
+  planned: PlannedWorkflow[]
+  children?: ReactNode
+}) {
   const permissions = ROLE_PERMISSIONS[role]
 
   return (
@@ -18,6 +32,8 @@ export function RoleHome({ role, planned }: { role: Role; planned: PlannedWorkfl
           What this role can do today, and what is planned for it.
         </p>
       </header>
+
+      {children}
 
       <section className="card">
         <h2>Permissions</h2>

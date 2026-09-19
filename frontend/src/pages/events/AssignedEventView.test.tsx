@@ -13,6 +13,7 @@
  * the screen does with the answer, including the refusal.
  */
 import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
@@ -20,18 +21,20 @@ import { AssignedEventView } from './AssignedEventView'
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
-  return { ...actual, getAssignedEvent: vi.fn() }
+  return { ...actual, getAssignedEvent: vi.fn(), releaseAssignedEvent: vi.fn() }
 })
 
-import { getAssignedEvent } from '../../lib/events'
+import { getAssignedEvent, releaseAssignedEvent } from '../../lib/events'
 import type { AssignedEventDetail } from '../../lib/events'
 
 const mockGet = vi.mocked(getAssignedEvent)
+const mockRelease = vi.mocked(releaseAssignedEvent)
 
 const EVENT: AssignedEventDetail = {
   id: 7,
   organiser_id: 1,
   coordinator_id: 2,
+  coordinator: { id: 2, name: 'Sam Tan', email: 'sam@connectsphere.test' },
   name: 'Regional Partner Conference',
   event_type: 'conference',
   purpose: 'Annual partner briefing',
@@ -349,6 +352,30 @@ describe('AC4 - the activity log', () => {
 
     expect(await screen.findByText(/Unknown user ·/)).toBeInTheDocument()
   })
+
+  it('renders an assignment as "Assignment", not a status change into itself', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      activity: [
+        {
+          from_status: 'submitted',
+          to_status: 'submitted',
+          note: 'Assigned to Sam Tan.',
+          changed_by_name: 'Priya Menon',
+          created_at: '2026-09-10T02:05:00Z',
+        },
+        ...EVENT.activity,
+      ],
+    })
+    renderView()
+
+    const log = await screen.findByRole('list', { name: 'Activity log' })
+    const [entry] = within(log).getAllByRole('listitem')
+    expect(entry).toHaveTextContent('Assignment')
+    expect(entry).toHaveTextContent('Assigned to Sam Tan.')
+    // Not rendered as "Submitted -> Submitted".
+    expect(within(entry).queryByText('→')).toBeNull()
+  })
 })
 
 describe('AC5 - events that are not assigned to me', () => {
@@ -373,12 +400,65 @@ describe('AC5 - events that are not assigned to me', () => {
 })
 
 describe('what this screen deliberately does not offer', () => {
-  it('has no way to edit the event -- viewing is the whole story', async () => {
+  it('has no way to edit the event\'s fields -- releasing it is not editing it', async () => {
     renderView()
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
-    expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByRole('link', { name: /edit/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /save|update/i })).toBeNull()
+  })
+})
+
+describe('marking unavailable for this one event', () => {
+  it('offers the action while the event is still active', async () => {
+    renderView()
+
+    expect(
+      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not offer it once the event has finished', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'completed' })
+    renderView()
+
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(
+      screen.queryByRole('button', { name: 'Mark unavailable for this event' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('releases the event and leaves the assigned-events list', async () => {
+    mockRelease.mockResolvedValue({} as never)
+    render(
+      <MemoryRouter initialEntries={['/coordinator/events/7']}>
+        <Routes>
+          <Route path="/coordinator/events/:id" element={<AssignedEventView />} />
+          <Route path="/coordinator/events" element={<p>My Assigned Events</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+    )
+
+    await waitFor(() => expect(mockRelease).toHaveBeenCalledWith(7))
+    expect(await screen.findByText('My Assigned Events')).toBeInTheDocument()
+  })
+
+  it('shows an error and stays on the page when releasing fails', async () => {
+    mockRelease.mockRejectedValue(new ApiError(409, "'completed' is not active, so it cannot be reassigned."))
+    renderView()
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "'completed' is not active, so it cannot be reassigned.",
+    )
+    expect(screen.getByRole('heading', { name: 'Regional Partner Conference' })).toBeInTheDocument()
   })
 })

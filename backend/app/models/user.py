@@ -13,6 +13,11 @@ from app.core.roles import DEFAULT_ROLE, Role
 # UUID), there is no `is_active` column, and there is no `updated_at`
 # column. Any query touching either non-existent column will fail
 # against the real database.
+#
+# `is_available` is the one deliberate addition beyond that mirror -- see
+# sql/004_coordinator_availability.sql. It backs the Coordinator's "mark
+# myself unavailable" toggle; every other role's row carries it too (one
+# shared table) but never reads or writes it.
 
 
 class User(Base):
@@ -43,6 +48,7 @@ class User(Base):
         nullable=False,
         default=DEFAULT_ROLE.value,
     )
+    is_available: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -152,6 +152,25 @@
   white-space: nowrap;
 }
 
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 50%;
+
+  &:hover {
+    border-color: var(--accent-border);
+    color: var(--accent);
+  }
+}
+
 .navbar-logout {
   font-size: 13px;
   padding: 6px 12px;
@@ -317,6 +336,56 @@
   gap: 16px;
 }
 
+/* --- Bento layout (Coordinator home) ----------------------------------
+   Four tiles of deliberately different sizes rather than one more uniform
+   grid: Availability and Notifications are live controls a Coordinator
+   checks constantly, so they get the prominent top row; Permissions and
+   Planned are reference material and sit smaller underneath. */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(120px, auto);
+  gap: 16px;
+}
+
+.bento-availability {
+  grid-column: span 2;
+}
+
+.bento-notifications {
+  grid-column: span 2;
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  .activity-list {
+    overflow-y: auto;
+  }
+}
+
+.bento-permissions {
+  grid-column: span 2;
+}
+
+.bento-planned {
+  grid-column: span 4;
+}
+
+@media (max-width: 860px) {
+  .bento-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bento-availability,
+  .bento-notifications,
+  .bento-permissions,
+  .bento-planned {
+    grid-column: span 1;
+    grid-row: auto;
+  }
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -346,6 +415,23 @@
 
 .badge-muted {
   color: var(--text-muted);
+}
+
+.availability-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.status-actions {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .chip-list {
@@ -682,6 +768,24 @@
   gap: 14px;
   font-size: 14px;
   white-space: nowrap;
+}
+
+/* An understated text action -- "give this one away" is real but is not
+   the primary thing a row invites you to do, so it must not compete
+   visually with the "View details" link next to it. */
+.btn-link-muted {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+
+  &:hover:not(:disabled) {
+    color: var(--danger);
+    text-decoration-color: currentColor;
+  }
 }
 
 .notice-empty {

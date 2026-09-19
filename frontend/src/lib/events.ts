@@ -46,6 +46,20 @@ export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
   [EventStatus.CANCELLED]: 'The event has been cancelled and will not proceed.',
 }
 
+/** Statuses under which an event still needs an active Coordinator working
+ *  it -- the same set backend/app/services/assignment.py reassigns out of
+ *  (ACTIVE_ASSIGNMENT_STATUSES there; keep the two in sync). Used to decide
+ *  whether "Mark unavailable for this event" makes sense to offer at all --
+ *  an already-finished event has nothing left to hand off. */
+export const ACTIVE_ASSIGNMENT_STATUSES: readonly EventStatus[] = [
+  EventStatus.SUBMITTED,
+  EventStatus.UNDER_REVIEW,
+  EventStatus.CHANGES_REQUESTED,
+  EventStatus.APPROVED,
+  EventStatus.PLANNING,
+  EventStatus.CONFIRMED,
+]
+
 /** The lifecycle a request moves through from a Coordinator's point of view,
  *  used to draw the progress timeline on the assigned-event screen.
  *
@@ -100,9 +114,23 @@ export interface EventSummary {
   updated_at: string
 }
 
+/** Who a Coordinator or Organiser contacts about the other side of an
+ *  event. `users` carries no phone number, so `email` is the whole of
+ *  "contact details" today. Reused for both directions -- an Organiser's
+ *  contact and an assigned Coordinator's -- since the shape is identical. */
+export interface EventContact {
+  id: number
+  name: string
+  email: string
+}
+
 export interface EventDetail extends EventSummary {
   organiser_id: number
   coordinator_id: number | null
+  /** None until the system (or a reassignment) has picked someone --
+   *  see AC2 of "Mark myself unavailable": this is what lets the Organiser
+   *  see who is coordinating their event, right on the event page. */
+  coordinator: EventContact | null
   purpose: string | null
   description: string | null
   programme: string | null
@@ -115,13 +143,10 @@ export interface EventDetail extends EventSummary {
   created_at: string
 }
 
-/** Who a Coordinator contacts about an event assigned to them. `users`
- *  carries no phone number, so `email` is the whole of "contact details". */
-export interface OrganiserContact {
-  id: number
-  name: string
-  email: string
-}
+/** Who a Coordinator contacts about an event assigned to them. Same shape
+ *  as EventContact above -- kept as a named alias since this is what the
+ *  AssignedEventDetail response calls the field. */
+export type OrganiserContact = EventContact
 
 /** One line of an event's activity log, from `event_status_history`.
  *  `from_status`/`to_status` are plain strings rather than EventStatus: they
@@ -181,6 +206,17 @@ export function listAssignedEvents(): Promise<EventSummary[]> {
  *  an event id that does not exist. */
 export function getAssignedEvent(id: number): Promise<AssignedEventDetail> {
   return apiFetch(`/events/assigned/${id}`) as Promise<AssignedEventDetail>
+}
+
+/** Hand ONE assigned event off to another available Coordinator.
+ *
+ *  Narrower than declaring yourself unavailable outright: everything else
+ *  on your plate, and your general eligibility for new work, is
+ *  untouched -- this is "I can't do this particular one", not "I'm away".
+ *  Rejects with a 409 ApiError if the event is no longer active (already
+ *  approved/rejected/completed/cancelled has no "reassign" to do). */
+export function releaseAssignedEvent(id: number): Promise<EventDetail> {
+  return apiFetch(`/events/assigned/${id}/release`, { method: 'POST' }) as Promise<EventDetail>
 }
 
 export function createEvent(input: EventInput): Promise<EventDetail> {

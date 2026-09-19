@@ -66,7 +66,7 @@ export function MyRequests() {
     <div className="stack">
       <header className="page-header page-header-row">
         <div>
-          <h1>My event requests</h1>
+          <h1>My Event Requests</h1>
           <p className="page-subtitle">
             Drafts are visible only to you until you submit them.
           </p>

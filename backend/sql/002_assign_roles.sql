@@ -36,5 +36,10 @@ update public.users set role = 'venue_staff'  where email = 'ven_staff@cs.local'
 update public.users set role = 'tech_support' where email = 'tech_supp@cs.local';
 update public.users set role = 'attendee'     where email = 'attend@cs.local';
 
+-- A second Coordinator, needed to test reassignment (see the "Mark myself
+-- unavailable" story) -- there is nobody to reassign an event TO with only
+-- one Coordinator in the system.
+update public.users set role = 'coordinator'  where email = 'event_coord2@cs.local';
+
 -- Verify:
 select id, name, email, role from public.users order by id;

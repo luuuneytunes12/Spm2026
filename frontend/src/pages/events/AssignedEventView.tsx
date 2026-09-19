@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { ApiError } from '../../lib/api'
 import {
+  ACTIVE_ASSIGNMENT_STATUSES,
   EVENT_STATUS_BRANCH_TONE,
   EVENT_STATUS_DESCRIPTIONS,
   EVENT_STATUS_LABELS,
@@ -10,6 +11,7 @@ import {
   formatRange,
   formatTimestamp,
   getAssignedEvent,
+  releaseAssignedEvent,
 } from '../../lib/events'
 import type { ActivityEntry, AssignedEventDetail } from '../../lib/events'
 
@@ -110,13 +112,23 @@ function DetailValue({ value }: { value: string | null }) {
   )
 }
 
-/** One line of the activity log: what changed, who changed it, and when. */
+/** One line of the activity log: what changed, who changed it, and when.
+ *
+ *  Not every entry is a status change -- an assignment or reassignment (see
+ *  the "Mark myself unavailable" story) writes a row whose `from_status`
+ *  and `to_status` are identical, because the event's status did not move;
+ *  only its Coordinator did. Rendering "Submitted → Submitted" for that
+ *  would misreport it as a transition that never happened, so a same-status
+ *  entry is headed by its own note instead of a status arrow. */
 function ActivityLine({ entry }: { entry: ActivityEntry }) {
   const when = formatTimestamp(entry.created_at)
+  const isAssignment = entry.from_status !== null && entry.from_status === entry.to_status
   return (
     <li className="activity-item">
       <p className="activity-change">
-        {entry.from_status ? (
+        {isAssignment ? (
+          <strong>Assignment</strong>
+        ) : entry.from_status ? (
           <>
             {statusLabel(entry.from_status)} <span aria-hidden="true">→</span>{' '}
             <strong>{statusLabel(entry.to_status)}</strong>
@@ -134,12 +146,15 @@ function ActivityLine({ entry }: { entry: ActivityEntry }) {
   )
 }
 
-/** Read-only full detail of an event assigned to the signed-in Coordinator.
+/** Full detail of an event assigned to the signed-in Coordinator.
  *
- *  Read-only by design, not by omission: this story is about understanding an
- *  event well enough to plan it. Acting on it — booking a venue, requesting
- *  equipment, moving it through review — is each its own story, and each will
- *  add its own control to this page.
+ *  Read-only for the event's own fields, by design, not by omission: this
+ *  story is about understanding an event well enough to plan it, and
+ *  editing what the Organiser wrote is each its own future story. The one
+ *  control this page does offer -- "Mark unavailable for this event" --
+ *  is not an edit of the event; it hands the whole thing to someone else.
+ *  Booking a venue, requesting equipment, moving it through review are
+ *  each still their own story, each free to add its own control here.
  *
  *  An event that is not assigned to this Coordinator comes back as a 404 from
  *  the API, indistinguishable from one that does not exist, and is rendered
@@ -147,9 +162,12 @@ function ActivityLine({ entry }: { entry: ActivityEntry }) {
  *  event is real. */
 export function AssignedEventView() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [event, setEvent] = useState<AssignedEventDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [releasing, setReleasing] = useState(false)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -175,6 +193,21 @@ export function AssignedEventView() {
       cancelled = true
     }
   }, [id])
+
+  async function release() {
+    if (!event) return
+    setReleasing(true)
+    setReleaseError(null)
+    try {
+      await releaseAssignedEvent(event.id)
+      // It is no longer assigned to me -- reopening this page would just
+      // 404. Back to the list, where it will no longer appear.
+      navigate('/coordinator/events', { replace: true })
+    } catch (err) {
+      setReleaseError(err instanceof ApiError ? err.message : 'Could not release this event.')
+      setReleasing(false)
+    }
+  }
 
   if (loading) return null
 
@@ -230,10 +263,31 @@ export function AssignedEventView() {
       <section className="card">
         <h2>Status</h2>
         <StatusTimeline event={event} />
+        {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
+          <div className="status-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void release()}
+              disabled={releasing}
+            >
+              {releasing ? 'Releasing…' : 'Mark unavailable for this event'}
+            </button>
+            <p className="page-subtitle">
+              Hands this event to another available Coordinator. Everything else
+              assigned to you, and your general availability, is unaffected.
+            </p>
+            {releaseError && (
+              <p className="form-error" role="alert">
+                {releaseError}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card">
-        <h2>Event details</h2>
+        <h2>Event Details</h2>
         <dl className="detail-list">
           {details.map(([label, value]) => (
             <div key={label} className="detail-row">
@@ -263,7 +317,7 @@ export function AssignedEventView() {
       </section>
 
       <section className="card">
-        <h2>Activity log</h2>
+        <h2>Activity Log</h2>
         {event.activity.length === 0 ? (
           <p className="page-subtitle">No activity recorded yet.</p>
         ) : (

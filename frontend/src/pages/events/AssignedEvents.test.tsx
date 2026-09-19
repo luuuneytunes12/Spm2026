@@ -9,20 +9,23 @@
  * itself is enforced server-side and covered by
  * backend/tests/test_assigned_events.py.
  */
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../lib/api'
 import { AssignedEvents } from './AssignedEvents'
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
-  return { ...actual, listAssignedEvents: vi.fn() }
+  return { ...actual, listAssignedEvents: vi.fn(), releaseAssignedEvent: vi.fn() }
 })
 
-import { listAssignedEvents } from '../../lib/events'
+import { listAssignedEvents, releaseAssignedEvent } from '../../lib/events'
 import type { EventSummary } from '../../lib/events'
 
 const mockList = vi.mocked(listAssignedEvents)
+const mockRelease = vi.mocked(releaseAssignedEvent)
 
 const ASSIGNED: EventSummary = {
   id: 7,
@@ -47,6 +50,57 @@ function renderList() {
 beforeEach(() => {
   vi.clearAllMocks()
   mockList.mockResolvedValue([])
+})
+
+describe('marking unavailable for one event', () => {
+  it('offers the action on an active event', async () => {
+    mockList.mockResolvedValue([ASSIGNED])
+    renderList()
+
+    expect(
+      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not offer it once the event has finished', async () => {
+    mockList.mockResolvedValue([{ ...ASSIGNED, status: 'completed' }])
+    renderList()
+
+    await screen.findByText('Regional Partner Conference')
+    expect(
+      screen.queryByRole('button', { name: 'Mark unavailable for this event' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('releases the event and drops it from the list', async () => {
+    mockList.mockResolvedValue([ASSIGNED])
+    mockRelease.mockResolvedValue({} as never)
+    renderList()
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+    )
+
+    await waitFor(() => expect(mockRelease).toHaveBeenCalledWith(7))
+    await waitFor(() =>
+      expect(screen.queryByText('Regional Partner Conference')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('shows an error and keeps the row when releasing fails', async () => {
+    mockList.mockResolvedValue([ASSIGNED])
+    mockRelease.mockRejectedValue(new ApiError(409, "'completed' is not active, so it cannot be reassigned."))
+    renderList()
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "'completed' is not active, so it cannot be reassigned.",
+    )
+    expect(screen.getByText('Regional Partner Conference')).toBeInTheDocument()
+  })
 })
 
 describe('AC5 - only events assigned to me', () => {

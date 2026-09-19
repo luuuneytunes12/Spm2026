@@ -20,11 +20,14 @@ which covers the two Organiser stories this one reads the output of.
 | Components (Vitest) | `cd frontend && npm test` | nothing — jsdom, API mocked |
 | All of the above | push to any branch | GitHub Actions runs them |
 
-There is no Playwright layer for this story yet. The end-to-end journey needs
-an event to already be *assigned*, and there is no "assign a Coordinator"
-endpoint — that is its own story. The backend tests set `coordinator_id`
-directly, exactly as that endpoint will, so they do not need rewriting when it
-lands.
+There is no Playwright layer for this story yet.
+
+Assignment itself now happens automatically on submission — see
+[test-cases-coordinator-availability.md](test-cases-coordinator-availability.md),
+which covers the "Mark myself unavailable" story that added it. The tests
+below mostly still assign a Coordinator directly (`_assign()` in
+`test_assigned_events.py`) rather than by submitting, so this story's tests
+stay about *viewing* an assignment, not about how one came to exist.
 
 ## What "assigned to me" means
 
@@ -118,27 +121,20 @@ Organiser stories already rely on.
 
 ---
 
-## Manual check — assigning a Coordinator
+## Manual check
 
-Until the "Assign a Coordinator" story ships there is no UI for assignment.
-To exercise this story against a running app, submit a request as an
-Organiser, then in the Supabase SQL editor:
-
-```sql
--- the Coordinator's user id
-select id, name, email, role from users where role = 'coordinator';
-
--- the submitted request
-select id, name, status from events where status = 'submitted';
-
-update events set coordinator_id = <coordinator id> where id = <event id>;
-```
+Assignment is automatic now (see
+[test-cases-coordinator-availability.md](test-cases-coordinator-availability.md)),
+so exercising this story just needs one Coordinator to exist before an
+Organiser submits a request — sign up (or promote, via
+`scripts/create_admin.py`-style direct role update) one Coordinator, then
+submit a complete request as an Organiser.
 
 Sign in as that Coordinator and open **My assigned events** in the sidebar.
 
 | ID | Check | Expected |
 |---|---|---|
 | TC-S3-M1 | The assigned event appears under My assigned events | one row, badged with its current status |
-| TC-S3-M2 | Open it | every requirement, the Organiser's name and email, the status, and the activity log |
+| TC-S3-M2 | Open it | every requirement, the Organiser's name and email, the status, and the activity log (including the "Assignment" entry) |
 | TC-S3-M3 | Edit the URL to another event's id | "That event is not assigned to you." |
 | TC-S3-M4 | Read the page in dark mode | the activity timeline and its dots stay legible |

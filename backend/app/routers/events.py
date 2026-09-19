@@ -18,6 +18,7 @@ from app.schemas.event import (
     EventSummary,
     OrganiserContact,
 )
+from app.services.assignment import ACTIVE_ASSIGNMENT_STATUSES, assign_coordinator, reassign_event
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -215,6 +216,45 @@ def get_assigned_event(
     )
 
 
+@router.post("/assigned/{event_id}/release", response_model=EventOut)
+def release_assigned_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_WRITE)),
+) -> EventOut:
+    """Hand ONE event off to another available Coordinator.
+
+    Distinct from PATCH /coordinators/me/availability, which takes the
+    caller fully out of the pool and moves every active event they hold.
+    This touches only `event_id` -- everything else assigned to the
+    caller, and their general eligibility for new work, is untouched. For
+    "I can't do this particular one" rather than "I'm away".
+
+    404s for an event that is not assigned to the caller, exactly like
+    GET /events/assigned/{id} -- same reasoning: "not yours" and "does not
+    exist" should be indistinguishable.
+    """
+    event = _get_assigned_event(event_id, user, db)
+    if event.status not in ACTIVE_ASSIGNMENT_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"'{event.status}' is not active, so it cannot be reassigned.",
+        )
+
+    # _get_assigned_event only needed user.id (present on the transient
+    # JWT-claims object get_current_user returns); the real row -- with a
+    # name -- is what reassign_event's log entry and notification need.
+    outgoing = db.get(User, user.id)
+    if outgoing is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+
+    reassign_event(db, event, outgoing=outgoing)
+
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
 @router.get("/{event_id}", response_model=EventOut)
 def get_event(
     event_id: int,
@@ -307,6 +347,11 @@ def submit_event(
             note="Submitted by organiser.",
         )
     )
+
+    # AC1 of "Mark myself unavailable": a submitted request is handed to an
+    # available Coordinator automatically. Left unassigned (silently) if
+    # nobody is available right now -- see assign_coordinator.
+    assign_coordinator(db, event, actor_id=user.id)
 
     db.commit()
     db.refresh(event)
