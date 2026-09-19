@@ -17,8 +17,16 @@ create type booking_status as enum (
     'pending', 'approved', 'rejected', 'cancelled'
 );
 
+-- Lifecycle of an equipment REQUEST (on equipment_requests).
 create type equipment_status as enum (
     'requested', 'reviewing', 'reserved', 'rejected', 'cancelled'
+);
+
+-- Condition of a physical equipment ITEM (on equipment). Deliberately
+-- separate from equipment_status above: "this request is reserved" and
+-- "this projector works" are different facts about different things.
+create type equipment_operational_status as enum (
+    'available', 'maintenance', 'damaged', 'retired'
 );
 
 create type registration_status as enum (
@@ -154,10 +162,20 @@ create index idx_venue_unavailability_venue_time on venue_unavailability (venue_
 create table equipment (
     id bigint generated always as identity primary key,
     name text not null,
+    -- The equipment "type" the catalogue is filtered by.
     category text,
+    -- Plain-language description of what the item is. Distinct from
+    -- technical_specs, which holds model numbers, wattage and connectors.
+    description text,
     total_quantity integer not null check (total_quantity >= 0),
+    -- Where the item is physically stored; equipment held at another
+    -- venue may not be usable for a given event.
+    location text,
+    operational_status equipment_operational_status not null default 'available',
     technical_specs text
 );
+
+create index idx_equipment_category on equipment (category);
 
 create table equipment_requests (
     id bigint generated always as identity primary key,
