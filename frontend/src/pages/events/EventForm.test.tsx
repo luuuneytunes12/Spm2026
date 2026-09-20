@@ -234,6 +234,38 @@ describe('Story 2 AC1 - submitting an incomplete request is blocked and the gaps
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  it('moves the user to the first problem instead of leaving them at the button', async () => {
+    const user = userEvent.setup()
+    // Reported out of page order on purpose: "first" must mean the topmost
+    // field on screen, not the first one the server happened to list.
+    mockSubmit.mockRejectedValueOnce(
+      new ApiError(422, 'two problems', ['venue_requirements', 'purpose']),
+    )
+    renderNew()
+
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+
+    // Purpose sits above Venue requirements on the form.
+    const purpose = screen.getByLabelText('Purpose')
+    await waitFor(() => expect(purpose).toHaveFocus())
+    // Scrolled by its wrapper -- the whole field, label and all, is what
+    // needs to come into view, not just the box.
+    expect(purpose.closest('.field')!.scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('brings the banner into view when the failure names no field at all', async () => {
+    const user = userEvent.setup()
+    mockSubmit.mockRejectedValueOnce(new Error('network down'))
+    renderNew()
+
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+
+    // Nothing is flagged, so there is no field to jump to -- the message
+    // itself has to be what the user is taken to.
+    const banner = await screen.findByRole('alert')
+    await waitFor(() => expect(banner).toHaveFocus())
+  })
+
   it('TC-S2-1d: summarises how many fields are still incomplete', async () => {
     const user = userEvent.setup()
     mockSubmit.mockRejectedValueOnce(

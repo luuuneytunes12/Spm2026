@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EquipmentPicker } from '../../components/EquipmentPicker'
@@ -114,6 +114,41 @@ export function EventForm() {
   // Field names the server flagged on the last submit attempt, so each
   // offending input can be marked rather than showing one generic error.
   const [missing, setMissing] = useState<string[]>([])
+  const formRef = useRef<HTMLFormElement>(null)
+  const bannerRef = useRef<HTMLParagraphElement>(null)
+
+  // A failed submit leaves the reason somewhere above the button that was
+  // just pressed -- often a screen away on a form this long. Without this
+  // the click looks like it simply did nothing.
+  //
+  // Keyed on `error` rather than `missing`: a network failure has no fields
+  // to jump to but still needs the banner brought into view, and reportError
+  // always sets a fresh string so a second identical failure re-runs this.
+  useEffect(() => {
+    if (error === null) return
+
+    // DOM order, so "first" means the topmost problem on the page rather
+    // than the first the server happened to list. `.field-invalid` catches
+    // the equipment block, which marks its wrapper because it has no single
+    // control to mark.
+    const block = formRef.current?.querySelector<HTMLElement>(
+      '[aria-invalid="true"], .field-invalid',
+    )
+
+    // That query can land on a wrapper div, which cannot take focus -- so
+    // scroll whatever was found, but focus the control inside it.
+    const target = block ?? bannerRef.current
+    if (!target) return
+
+    const focusable = target.matches('input, textarea, select, [tabindex]')
+      ? target
+      : target.querySelector<HTMLElement>('input, textarea, select')
+
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    target.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' })
+    // preventScroll so focusing does not fight the smooth scroll above.
+    focusable?.focus({ preventScroll: true })
+  }, [error])
 
   useEffect(() => {
     if (eventId === null) return
@@ -230,7 +265,9 @@ export function EventForm() {
       </header>
 
       {error && (
-        <p className="form-error" role="alert">
+        // tabIndex so it can receive focus when there is no field to jump
+        // to; -1 keeps it out of the normal tab order.
+        <p className="form-error" role="alert" ref={bannerRef} tabIndex={-1}>
           {missing.length > 0
             ? `Cannot submit yet — ${missing.length} required ${missing.length === 1 ? 'field is' : 'fields are'} incomplete. They are marked below.`
             : error}
@@ -240,7 +277,7 @@ export function EventForm() {
       {/* noValidate, and not a single `required` attribute: a draft must be
           saveable while empty. The backend is the only gate on completeness,
           and only at submit time. */}
-      <form onSubmit={onSaveDraft} noValidate className="stack">
+      <form onSubmit={onSaveDraft} noValidate className="stack" ref={formRef}>
         <section className="card stack-tight">
           <h2>About the Event</h2>
 
