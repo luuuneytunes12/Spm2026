@@ -5,7 +5,7 @@ be changed. Creating, editing and retiring items is EQUIPMENT_MANAGE and a
 separate story.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.enums import EquipmentOperationalStatus
 
@@ -54,3 +54,24 @@ class EquipmentCatalogueOut(BaseModel):
 
     items: list[EquipmentOut]
     types: list[str]
+
+
+class EquipmentOption(BaseModel):
+    """One pickable item, for the equipment picker on an event request.
+
+    Three fields and no more, deliberately.
+
+    The catalogue response (EquipmentOut) carries storage location,
+    operational condition and live stock levels. An Event Organiser is an
+    EXTERNAL client -- the Week 1 briefing is explicit that external users
+    should not see internal planning information -- and a picker that simply
+    declines to *render* those fields would still *ship* them over the wire.
+    Enough to choose the right item, nothing about how ConnectSphere keeps
+    it.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    category: str | None

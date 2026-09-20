@@ -9,6 +9,7 @@ from app.core.roles import Permission
 from app.models.enums import EventStatus
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
+from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
     MANDATORY_FIELDS,
     ActivityEntry,
@@ -93,8 +94,21 @@ def create_event(
     if data.get("registration_enabled") is None:
         data["registration_enabled"] = False
 
+    # Equipment lives in its own table, so it cannot ride along in the
+    # Event(**data) splat -- pop it before that and write it through the
+    # service once the event exists.
+    data.pop("equipment_items", None)
+
     event = Event(**data, organiser_id=user.id, status=EventStatus.draft)
     db.add(event)
+
+    if body.equipment_items:
+        # flush, not commit: the lines need event.id, but a rejected line
+        # must still roll the whole request back rather than leave an
+        # event behind that the Organiser never got told about.
+        db.flush()
+        replace_equipment_lines(db, event, body.equipment_items)
+
     db.commit()
     db.refresh(event)
     return EventOut.model_validate(event)
@@ -289,7 +303,17 @@ def update_event(
 
     # exclude_unset so a PATCH that omits a field leaves it alone, rather
     # than nulling it out. Sending an explicit null still clears it.
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+
+    # Same rule, applied to the child rows: omitted means "leave them
+    # alone", an explicit [] clears them, and a list replaces them. It has
+    # to be handled before the loop because setattr would put raw dicts
+    # into the relationship.
+    if "equipment_items" in changes:
+        changes.pop("equipment_items")
+        replace_equipment_lines(db, event, body.equipment_items or [])
+
+    for field, value in changes.items():
         if field == "registration_enabled" and value is None:
             continue  # non-null column; ignore an explicit null
         setattr(event, field, value)

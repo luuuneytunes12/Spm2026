@@ -165,8 +165,11 @@ def test_submit_blocked_when_mandatory_fields_missing(client, db_session):
         "expected_attendance",
         "venue_requirements",
         "accessibility_needs",
-        "equipment_requirements",
     }
+    # `equipment_requirements` is NOT flagged: equipment is now picked from
+    # the catalogue as structured lines, and plenty of events need none at
+    # all, so it is no longer a mandatory field. See
+    # tests/test_event_equipment.py.
     # Blocked means blocked: still a draft.
     assert db_session.get(Event, event_id).status == "draft"
 

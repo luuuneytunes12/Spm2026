@@ -7,7 +7,7 @@ from app.core.deps import require_permission
 from app.core.roles import Permission
 from app.models.enums import EquipmentOperationalStatus, EquipmentStatus
 from app.models.equipment import Equipment, EquipmentRequest
-from app.schemas.equipment import EquipmentCatalogueOut, EquipmentOut
+from app.schemas.equipment import EquipmentCatalogueOut, EquipmentOption, EquipmentOut
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 
@@ -91,6 +91,35 @@ def _apply_filters(stmt: Select, type_: str | None, q: str | None) -> Select:
             )
         )
     return stmt
+
+
+# Declared before the catalogue route for readability only -- "options" is a
+# literal path, not a parameter, so there is no capture to worry about.
+@router.get("/options", response_model=list[EquipmentOption])
+def list_equipment_options(
+    q: str | None = Query(None, description="Free-text search over name and description."),
+    db: Session = Depends(get_db),
+    _: object = Depends(require_permission(Permission.EVENT_WRITE)),
+) -> list[EquipmentOption]:
+    """Pickable equipment, for the picker on an event request form.
+
+    Gated on EVENT_WRITE rather than EQUIPMENT_READ on purpose. The
+    justification for an Event Organiser reaching this data is "you are
+    filling in an event request", not "you may browse our inventory" -- and
+    EQUIPMENT_READ is the permission that means the latter. A Coordinator
+    holds EVENT_WRITE too, so the same picker works on their screens.
+
+    Retired items are excluded: they are permanently withdrawn, so offering
+    one would guarantee a request nobody can fulfil. Damaged and
+    under-maintenance items stay, because repairs finish and the event may
+    be months away -- whether the kit can actually be provided on the day is
+    Technical Support's call, not this form's.
+    """
+    stmt = select(Equipment).where(
+        Equipment.operational_status != EquipmentOperationalStatus.retired
+    )
+    stmt = _apply_filters(stmt, None, q).order_by(Equipment.category, Equipment.name)
+    return [EquipmentOption.model_validate(item) for item in db.execute(stmt).scalars()]
 
 
 @router.get("", response_model=EquipmentCatalogueOut)
