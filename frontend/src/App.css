@@ -1060,3 +1060,35 @@
     margin-left: 0;
   }
 }
+
+/* ---------------------------------------------------------------------
+   Equipment catalogue
+
+   A catalogue row carries a plain-language description as well as the
+   meta line, so it is taller than an event row. Reusing `.request` keeps
+   the card, spacing and type identical to the rest of the app; these two
+   rules only correct the vertical alignment that extra height throws off.
+   --------------------------------------------------------------------- */
+
+.request.equipment-row {
+  /* Top-align rather than centring the status column against a block
+     that may run to three lines. */
+  align-items: flex-start;
+}
+
+.request.equipment-row .request-side {
+  /* Status above stock, not beside it: two short stacked lines read
+     better at the right-hand edge than one long one, and this is what
+     lets the row stay intact on a phone. */
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.equipment-description {
+  /* The parent's flex gap already spaces this; a default <p> margin
+     would double it. Capped so a long description stays readable
+     instead of running the full width of a wide screen. */
+  margin: 0;
+  max-width: 62ch;
+}

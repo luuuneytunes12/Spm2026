@@ -54,6 +54,11 @@ export function Sidebar({ id, open }: SidebarProps) {
               <NavLink to="/coordinator/events">My Assigned Events</NavLink>
             </li>
           )}
+          {user.role === Role.TECH_SUPPORT && (
+            <li>
+              <NavLink to="/equipment">Equipment Catalogue</NavLink>
+            </li>
+          )}
         </ul>
       </nav>
 

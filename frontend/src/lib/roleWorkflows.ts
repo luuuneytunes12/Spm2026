@@ -58,7 +58,14 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     },
   ],
   [Role.TECH_SUPPORT]: [
-    { title: 'Equipment', description: 'maintain the equipment inventory (equipment).' },
+    {
+      // Renamed, NOT removed, when the catalogue shipped. "View Equipment
+      // Catalogue" is read-only; adding, editing and retiring items is
+      // EQUIPMENT_MANAGE and still has no screen, so this entry has to
+      // keep saying so rather than disappear as if it were done.
+      title: 'Manage equipment',
+      description: 'add, update and retire inventory items (equipment).',
+    },
     {
       title: 'Equipment requests',
       description: 'review, reserve or reject requests (equipment_requests).',
