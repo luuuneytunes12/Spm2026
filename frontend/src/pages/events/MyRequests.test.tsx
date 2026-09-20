@@ -10,7 +10,7 @@
  * back -- the status transition itself is covered by
  * backend/tests/test_events.py.
  */
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -61,35 +61,43 @@ beforeEach(() => {
 })
 
 describe('Story 2 AC3 - submitted requests appear on their own page', () => {
-  it('TC-S2-3b: opens on Drafts and asks the API only for drafts', async () => {
-    mockList.mockResolvedValue([DRAFT])
+  it('TC-S2-3b: opens on Drafts, showing only drafts', async () => {
+    mockList.mockResolvedValue([DRAFT, SUBMITTED])
     renderAt()
 
-    await waitFor(() => expect(mockList).toHaveBeenCalledWith('draft'))
-    expect(mockList).not.toHaveBeenCalledWith('submitted')
     expect(await screen.findByText('Regional Partner Conference')).toBeInTheDocument()
+    expect(screen.queryByText('Robotics Summit')).not.toBeInTheDocument()
   })
 
-  it('TC-S2-3b: switching to Submitted Requests refetches with that status', async () => {
+  it('TC-S2-3b: switching to Submitted Requests shows what has been submitted', async () => {
     const user = userEvent.setup()
-    mockList.mockResolvedValue([DRAFT])
+    mockList.mockResolvedValue([DRAFT, SUBMITTED])
     renderAt()
-    await waitFor(() => expect(mockList).toHaveBeenCalledWith('draft'))
+    await screen.findByText('Regional Partner Conference')
 
-    mockList.mockResolvedValue([SUBMITTED])
     await user.click(screen.getByRole('tab', { name: 'Submitted Requests' }))
 
-    await waitFor(() => expect(mockList).toHaveBeenCalledWith('submitted'))
     expect(await screen.findByText('Robotics Summit')).toBeInTheDocument()
-    // The draft is not on this tab.
     expect(screen.queryByText('Regional Partner Conference')).not.toBeInTheDocument()
+  })
+
+  it('both tabs are served by one request, so switching does not refetch', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([DRAFT, SUBMITTED])
+    renderAt()
+    await screen.findByText('Regional Partner Conference')
+
+    await user.click(screen.getByRole('tab', { name: 'Submitted Requests' }))
+    await screen.findByText('Robotics Summit')
+
+    expect(mockList).toHaveBeenCalledTimes(1)
   })
 
   it('can be linked to directly, which is where the form redirects after submitting', async () => {
     mockList.mockResolvedValue([SUBMITTED])
     renderAt('/organiser/events?tab=submitted')
 
-    await waitFor(() => expect(mockList).toHaveBeenCalledWith('submitted'))
+    expect(await screen.findByText('Robotics Summit')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Submitted Requests' })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -98,7 +106,7 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
 
   it('offers editing for a draft and read-only viewing once submitted', async () => {
     const user = userEvent.setup()
-    mockList.mockResolvedValue([DRAFT])
+    mockList.mockResolvedValue([DRAFT, SUBMITTED])
     renderAt()
     const draftRow = await screen.findByRole('listitem')
     expect(within(draftRow).getByRole('link', { name: /continue editing/i })).toHaveAttribute(
@@ -106,7 +114,6 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
       '/organiser/events/1/edit',
     )
 
-    mockList.mockResolvedValue([SUBMITTED])
     await user.click(screen.getByRole('tab', { name: 'Submitted Requests' }))
 
     const submittedRow = await screen.findByRole('listitem')
@@ -115,6 +122,43 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
       '/organiser/events/2',
     )
     expect(within(submittedRow).queryByRole('link', { name: /continue editing/i })).toBeNull()
+  })
+})
+
+describe('a request that has moved past Submitted', () => {
+  // Regression: submitting assigns a Coordinator, which immediately advances
+  // the request to `under_review`. A tab filtered on `submitted` exactly lost
+  // the request at the very moment the Organiser went looking for it.
+  const LATER_STAGES = [
+    ['under_review', 'Under review'],
+    ['approved', 'Approved'],
+    ['rejected', 'Rejected'],
+    ['planning', 'Planning'],
+    ['confirmed', 'Confirmed'],
+    ['completed', 'Completed'],
+    ['cancelled', 'Cancelled'],
+  ] as const
+
+  it.each(LATER_STAGES)('still appears under Submitted Requests when %s', async (status, label) => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([{ ...SUBMITTED, status }])
+    renderAt()
+    await screen.findByText('No drafts yet.')
+
+    await user.click(screen.getByRole('tab', { name: 'Submitted Requests' }))
+
+    expect(await screen.findByText('Robotics Summit')).toBeInTheDocument()
+    // ...and the badge says where it actually is, rather than claiming
+    // everything on this tab is merely "Submitted".
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+
+  it('never falls off both tabs', async () => {
+    mockList.mockResolvedValue([{ ...SUBMITTED, status: 'under_review' }])
+    renderAt('/organiser/events?tab=submitted')
+
+    expect(await screen.findByText('Robotics Summit')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing submitted yet.')).not.toBeInTheDocument()
   })
 })
 
