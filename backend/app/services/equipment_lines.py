@@ -94,6 +94,19 @@ def replace_equipment_lines(
     """
     _validate(db, lines)
 
+    # Cleared and flushed BEFORE the new rows are attached, in two steps
+    # rather than one assignment.
+    #
+    # (event_id, equipment_id) is unique, and SQLAlchemy's unit of work
+    # emits INSERTs for a table before DELETEs for it. So a one-step
+    # replace that keeps an item and only changes its quantity -- "actually
+    # make that 3", the most ordinary edit there is -- would insert the new
+    # row while the old one was still present, and the constraint would
+    # reject it. Flushing the removals first means the table is empty of
+    # this event's lines by the time the inserts run.
+    event.equipment_items = []
+    db.flush()
+
     event.equipment_items = [
         EquipmentRequest(
             equipment_id=line.equipment_id,

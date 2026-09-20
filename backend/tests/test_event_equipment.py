@@ -188,6 +188,39 @@ def test_patching_equipment_lines_replaces_them(client, db_session):
     assert db_session.query(EquipmentRequest).count() == 1
 
 
+def test_changing_the_quantity_of_an_existing_line_works(client, db_session):
+    """Replacing a line with the SAME item at a different quantity.
+
+    The obvious edit -- "actually make that 3" -- and the one that breaks
+    if the replace inserts before it deletes: both rows carry the same
+    (event_id, equipment_id), so the new INSERT collides with the old row
+    that has not been removed yet.
+    """
+    _, headers = _organiser(client, db_session)
+    mic = _equipment(db_session, "Shure BLX24")
+    projector = _equipment(db_session, "Epson EB-L200SW", category="Projection")
+    event_id = _create(
+        client, headers, equipment_items=[{"equipment_id": mic.id, "quantity_requested": 1}]
+    )["id"]
+
+    res = client.patch(
+        f"/events/{event_id}",
+        json={
+            "equipment_items": [
+                {"equipment_id": mic.id, "quantity_requested": 3},
+                {"equipment_id": projector.id, "quantity_requested": 2},
+            ]
+        },
+        headers=headers,
+    )
+
+    assert res.status_code == 200, res.text
+    lines = {
+        line["equipment_id"]: line["quantity_requested"] for line in res.json()["equipment_items"]
+    }
+    assert lines == {mic.id: 3, projector.id: 2}
+
+
 def test_patch_omitting_equipment_does_not_clear_it(client, db_session):
     """Consistent with every other field: omitted means "leave alone"."""
     _, headers = _organiser(client, db_session)

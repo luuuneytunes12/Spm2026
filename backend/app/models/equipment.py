@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -37,6 +37,16 @@ class Equipment(Base):
 
 class EquipmentRequest(Base):
     __tablename__ = "equipment_requests"
+
+    # Mirrors sql/007. Declared on the model as well as in the migration so
+    # the in-memory SQLite database the tests build from this metadata has
+    # it too -- otherwise a constraint violation is something only
+    # production can discover.
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "equipment_id", name="equipment_requests_event_equipment_key"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(
