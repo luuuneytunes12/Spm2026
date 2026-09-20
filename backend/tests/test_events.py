@@ -27,8 +27,8 @@ def _organiser(client, db_session, email="org@example.com"):
     """Register a user and promote them to Organiser.
 
     Registration always assigns `attendee` (by design -- a client can never
-    pick its own role), so the role is set directly here, the same way
-    scripts/create_admin.py bootstraps the first Organiser.
+    pick its own role), so the role is set directly here -- the same way
+    an Organiser is bootstrapped against a real database, with an UPDATE.
     """
     res = client.post(
         "/auth/register", json={"name": "Org User", "email": email, "password": "password123"}

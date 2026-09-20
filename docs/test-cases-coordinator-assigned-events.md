@@ -126,9 +126,9 @@ Organiser stories already rely on.
 Assignment is automatic now (see
 [test-cases-coordinator-availability.md](test-cases-coordinator-availability.md)),
 so exercising this story just needs one Coordinator to exist before an
-Organiser submits a request — sign up (or promote, via
-`scripts/create_admin.py`-style direct role update) one Coordinator, then
-submit a complete request as an Organiser.
+Organiser submits a request — sign up one Coordinator and promote them with
+a direct `update public.users set role = 'coordinator' where email = ...`,
+then submit a complete request as an Organiser.
 
 Sign in as that Coordinator and open **My assigned events** in the sidebar.
 

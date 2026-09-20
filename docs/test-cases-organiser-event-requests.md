@@ -33,9 +33,8 @@ docker run --rm -e POSTGRES_PASSWORD=postgres \
 # then, in another terminal:
 psql postgresql://postgres:postgres@localhost:5432/connectsphere_test \
   -f backend/db/schema.sql
-cd backend && DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/connectsphere_test \
-  ADMIN_PASSWORD=e2e-password-123 \
-  uv run python scripts/create_admin.py "E2E Organiser" e2e_organiser@cs.local
+# then seed the organiser the specs log in as -- see the "Seed an organiser"
+# step in .github/workflows/ci.yml for the exact snippet CI runs.
 ```
 
 A teammate without Docker can run pytest and Vitest locally and let CI cover

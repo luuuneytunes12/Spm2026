@@ -38,9 +38,9 @@ def _user(client, db_session, role, email, name="Test User"):
     """Register a user, promote them to `role`, and return (user, headers).
 
     Registration always assigns `attendee` (by design -- a client can never
-    pick its own role), so the role is set directly here, the same way
-    scripts/create_admin.py bootstraps the first Organiser. The re-login is
-    what makes the returned token reflect the new role.
+    pick its own role), so the role is set directly here -- the same way
+    an Organiser is bootstrapped against a real database, with an UPDATE.
+    The re-login is what makes the returned token reflect the new role.
     """
     password = "password123"
     res = client.post(
