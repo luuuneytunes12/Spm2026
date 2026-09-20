@@ -192,7 +192,13 @@ create table equipment_requests (
     status equipment_status not null default 'requested',
     notes text,
     created_at timestamptz not null default now(),
-    reviewed_at timestamptz
+    reviewed_at timestamptz,
+    -- One line per equipment item, per event. Quantity is how you ask for
+    -- more of something, so two lines naming the same item is always a
+    -- mistake -- and would have to be summed everywhere availability is
+    -- calculated. The API rejects duplicates with a 422; this is the
+    -- backstop for anything that writes without going through it.
+    constraint equipment_requests_event_equipment_key unique (event_id, equipment_id)
 );
 
 create index idx_equipment_requests_event on equipment_requests (event_id);

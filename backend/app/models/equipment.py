@@ -58,6 +58,24 @@ class EquipmentRequest(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]
 
-    event: Mapped[Event] = relationship()
-    equipment: Mapped[Equipment] = relationship()
+    event: Mapped[Event] = relationship(back_populates="equipment_items")
+    # Eager: every read of a line wants the item's name to show a person,
+    # and lines are always read as a set. Lazy here would be an N+1 behind
+    # Event.equipment_items.
+    equipment: Mapped[Equipment] = relationship(lazy="joined")
     reviewed_by_user: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])
+
+    # Catalogue fields, flattened onto the line.
+    #
+    # A line is only ever shown as "<name> -- <category> x <qty>", and
+    # pydantic's from_attributes resolves plain properties, so exposing
+    # these two saves every response schema from nesting a whole Equipment
+    # object -- which would also drip location, condition and stock levels
+    # into replies that have no business carrying them.
+    @property
+    def equipment_name(self) -> str:
+        return self.equipment.name
+
+    @property
+    def equipment_category(self) -> str | None:
+        return self.equipment.category

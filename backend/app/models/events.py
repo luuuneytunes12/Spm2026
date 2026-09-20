@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, BigInteger, Enum, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -8,6 +9,9 @@ from sqlalchemy.sql import func
 from app.core.db import Base
 from app.models.enums import ChangeRequestStatus, EventStatus
 from app.models.user import User
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle; models.equipment imports Event
+    from app.models.equipment import EquipmentRequest
 
 
 class Event(Base):
@@ -49,6 +53,27 @@ class Event(Base):
 
     organiser: Mapped[User] = relationship(foreign_keys=[organiser_id])
     coordinator: Mapped[User | None] = relationship(foreign_keys=[coordinator_id])
+
+    # The equipment the Organiser asked for, one row per catalogue item.
+    #
+    # `lazy="selectin"` rather than the default: EventOut.model_validate()
+    # is called from six places in routers/events.py, and a lazy collection
+    # would mean either six joinedload() calls to remember or an N+1 on
+    # every event read. Declaring it here means no router has to know.
+    #
+    # `delete-orphan` makes "replace this event's lines" a plain assignment
+    # -- PATCH sets the list and SQLAlchemy issues the DELETEs. The DB also
+    # cascades on event deletion, but that only covers dropping the whole
+    # event, not swapping one line for another.
+    #
+    # The class is named as a string because models.equipment imports Event;
+    # a real import here would be a cycle.
+    equipment_items: Mapped[list["EquipmentRequest"]] = relationship(
+        back_populates="event",
+        cascade="all, delete-orphan",
+        order_by="EquipmentRequest.id",
+        lazy="selectin",
+    )
 
 
 class EventStatusHistory(Base):
