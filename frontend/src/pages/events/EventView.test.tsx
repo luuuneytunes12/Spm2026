@@ -41,6 +41,7 @@ const BASE: EventDetail = {
   room_layout_preference: null,
   accessibility_needs: 'Step-free access',
   equipment_requirements: '2 projectors',
+  equipment_items: [],
   special_arrangements: null,
   registration_enabled: false,
   status: 'submitted',

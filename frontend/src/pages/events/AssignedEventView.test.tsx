@@ -47,6 +47,7 @@ const EVENT: AssignedEventDetail = {
   room_layout_preference: 'theatre',
   accessibility_needs: 'Step-free access, hearing loop',
   equipment_requirements: '2 projectors, 4 radio mics',
+  equipment_items: [],
   special_arrangements: 'Halal catering',
   registration_enabled: true,
   status: 'submitted',
@@ -96,7 +97,7 @@ describe('AC1 - the full requirements are visible', () => {
       ['Expected attendance', '120'],
       ['Venue requirements', 'Main hall, stage, podium'],
       ['Accessibility needs', 'Step-free access, hearing loop'],
-      ['Equipment requirements', '2 projectors, 4 radio mics'],
+      ['Other equipment notes', '2 projectors, 4 radio mics'],
       ['Registration needs', 'Attendees must register'],
     ]) {
       expect(screen.getByText(label).parentElement).toHaveTextContent(value)
@@ -124,14 +125,14 @@ describe('AC1 - the full requirements are visible', () => {
     expect(await screen.findByText('Registration not required')).toBeInTheDocument()
   })
 
-  it('renders a field the Organiser wrote one item per line as a bulleted list', async () => {
+  it('renders a note the Organiser wrote one item per line as a bulleted list', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
       equipment_requirements: 'Two projectors\nFour radio microphones\nA live-stream setup',
     })
     renderView()
 
-    const label = await screen.findByText('Equipment requirements')
+    const label = await screen.findByText('Other equipment notes')
     const list = label.parentElement!.querySelector('ul.detail-value-list')
     expect(list).not.toBeNull()
     expect(within(list as HTMLElement).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
@@ -139,6 +140,46 @@ describe('AC1 - the full requirements are visible', () => {
       'Four radio microphones',
       'A live-stream setup',
     ])
+  })
+
+  it('lists the equipment the Organiser picked, with quantities', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      equipment_items: [
+        {
+          id: 1,
+          equipment_id: 11,
+          equipment_name: 'Shure BLX24 Handheld Microphone',
+          equipment_category: 'Audio',
+          quantity_requested: 6,
+          technical_requirements: null,
+          status: 'requested',
+        },
+        {
+          id: 2,
+          equipment_id: 12,
+          equipment_name: 'Epson EB-L200SW Projector',
+          equipment_category: 'Projection',
+          quantity_requested: 2,
+          technical_requirements: null,
+          status: 'requested',
+        },
+      ],
+    })
+    renderView()
+
+    const row = (await screen.findByText('Equipment requirements')).parentElement!
+    expect(row).toHaveTextContent('Shure BLX24 Handheld Microphone')
+    expect(row).toHaveTextContent('Audio')
+    expect(row).toHaveTextContent('6')
+    expect(row).toHaveTextContent('Epson EB-L200SW Projector')
+  })
+
+  it('says so plainly when no equipment was requested', async () => {
+    renderView()
+
+    const row = (await screen.findByText('Equipment requirements')).parentElement!
+    expect(row).toHaveTextContent('No equipment requested.')
   })
 
   it('leaves a single-line field as plain text -- not every field is a list', async () => {

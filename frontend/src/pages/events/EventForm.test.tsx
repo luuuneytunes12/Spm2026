@@ -24,6 +24,16 @@ vi.mock('react-router', async () => {
   return { ...actual, useNavigate: () => navigate }
 })
 
+// The equipment picker fetches its options on mount. Mocked so this suite
+// never touches the network -- an unmocked rejection renders the picker's
+// own role="alert", which then collides with the form's error banner.
+vi.mock('../../lib/equipment', () => ({
+  listEquipmentOptions: vi.fn().mockResolvedValue([
+    { id: 11, name: 'Shure BLX24 Handheld Microphone', category: 'Audio' },
+    { id: 12, name: 'Epson EB-L200SW Projector', category: 'Projection' },
+  ]),
+}))
+
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
   return {
@@ -56,7 +66,7 @@ const AC1_LABELS = [
   'Venue requirements',
   'Room layout preference',
   'Accessibility requirements',
-  'Equipment requirements',
+  'Other equipment notes',
   'Other special arrangements',
 ]
 
@@ -97,6 +107,7 @@ const SAVED: EventDetail = {
   room_layout_preference: 'theatre',
   accessibility_needs: null,
   equipment_requirements: null,
+  equipment_items: [],
   special_arrangements: 'Halal catering',
   registration_enabled: true,
   status: 'draft',
@@ -123,6 +134,11 @@ describe('Story 1 AC1 - the form captures every required piece of information', 
     expect(
       screen.getByRole('checkbox', { name: /attendees must register/i }),
     ).toBeInTheDocument()
+    // Equipment is no longer one labelled box: it is a group of rows, so
+    // the criterion is met by the group being present and able to take a
+    // row, not by a single control carrying the name.
+    expect(screen.getByRole('group', { name: 'Equipment requirements' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add equipment' })).toBeInTheDocument()
   })
 
   it('TC-S1-1b: sends what the organiser typed to the API', async () => {
