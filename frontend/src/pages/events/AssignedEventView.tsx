@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { EquipmentLines } from '../../components/EquipmentLines'
 import { ApiError } from '../../lib/api'
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
@@ -234,7 +235,7 @@ export function AssignedEventView() {
     ['Venue requirements', event.venue_requirements],
     ['Room layout preference', event.room_layout_preference],
     ['Accessibility needs', event.accessibility_needs],
-    ['Equipment requirements', event.equipment_requirements],
+    ['Other equipment notes', event.equipment_requirements],
     [
       'Registration needs',
       event.registration_enabled ? 'Attendees must register' : 'Registration not required',
@@ -297,6 +298,14 @@ export function AssignedEventView() {
               </dd>
             </div>
           ))}
+          {/* Outside the map: these are structured rows, not a string, and
+              this is the list the Coordinator plans against. */}
+          <div className="detail-row">
+            <dt>Equipment requirements</dt>
+            <dd>
+              <EquipmentLines lines={event.equipment_items} />
+            </dd>
+          </div>
         </dl>
       </section>
 

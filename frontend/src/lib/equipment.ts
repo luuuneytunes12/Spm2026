@@ -78,3 +78,24 @@ export function formatAvailability(item: EquipmentItem): string {
   }
   return `${item.available_quantity} of ${item.total_quantity} available`
 }
+
+/** One pickable item, as returned by GET /equipment/options.
+ *
+ *  Three fields and no more. The catalogue endpoint also returns location,
+ *  operational status and live stock; an Event Organiser is an external
+ *  client, and a picker that merely declines to render those would still
+ *  have received them. The narrow endpoint is the actual boundary. */
+export interface EquipmentOption {
+  id: number
+  name: string
+  category: string | null
+}
+
+/** Equipment an event request may ask for.
+ *
+ *  Excludes retired items server-side -- they are permanently withdrawn, so
+ *  offering one would guarantee a request nobody can fulfil. */
+export function listEquipmentOptions(q?: string): Promise<EquipmentOption[]> {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''
+  return apiFetch(`/equipment/options${query}`) as Promise<EquipmentOption[]>
+}

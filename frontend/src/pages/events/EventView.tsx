@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { EquipmentLines } from '../../components/EquipmentLines'
 import { ApiError } from '../../lib/api'
 import { EVENT_STATUS_LABELS, EventStatus, formatRange, getEvent } from '../../lib/events'
 import type { EventDetail } from '../../lib/events'
@@ -61,7 +62,7 @@ export function EventView() {
     ['Venue requirements', event.venue_requirements],
     ['Room layout preference', event.room_layout_preference],
     ['Accessibility requirements', event.accessibility_needs],
-    ['Equipment requirements', event.equipment_requirements],
+    ['Other equipment notes', event.equipment_requirements],
     ['Registration', event.registration_enabled ? 'Attendees must register' : 'Not required'],
     ['Special arrangements', event.special_arrangements],
   ]
@@ -101,6 +102,13 @@ export function EventView() {
               <dd>{value ?? <span className="text-muted">Not provided</span>}</dd>
             </div>
           ))}
+          {/* Outside the map: these are structured rows, not a string. */}
+          <div className="detail-row">
+            <dt>Equipment requirements</dt>
+            <dd>
+              <EquipmentLines lines={event.equipment_items} />
+            </dd>
+          </div>
         </dl>
       </section>
 

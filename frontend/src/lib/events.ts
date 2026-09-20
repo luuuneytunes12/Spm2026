@@ -124,6 +124,27 @@ export interface EventContact {
   email: string
 }
 
+/** One piece of equipment requested for an event, as the API returns it.
+ *
+ *  `equipment_name`/`equipment_category` are flattened off the catalogue
+ *  item so a line can be rendered without a second request. */
+export interface EquipmentLine {
+  id: number
+  equipment_id: number
+  equipment_name: string
+  equipment_category: string | null
+  quantity_requested: number
+  technical_requirements: string | null
+  status: string
+}
+
+/** One line as SENT. The server assigns id and status. */
+export interface EquipmentLineInput {
+  equipment_id: number
+  quantity_requested: number
+  technical_requirements?: string | null
+}
+
 export interface EventDetail extends EventSummary {
   organiser_id: number
   coordinator_id: number | null
@@ -138,6 +159,7 @@ export interface EventDetail extends EventSummary {
   room_layout_preference: string | null
   accessibility_needs: string | null
   equipment_requirements: string | null
+  equipment_items: EquipmentLine[]
   special_arrangements: string | null
   registration_enabled: boolean
   created_at: string
@@ -182,6 +204,8 @@ export interface EventInput {
   room_layout_preference?: string | null
   accessibility_needs?: string | null
   equipment_requirements?: string | null
+  /** Omit to leave existing lines alone; [] clears them; a list replaces. */
+  equipment_items?: EquipmentLineInput[]
   special_arrangements?: string | null
   registration_enabled?: boolean
 }

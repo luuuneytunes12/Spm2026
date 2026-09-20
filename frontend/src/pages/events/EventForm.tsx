@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { EquipmentPicker } from '../../components/EquipmentPicker'
 import { ApiError } from '../../lib/api'
 import {
   createEvent,
@@ -10,7 +11,7 @@ import {
   toDateTimeLocal,
   updateEvent,
 } from '../../lib/events'
-import type { EventInput } from '../../lib/events'
+import type { EquipmentLineInput, EventInput } from '../../lib/events'
 
 /** Every input is a string here, which is what DOM inputs give us. It is
  *  converted to the API's shape in `toPayload` on the way out. */
@@ -27,6 +28,7 @@ interface FormState {
   room_layout_preference: string
   accessibility_needs: string
   equipment_requirements: string
+  equipment_items: EquipmentLineInput[]
   special_arrangements: string
   registration_enabled: boolean
 }
@@ -44,6 +46,7 @@ const EMPTY: FormState = {
   room_layout_preference: '',
   accessibility_needs: '',
   equipment_requirements: '',
+  equipment_items: [],
   special_arrangements: '',
   registration_enabled: false,
 }
@@ -86,6 +89,14 @@ function toPayload(form: FormState): EventInput {
     room_layout_preference: orNull(form.room_layout_preference),
     accessibility_needs: orNull(form.accessibility_needs),
     equipment_requirements: orNull(form.equipment_requirements),
+    // Rows the Organiser added but never picked an item for carry
+    // equipment_id 0. They are dropped rather than sent, so an unfinished
+    // row can sit on a draft without the server rejecting the whole save.
+    equipment_items: form.equipment_items
+      .filter((line) => line.equipment_id > 0)
+      // A quantity box left empty has not been blurred yet; one of the item
+      // is the only sensible reading, and the API rejects 0 anyway.
+      .map((line) => ({ ...line, quantity_requested: Math.max(1, line.quantity_requested) })),
     special_arrangements: orNull(form.special_arrangements),
     registration_enabled: form.registration_enabled,
   }
@@ -124,6 +135,11 @@ export function EventForm() {
           room_layout_preference: e.room_layout_preference ?? '',
           accessibility_needs: e.accessibility_needs ?? '',
           equipment_requirements: e.equipment_requirements ?? '',
+          equipment_items: e.equipment_items.map((line) => ({
+            equipment_id: line.equipment_id,
+            quantity_requested: line.quantity_requested,
+            technical_requirements: line.technical_requirements,
+          })),
           special_arrangements: e.special_arrangements ?? '',
           registration_enabled: e.registration_enabled,
         })
@@ -400,19 +416,38 @@ export function EventForm() {
             )}
           </div>
 
-          <div className={fieldClass('equipment_requirements')}>
-            <label htmlFor="equipment_requirements">Equipment requirements</label>
+          <div className={fieldClass('equipment_items')}>
+            {/* A group rather than a single labelled control: there are N
+                rows, each with its own item and quantity, so the heading
+                names the group and each row labels itself. */}
+            <fieldset className="field-group">
+              <legend>Equipment requirements</legend>
+              <p className="field-hint">
+                Pick what you need from ConnectSphere's equipment and say how many. Technical
+                Support will confirm what can be provided.
+              </p>
+              <EquipmentPicker
+                lines={form.equipment_items}
+                onChange={(lines) => set('equipment_items', lines)}
+              />
+            </fieldset>
+            {flagged('equipment_items') && (
+              <p className="field-error">
+                Please check the equipment rows above and try again.
+              </p>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="equipment_requirements">Other equipment notes</label>
             <textarea
               id="equipment_requirements"
               rows={2}
-              placeholder="2 projectors, 4 radio microphones"
+              placeholder="Anything not in the list above, or a note about how it will be used"
               value={form.equipment_requirements}
               onChange={(e) => set('equipment_requirements', e.target.value)}
-              aria-invalid={flagged('equipment_requirements')}
             />
-            {flagged('equipment_requirements') && (
-              <p className="field-error">Required before submitting.</p>
-            )}
+            <p className="field-hint">Optional.</p>
           </div>
 
           <div className="field">

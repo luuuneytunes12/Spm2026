@@ -1092,3 +1092,142 @@
   margin: 0;
   max-width: 62ch;
 }
+
+/* ---------------------------------------------------------------------
+   Equipment line-items on an event request
+
+   A repeating row of inputs, which nothing else in this app does. The
+   existing `.form-row` is an auto-fit grid, so it would give the quantity
+   box the same width as the item picker; these rows need fixed proportions.
+   --------------------------------------------------------------------- */
+
+.field-group {
+  /* A fieldset, so the group has one accessible name and each row labels
+     itself. Browser defaults for fieldset/legend are unlike every other
+     field here, so they are stripped back to match. */
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.field-group legend {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-h);
+  margin-bottom: 6px;
+}
+
+.equipment-lines {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.equipment-line {
+  display: grid;
+  grid-template-columns: 1fr 110px auto;
+  gap: 8px;
+  align-items: start;
+}
+
+@media (max-width: 560px) {
+  /* The remove action wraps under the pair rather than squeezing the
+     picker down to nothing on a phone. */
+  .equipment-line {
+    grid-template-columns: 1fr 90px;
+  }
+
+  .equipment-line > button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+/* --- the combobox --- */
+
+.combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.combobox-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.combobox-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.combobox-option-active {
+  background: var(--accent-bg);
+}
+
+.combobox-name {
+  color: var(--text-h);
+  min-width: 0;
+}
+
+.combobox-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.combobox-empty {
+  padding: 8px 9px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* --- requested equipment, read-only --- */
+
+.equipment-request-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.equipment-request {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.equipment-request-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.equipment-request-name {
+  color: var(--text-h);
+}
