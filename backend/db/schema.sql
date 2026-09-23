@@ -53,6 +53,21 @@ create table users (
     created_at timestamptz not null default now()
 );
 
+-- One row per real change of a Coordinator's is_available flag -- see
+-- sql/008_coordinator_availability_history.sql. Logged even when the
+-- Coordinator has zero active events, unlike event_status_history below
+-- (which needs an event_id and only records a toggle indirectly, as a
+-- side effect of reassigning an event).
+create table coordinator_availability_history (
+    id bigint generated always as identity primary key,
+    coordinator_id bigint not null references users (id) on delete cascade,
+    is_available boolean not null,
+    created_at timestamptz not null default now()
+);
+
+create index idx_coordinator_availability_history_coordinator
+    on coordinator_availability_history (coordinator_id, created_at desc);
+
 -- ===== Event lifecycle =====
 
 create table events (

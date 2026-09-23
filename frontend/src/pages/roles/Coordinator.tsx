@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../auth/useAuth'
 import { ApiError } from '../../lib/api'
-import { setMyAvailability } from '../../lib/coordinators'
+import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
+import type { AvailabilityHistoryEntry } from '../../lib/coordinators'
 import { formatTimestamp } from '../../lib/events'
 import { listMyNotifications } from '../../lib/notifications'
 import type { Notification } from '../../lib/notifications'
@@ -61,6 +62,62 @@ function AvailabilityToggle() {
         <p className="form-error" role="alert">
           {error}
         </p>
+      )}
+    </>
+  )
+}
+
+/** History of the Coordinator's own availability toggles.
+ *
+ *  Logged server-side every time PATCH /coordinators/me/availability
+ *  actually changes the value -- unlike the per-event activity log, this
+ *  still records the change even when the Coordinator had zero active
+ *  events at the time (nothing there for an event's own log to attach
+ *  to). */
+function AvailabilityHistory() {
+  const [entries, setEntries] = useState<AvailabilityHistoryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getMyAvailabilityHistory()
+      .then((rows) => {
+        if (!cancelled) setEntries(rows)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(err instanceof ApiError ? err.message : 'Could not load availability history.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return (
+    <>
+      <h3>History</h3>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? null : entries.length === 0 ? (
+        <p className="page-subtitle">No changes yet.</p>
+      ) : (
+        <ul className="activity-list" aria-label="Availability history">
+          {entries.map((entry) => (
+            <li key={entry.id} className="activity-item">
+              <p className="activity-change">
+                {entry.is_available ? 'Marked available' : 'Marked unavailable'}
+              </p>
+              <p className="activity-meta">{formatTimestamp(entry.created_at)}</p>
+            </li>
+          ))}
+        </ul>
       )}
     </>
   )
@@ -138,6 +195,7 @@ export function Coordinator() {
       <div className="bento-grid">
         <section className="card bento-availability">
           <AvailabilityToggle />
+          <AvailabilityHistory />
         </section>
 
         <section className="card bento-notifications">

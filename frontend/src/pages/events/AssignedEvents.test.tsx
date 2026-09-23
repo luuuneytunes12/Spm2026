@@ -58,7 +58,7 @@ describe('marking unavailable for one event', () => {
     renderList()
 
     expect(
-      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+      await screen.findByRole('button', { name: 'Decline this event' }),
     ).toBeInTheDocument()
   })
 
@@ -68,7 +68,7 @@ describe('marking unavailable for one event', () => {
 
     await screen.findByText('Regional Partner Conference')
     expect(
-      screen.queryByRole('button', { name: 'Mark unavailable for this event' }),
+      screen.queryByRole('button', { name: 'Decline this event' }),
     ).not.toBeInTheDocument()
   })
 
@@ -78,7 +78,7 @@ describe('marking unavailable for one event', () => {
     renderList()
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+      await screen.findByRole('button', { name: 'Decline this event' }),
     )
 
     await waitFor(() => expect(mockRelease).toHaveBeenCalledWith(7))
@@ -93,7 +93,7 @@ describe('marking unavailable for one event', () => {
     renderList()
 
     await userEvent.click(
-      await screen.findByRole('button', { name: 'Mark unavailable for this event' }),
+      await screen.findByRole('button', { name: 'Decline this event' }),
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent(

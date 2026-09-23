@@ -152,8 +152,8 @@ function ActivityLine({ entry }: { entry: ActivityEntry }) {
  *  Read-only for the event's own fields, by design, not by omission: this
  *  story is about understanding an event well enough to plan it, and
  *  editing what the Organiser wrote is each its own future story. The one
- *  control this page does offer -- "Mark unavailable for this event" --
- *  is not an edit of the event; it hands the whole thing to someone else.
+ *  control this page does offer -- "Decline this event" -- is not an edit
+ *  of the event; it hands the whole thing to someone else.
  *  Booking a venue, requesting equipment, moving it through review are
  *  each still their own story, each free to add its own control here.
  *
@@ -272,7 +272,7 @@ export function AssignedEventView() {
               onClick={() => void release()}
               disabled={releasing}
             >
-              {releasing ? 'Releasing…' : 'Mark unavailable for this event'}
+              {releasing ? 'Declining…' : 'Decline this event'}
             </button>
             <p className="page-subtitle">
               Hands this event to another available Coordinator. Everything else

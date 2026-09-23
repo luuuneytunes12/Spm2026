@@ -123,7 +123,7 @@ export function AssignedEvents() {
                     onClick={() => void release(event.id)}
                     disabled={releasingId === event.id}
                   >
-                    {releasingId === event.id ? 'Releasing…' : 'Mark unavailable for this event'}
+                    {releasingId === event.id ? 'Declining…' : 'Decline this event'}
                   </button>
                 )}
               </div>

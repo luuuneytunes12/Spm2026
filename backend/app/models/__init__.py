@@ -1,3 +1,4 @@
+from app.models.coordinator_availability import CoordinatorAvailabilityHistory
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
@@ -6,6 +7,7 @@ from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
 
 __all__ = [
+    "CoordinatorAvailabilityHistory",
     "Equipment",
     "EquipmentRequest",
     "Event",

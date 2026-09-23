@@ -313,6 +313,7 @@ def test_reassignment_is_recorded_in_the_activity_log(client, db_session):
     reassignment_entries = [e for e in body["activity"] if "Reassigned from Sam Tan" in (e["note"] or "")]
     assert len(reassignment_entries) == 1
     assert reassignment_entries[0]["changed_by_name"] == "Sam Tan"
+    assert "marked themselves unavailable" in reassignment_entries[0]["note"]
 
 
 def test_marking_unavailable_with_no_replacement_leaves_event_unassigned(client, db_session):
@@ -484,6 +485,8 @@ def test_releasing_is_recorded_in_the_activity_log_and_notifies_both_sides(clien
     entries = [e for e in body["activity"] if "Reassigned from Sam Tan" in (e["note"] or "")]
     assert len(entries) == 1
     assert entries[0]["created_at"] is not None
+    assert "declined this event" in entries[0]["note"]
+    assert "marked themselves unavailable" not in entries[0]["note"]
 
     replacement_notifications = client.get("/notifications", headers=replacement_headers).json()
     assert any(n["event_id"] == event_id for n in replacement_notifications)
@@ -534,3 +537,61 @@ def test_cannot_release_a_finished_event(client, db_session):
 
 def test_anonymous_cannot_release_an_event(client):
     assert client.post("/events/assigned/1/release").status_code == 401
+
+
+# --------------------------------------------------------------------------
+# Availability history -- GET /coordinators/me/availability-history
+# --------------------------------------------------------------------------
+
+
+def test_toggling_availability_with_zero_active_events_is_still_logged(client, db_session):
+    """AC5: logged even when there's no event for event_status_history to
+    attach a row to."""
+    _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+
+    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
+    entries = client.get("/coordinators/me/availability-history", headers=headers).json()
+    assert len(entries) == 1
+    assert entries[0]["is_available"] is False
+    assert entries[0]["created_at"] is not None
+
+    client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
+    entries = client.get("/coordinators/me/availability-history", headers=headers).json()
+    assert len(entries) == 2
+
+
+def test_toggling_to_the_same_value_does_not_add_a_history_entry(client, db_session):
+    _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+
+    client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
+    entries = client.get("/coordinators/me/availability-history", headers=headers).json()
+    assert entries == []
+
+
+def test_availability_history_is_scoped_to_the_caller(client, db_session):
+    _, sam_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    _, priya_headers = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+
+    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=sam_headers)
+
+    assert len(client.get("/coordinators/me/availability-history", headers=sam_headers).json()) == 1
+    assert client.get("/coordinators/me/availability-history", headers=priya_headers).json() == []
+
+
+def test_availability_history_orders_newest_first(client, db_session):
+    _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+
+    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
+    client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
+
+    entries = client.get("/coordinators/me/availability-history", headers=headers).json()
+    assert [e["is_available"] for e in entries] == [True, False]
+
+
+def test_only_a_coordinator_can_view_their_availability_history(client, db_session):
+    _, organiser_headers = _organiser(client, db_session)
+    assert client.get("/coordinators/me/availability-history", headers=organiser_headers).status_code == 403
+
+
+def test_anonymous_cannot_view_availability_history(client):
+    assert client.get("/coordinators/me/availability-history").status_code == 401

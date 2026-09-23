@@ -19,7 +19,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { Coordinator } from './Coordinator'
 
-vi.mock('../../lib/coordinators', () => ({ setMyAvailability: vi.fn() }))
+vi.mock('../../lib/coordinators', () => ({
+  setMyAvailability: vi.fn(),
+  getMyAvailabilityHistory: vi.fn(),
+}))
 vi.mock('../../lib/notifications', () => ({ listMyNotifications: vi.fn() }))
 
 const mockRefreshUser = vi.fn()
@@ -29,17 +32,20 @@ vi.mock('../../auth/useAuth', () => ({
   useAuth: () => ({ user: mockUser, refreshUser: mockRefreshUser }),
 }))
 
-import { setMyAvailability } from '../../lib/coordinators'
+import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
+import type { AvailabilityHistoryEntry } from '../../lib/coordinators'
 import { listMyNotifications } from '../../lib/notifications'
 import type { Notification } from '../../lib/notifications'
 
 const mockSetAvailability = vi.mocked(setMyAvailability)
+const mockGetAvailabilityHistory = vi.mocked(getMyAvailabilityHistory)
 const mockListNotifications = vi.mocked(listMyNotifications)
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockUser = { is_available: true }
   mockListNotifications.mockResolvedValue([])
+  mockGetAvailabilityHistory.mockResolvedValue([])
 })
 
 describe('AC: available Coordinators can mark themselves unavailable', () => {
@@ -112,5 +118,34 @@ describe('AC: the assigned coordinator receives a notification', () => {
     render(<Coordinator />)
 
     expect(await screen.findByText('No notifications yet.')).toBeInTheDocument()
+  })
+})
+
+describe('AC: an availability change is recorded with a timestamp, even with no active events', () => {
+  it('shows an empty state rather than an empty box when there are none', async () => {
+    render(<Coordinator />)
+
+    expect(await screen.findByText('No changes yet.')).toBeInTheDocument()
+  })
+
+  it('renders each toggle in the history, newest first', async () => {
+    const entries: AvailabilityHistoryEntry[] = [
+      { id: 2, is_available: true, created_at: '2026-09-10T03:00:00Z' },
+      { id: 1, is_available: false, created_at: '2026-09-10T02:00:00Z' },
+    ]
+    mockGetAvailabilityHistory.mockResolvedValue(entries)
+
+    render(<Coordinator />)
+
+    expect(await screen.findByText('Marked available')).toBeInTheDocument()
+    expect(await screen.findByText('Marked unavailable')).toBeInTheDocument()
+  })
+
+  it('shows an error rather than silently failing when the history fails to load', async () => {
+    mockGetAvailabilityHistory.mockRejectedValue(new ApiError(500, 'Something went wrong'))
+
+    render(<Coordinator />)
+
+    expect(await screen.findAllByRole('alert')).not.toHaveLength(0)
   })
 })

@@ -9,6 +9,8 @@ kind of trail. See the "Mark myself unavailable" story:
     my assigned events are automatically reassigned to another coordinator.
 """
 
+from typing import Literal
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -133,14 +135,24 @@ def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
     return coordinator
 
 
-def reassign_event(db: Session, event: Event, outgoing: User) -> User | None:
+def reassign_event(
+    db: Session,
+    event: Event,
+    outgoing: User,
+    *,
+    reason: Literal["unavailable", "declined"] = "unavailable",
+) -> User | None:
     """Move `event` off `outgoing` onto another available Coordinator.
 
     `outgoing` is both whose events these are and who is recorded as having
-    made the change -- it is their own availability toggle that triggers
-    this. Returns the new Coordinator, or None if nobody else is available
-    (the event is left unassigned rather than stuck with someone who
-    cannot work on it).
+    made the change. Two call sites share this: PATCH
+    /coordinators/me/availability (bulk, `reason="unavailable"`, all of
+    `outgoing`'s active events move) and POST /events/assigned/{id}/release
+    (single event, `reason="declined"`, only `event` moves and `outgoing`'s
+    availability is untouched) -- `reason` picks the activity-log wording
+    that matches which of those actually happened. Returns the new
+    Coordinator, or None if nobody else is available (the event is left
+    unassigned rather than stuck with someone who cannot work on it).
 
     Both sides are notified: the new Coordinator that they now own it (same
     as an initial assignment), and `outgoing` that it moved on and to whom
@@ -152,12 +164,15 @@ def reassign_event(db: Session, event: Event, outgoing: User) -> User | None:
     if coordinator is None:
         return None
 
+    if reason == "declined":
+        why = f"{outgoing.name} declined this event."
+    else:
+        why = f"{outgoing.name} marked themselves unavailable."
     _record(
         db,
         event,
         outgoing.id,
-        f"Reassigned from {outgoing.name} to {coordinator.name}: "
-        f"{outgoing.name} marked themselves unavailable.",
+        f"Reassigned from {outgoing.name} to {coordinator.name}: {why}",
     )
     _notify(db, coordinator.id, event)
     db.add(

@@ -350,6 +350,14 @@
 
 .bento-availability {
   grid-column: span 2;
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  .activity-list {
+    overflow-y: auto;
+  }
 }
 
 .bento-notifications {

@@ -262,7 +262,7 @@ def release_assigned_event(
     if outgoing is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
-    reassign_event(db, event, outgoing=outgoing)
+    reassign_event(db, event, outgoing=outgoing, reason="declined")
 
     db.commit()
     db.refresh(event)

@@ -25,3 +25,16 @@ export function setMyAvailability(isAvailable: boolean): Promise<CoordinatorSelf
     body: JSON.stringify({ is_available: isAvailable }),
   }) as Promise<CoordinatorSelf>
 }
+
+export interface AvailabilityHistoryEntry {
+  id: number
+  is_available: boolean
+  created_at: string
+}
+
+/** The signed-in Coordinator's own availability-toggle history, newest
+ *  first. Logged every time the toggle actually changes the value, even
+ *  if there were no active events to reassign at the time. */
+export function getMyAvailabilityHistory(): Promise<AvailabilityHistoryEntry[]> {
+  return apiFetch('/coordinators/me/availability-history') as Promise<AvailabilityHistoryEntry[]>
+}

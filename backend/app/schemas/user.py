@@ -44,3 +44,13 @@ class AvailabilityUpdate(BaseModel):
     """Body for PATCH /coordinators/me/availability."""
 
     is_available: bool
+
+
+class AvailabilityHistoryEntry(BaseModel):
+    """One row of GET /coordinators/me/availability-history."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    is_available: bool
+    created_at: datetime
