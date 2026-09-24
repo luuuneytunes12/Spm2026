@@ -59,6 +59,11 @@ class RegistrationStatus(enum.StrEnum):
     withdrawn = "withdrawn"
 
 
+class NotificationType(enum.StrEnum):
+    event_assigned = "event_assigned"
+    event_reassigned_away = "event_reassigned_away"
+
+
 class ChangeRequestStatus(enum.StrEnum):
     pending = "pending"
     approved = "approved"

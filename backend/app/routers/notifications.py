@@ -1,4 +1,7 @@
+from collections.abc import AsyncIterable
+
 from fastapi import APIRouter, Depends
+from fastapi.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -6,6 +9,7 @@ from app.core.deps import get_current_user
 from app.models.notifications import Notification
 from app.models.user import User
 from app.schemas.notification import NotificationOut
+from app.services.notifications import broker
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -27,3 +31,19 @@ def list_my_notifications(
         .all()
     )
     return [NotificationOut.model_validate(n) for n in notifications]
+
+
+@router.get("/stream", response_class=EventSourceResponse)
+async def stream_my_notifications(
+    user: User = Depends(get_current_user),
+) -> AsyncIterable[NotificationOut]:
+    """Server-sent events: the signed-in user's new notifications, live.
+
+    Scoped the same way as the list above -- the user comes from the access
+    token, never from the URL. Only notifications created after the stream
+    opens arrive here; GET /notifications is still where history comes from.
+    Idle streams get keep-alive pings from EventSourceResponse itself.
+    """
+    async with broker.subscribe(user.id) as queue:
+        while True:
+            yield NotificationOut(**await queue.get())
