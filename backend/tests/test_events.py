@@ -239,16 +239,17 @@ def test_submitting_twice_is_rejected(client, db_session):
     assert client.get(f"/events/{event_id}", headers=headers).json()["submitted_at"] == first["submitted_at"]
 
 
-def test_submitted_request_cannot_be_edited(client, db_session):
-    """A submitted request is under review; edits go through change requests."""
+def test_submitted_request_can_be_corrected_before_decision(client, db_session):
+    """An Organiser can correct a request while it awaits a decision."""
     _, headers = _organiser(client, db_session)
     event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
     client.post(f"/events/{event_id}/submit", headers=headers)
 
     res = client.patch(f"/events/{event_id}", json={"name": "Sneaky rename"}, headers=headers)
 
-    assert res.status_code == 409
-    assert db_session.get(Event, event_id).name == COMPLETE["name"]
+    assert res.status_code == 200
+    assert res.json()["name"] == "Sneaky rename"
+    assert res.json()["status"] == "submitted"
 
 
 # --------------------------------------------------------------------------

@@ -392,9 +392,8 @@ def test_another_organiser_cannot_add_equipment_to_someone_elses_draft(client, d
     assert res.status_code == 404
 
 
-def test_equipment_cannot_be_changed_after_submitting(client, db_session):
-    """A submitted request is under review; changing what it asks for behind
-    the Coordinator's back would make the review meaningless."""
+def test_equipment_can_be_corrected_before_review_decision(client, db_session):
+    """Equipment requirements remain editable while a Coordinator reviews."""
     _, headers = _organiser(client, db_session)
     mic = _equipment(db_session, "Shure BLX24")
     event_id = _create(
@@ -407,8 +406,9 @@ def test_equipment_cannot_be_changed_after_submitting(client, db_session):
 
     res = client.patch(f"/events/{event_id}", json={"equipment_items": []}, headers=headers)
 
-    assert res.status_code == 409
-    assert db_session.query(EquipmentRequest).count() == 1
+    assert res.status_code == 200
+    assert res.json()["equipment_items"] == []
+    assert db_session.query(EquipmentRequest).count() == 0
 
 
 def test_submitting_is_not_blocked_by_having_no_equipment(client, db_session):

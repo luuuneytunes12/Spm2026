@@ -207,6 +207,27 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     expect(mockUpdate).toHaveBeenCalledWith(7, expect.any(Object))
     expect(mockCreate).not.toHaveBeenCalled()
   })
+
+  it('saves a correction to a request under review without resubmitting it', async () => {
+    const user = userEvent.setup()
+    mockGet.mockResolvedValue({ ...SAVED, status: 'under_review' })
+    renderEdit()
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
+
+    await user.clear(screen.getByLabelText('Event name'))
+    await user.type(screen.getByLabelText('Event name'), 'Corrected conference name')
+    expect(screen.queryByRole('button', { name: 'Submit request' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ name: 'Corrected conference name' }),
+      ),
+    )
+    expect(mockSubmit).not.toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalledWith('/organiser/events/7', { replace: true })
+  })
 })
 
 describe('Story 2 AC1 - submitting an incomplete request is blocked and the gaps are flagged', () => {

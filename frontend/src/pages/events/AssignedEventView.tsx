@@ -9,9 +9,11 @@ import {
   EVENT_STATUS_LABELS,
   EVENT_STATUS_PIPELINE,
   EventStatus,
+  approveEvent,
   formatRange,
   formatTimestamp,
   getAssignedEvent,
+  rejectEvent,
   releaseAssignedEvent,
 } from '../../lib/events'
 import type { ActivityEntry, AssignedEventDetail } from '../../lib/events'
@@ -115,25 +117,27 @@ function DetailValue({ value }: { value: string | null }) {
 
 /** One line of the activity log: what changed, who changed it, and when.
  *
- *  Not every entry is a status change -- an assignment or reassignment (see
- *  the "Mark myself unavailable" story) writes a row whose `from_status`
- *  and `to_status` are identical, because the event's status did not move;
- *  only its Coordinator did. Rendering "Submitted → Submitted" for that
- *  would misreport it as a transition that never happened, so a same-status
- *  entry is headed by its own note instead of a status arrow. */
+ *  Assignments and Organiser corrections can both leave `from_status` and
+ *  `to_status` identical. The note distinguishes an assignment from a
+ *  correction; neither should be rendered as a status transition. */
 function ActivityLine({ entry }: { entry: ActivityEntry }) {
   const when = formatTimestamp(entry.created_at)
-  const isAssignment = entry.from_status !== null && entry.from_status === entry.to_status
+  const isAssignment =
+    entry.from_status !== null &&
+    entry.from_status === entry.to_status &&
+    (entry.note?.startsWith('Assigned to ') || entry.note?.startsWith('Reassigned from '))
   return (
     <li className="activity-item">
       <p className="activity-change">
         {isAssignment ? (
           <strong>Assignment</strong>
-        ) : entry.from_status ? (
+        ) : entry.from_status && entry.from_status !== entry.to_status ? (
           <>
             {statusLabel(entry.from_status)} <span aria-hidden="true">→</span>{' '}
             <strong>{statusLabel(entry.to_status)}</strong>
           </>
+        ) : entry.from_status === entry.to_status ? (
+          <strong>Request update</strong>
         ) : (
           <strong>{statusLabel(entry.to_status)}</strong>
         )}
@@ -169,6 +173,9 @@ export function AssignedEventView() {
   const [loading, setLoading] = useState(true)
   const [releasing, setReleasing] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [rejectionReason, setRejectionReason] = useState('')
+  const [reviewing, setReviewing] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -207,6 +214,26 @@ export function AssignedEventView() {
     } catch (err) {
       setReleaseError(err instanceof ApiError ? err.message : 'Could not release this event.')
       setReleasing(false)
+    }
+  }
+
+  async function decide(decision: 'approve' | 'reject') {
+    if (!event) return
+    setReviewing(true)
+    setReviewError(null)
+    try {
+      const updated =
+        decision === 'approve'
+          ? await approveEvent(event.id)
+          : await rejectEvent(event.id, rejectionReason)
+      setEvent((current) => (current ? { ...current, ...updated } : current))
+      setRejectionReason('')
+      const refreshed = await getAssignedEvent(event.id).catch(() => null)
+      if (refreshed) setEvent(refreshed)
+    } catch (err) {
+      setReviewError(err instanceof ApiError ? err.message : 'Could not save the review decision.')
+    } finally {
+      setReviewing(false)
     }
   }
 
@@ -264,6 +291,45 @@ export function AssignedEventView() {
       <section className="card">
         <h2>Status</h2>
         <StatusTimeline event={event} />
+        {(event.status === EventStatus.SUBMITTED ||
+          event.status === EventStatus.UNDER_REVIEW) && (
+          <div className="status-actions">
+            <h3>Coordinator decision</h3>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void decide('approve')}
+                disabled={reviewing}
+              >
+                {reviewing ? 'Saving…' : 'Approve request'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void decide('reject')}
+                disabled={reviewing || !rejectionReason.trim()}
+              >
+                Reject request
+              </button>
+            </div>
+            <label className="field">
+              <span>Rejection reason</span>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                maxLength={2000}
+                rows={3}
+                disabled={reviewing}
+              />
+            </label>
+            {reviewError && (
+              <p className="form-error" role="alert">
+                {reviewError}
+              </p>
+            )}
+          </div>
+        )}
         {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
           <div className="status-actions">
             <button

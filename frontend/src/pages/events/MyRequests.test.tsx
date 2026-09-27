@@ -104,7 +104,7 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
     )
   })
 
-  it('offers editing for a draft and read-only viewing once submitted', async () => {
+  it('offers draft editing and submitted request corrections before a decision', async () => {
     const user = userEvent.setup()
     mockList.mockResolvedValue([DRAFT, SUBMITTED])
     renderAt()
@@ -121,7 +121,10 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
       'href',
       '/organiser/events/2',
     )
-    expect(within(submittedRow).queryByRole('link', { name: /continue editing/i })).toBeNull()
+    expect(within(submittedRow).getByRole('link', { name: /correct request/i })).toHaveAttribute(
+      'href',
+      '/organiser/events/2/edit',
+    )
   })
 })
 

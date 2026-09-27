@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
-from app.core.deps import get_current_user, require_permission
-from app.core.roles import Permission
+from app.core.deps import get_current_user, require_permission, require_role
+from app.core.roles import Permission, Role
 from app.models.enums import EventStatus
 from app.models.events import Event, EventStatusHistory
+from app.models.notifications import Notification
 from app.models.user import User
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
@@ -22,6 +24,8 @@ from app.schemas.event import (
 from app.services.assignment import ACTIVE_ASSIGNMENT_STATUSES, assign_coordinator, reassign_event
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+REVIEWABLE_STATUSES = (EventStatus.submitted, EventStatus.under_review)
 
 
 def _get_own_event(event_id: int, user: User, db: Session) -> Event:
@@ -60,6 +64,27 @@ def _get_assigned_event(event_id: int, user: User, db: Session) -> Event:
     return event
 
 
+def _get_reviewable_event(event_id: int, user: User, db: Session) -> Event:
+    event = _get_assigned_event(event_id, user, db)
+    if event.status not in REVIEWABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This request is already '{event.status}' and cannot be reviewed.",
+        )
+    return event
+
+
+class RejectionRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Rejection reason cannot be blank")
+        return value.strip()
+
+
 def _missing_mandatory(event: Event) -> list[tuple[str, str]]:
     """Return the (field, label) pairs still empty on `event`.
 
@@ -73,6 +98,26 @@ def _missing_mandatory(event: Event) -> list[tuple[str, str]]:
         if value is None or (isinstance(value, str) and not value.strip()):
             missing.append((field, label))
     return missing
+
+
+def _event_activity(db: Session, event_id: int) -> list[ActivityEntry]:
+    history = (
+        db.query(EventStatusHistory)
+        .options(joinedload(EventStatusHistory.changed_by_user))
+        .filter(EventStatusHistory.event_id == event_id)
+        .order_by(EventStatusHistory.created_at.desc(), EventStatusHistory.id.desc())
+        .all()
+    )
+    return [
+        ActivityEntry(
+            from_status=entry.from_status,
+            to_status=entry.to_status,
+            note=entry.note,
+            changed_by_name=entry.changed_by_user.name if entry.changed_by_user else None,
+            created_at=entry.created_at,
+        )
+        for entry in history
+    ]
 
 
 @router.post("", response_model=EventOut, status_code=status.HTTP_201_CREATED)
@@ -200,33 +245,10 @@ def get_assigned_event(
     """
     event = _get_assigned_event(event_id, user, db)
 
-    # Newest first -- an activity log is read as "what happened most
-    # recently". `id` breaks ties, because `created_at` defaults to now()
-    # and two changes in the same transaction share a timestamp.
-    history = (
-        db.query(EventStatusHistory)
-        .options(joinedload(EventStatusHistory.changed_by_user))
-        .filter(EventStatusHistory.event_id == event.id)
-        .order_by(EventStatusHistory.created_at.desc(), EventStatusHistory.id.desc())
-        .all()
-    )
-
     return AssignedEventDetail(
         **EventOut.model_validate(event).model_dump(),
         organiser=OrganiserContact.model_validate(event.organiser),
-        activity=[
-            ActivityEntry(
-                from_status=entry.from_status,
-                to_status=entry.to_status,
-                note=entry.note,
-                # ON DELETE RESTRICT means the actor's row cannot disappear,
-                # but a missing name costs one anonymous log line rather than
-                # a 500 on the whole page.
-                changed_by_name=entry.changed_by_user.name if entry.changed_by_user else None,
-                created_at=entry.created_at,
-            )
-            for entry in history
-        ],
+        activity=_event_activity(db, event.id),
     )
 
 
@@ -269,6 +291,71 @@ def release_assigned_event(
     return EventOut.model_validate(event)
 
 
+@router.post("/{event_id}/approve", response_model=EventOut)
+def approve_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> EventOut:
+    """Approve a request assigned to the current Coordinator."""
+    event = _get_reviewable_event(event_id, user, db)
+    previous_status = event.status
+    event.status = EventStatus.approved
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=previous_status,
+            to_status=event.status,
+            note="Approved by the Event Coordinator.",
+        )
+    )
+    db.add(
+        Notification(
+            user_id=event.organiser_id,
+            event_id=event.id,
+            type="event_approved",
+            message=f"Your event '{event.name or 'request'}' has been approved.",
+        )
+    )
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
+@router.post("/{event_id}/reject", response_model=EventOut)
+def reject_event(
+    event_id: int,
+    body: RejectionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> EventOut:
+    """Reject an assigned request and retain the Coordinator's reason."""
+    event = _get_reviewable_event(event_id, user, db)
+    previous_status = event.status
+    event.status = EventStatus.rejected
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=previous_status,
+            to_status=event.status,
+            note=body.reason,
+        )
+    )
+    db.add(
+        Notification(
+            user_id=event.organiser_id,
+            event_id=event.id,
+            type="event_rejected",
+            message=f"Your event '{event.name or 'request'}' was rejected: {body.reason}",
+        )
+    )
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
 @router.get("/{event_id}", response_model=EventOut)
 def get_event(
     event_id: int,
@@ -279,6 +366,17 @@ def get_event(
     return EventOut.model_validate(_get_own_event(event_id, user, db))
 
 
+@router.get("/{event_id}/activity", response_model=list[ActivityEntry])
+def get_own_event_activity(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_READ)),
+) -> list[ActivityEntry]:
+    """The signed-in Organiser's own event history, newest first."""
+    event = _get_own_event(event_id, user, db)
+    return _event_activity(db, event.id)
+
+
 @router.patch("/{event_id}", response_model=EventOut)
 def update_event(
     event_id: int,
@@ -286,19 +384,17 @@ def update_event(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(Permission.EVENT_WRITE)),
 ) -> EventOut:
-    """Continue editing a draft.
+    """Edit a draft or correct a request before the Coordinator decides.
 
-    Only drafts are editable through this route. Once submitted, an event
-    is under ConnectSphere's control and further changes go through the
-    change-request process (a separate story) -- otherwise an Organiser
-    could silently move the date out from under a Coordinator who is
-    already reviewing it.
+    Submitted and under-review requests remain editable until approval or
+    rejection. A same-status history entry makes each correction visible
+    to the assigned Coordinator.
     """
     event = _get_own_event(event_id, user, db)
-    if event.status != EventStatus.draft:
+    if event.status not in (EventStatus.draft, *REVIEWABLE_STATUSES):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Only a draft can be edited; this request is '{event.status}'.",
+            detail=f"This request can no longer be edited; it is '{event.status}'.",
         )
 
     # exclude_unset so a PATCH that omits a field leaves it alone, rather
@@ -317,6 +413,17 @@ def update_event(
         if field == "registration_enabled" and value is None:
             continue  # non-null column; ignore an explicit null
         setattr(event, field, value)
+
+    if event.status in REVIEWABLE_STATUSES:
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=event.status,
+                to_status=event.status,
+                note="Updated by the Organiser before review was decided.",
+            )
+        )
 
     db.commit()
     db.refresh(event)
