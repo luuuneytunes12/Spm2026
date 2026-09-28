@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../../lib/api'
-import { EVENT_STATUS_LABELS, formatRange, listAssignedEvents } from '../../lib/events'
-import type { EventSummary } from '../../lib/events'
-
-/** The Coordinator's landing list: every event auto-assigned to them,
- *  newest first. There is no draft/submitted split here -- unlike the
- *  Organiser's requests, everything on this list is already submitted
- *  (a draft has no Coordinator to show it to). */
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
   EVENT_STATUS_LABELS,
@@ -39,13 +32,6 @@ export function AssignedEvents() {
         if (!cancelled) setEvents(rows)
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(
-            err instanceof ApiError
-              ? err.message
-              : 'Could not reach the server. Is the backend running?',
-          )
-        }
         if (cancelled) return
         setEvents([])
         setError(
@@ -62,11 +48,6 @@ export function AssignedEvents() {
     }
   }, [])
 
-  return (
-    <div className="stack">
-      <header className="page-header">
-        <h1>My assigned events</h1>
-        <p className="page-subtitle">Events ConnectSphere has assigned you to coordinate.</p>
   async function release(id: number) {
     setReleasingId(id)
     setReleaseError(null)
@@ -108,8 +89,6 @@ export function AssignedEvents() {
         <div className="card notice-empty">
           <p>Nothing assigned to you yet.</p>
           <p className="page-subtitle">
-            When an Organiser submits a request, ConnectSphere assigns it to an available
-            Coordinator automatically -- it will show up here.
             Submitted event requests appear here once ConnectSphere assigns you as their
             Coordinator.
           </p>
@@ -129,10 +108,6 @@ export function AssignedEvents() {
                 </span>
               </div>
               <div className="request-side">
-                <span className="badge badge-accent">
-                  {EVENT_STATUS_LABELS[event.status] ?? event.status}
-                </span>
-                <Link to={`/coordinator/events/${event.id}`}>View →</Link>
                 <span
                   className={
                     event.status === EventStatus.DRAFT ? 'badge badge-muted' : 'badge badge-accent'

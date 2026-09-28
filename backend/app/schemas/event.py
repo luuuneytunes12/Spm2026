@@ -118,9 +118,6 @@ class EventIn(BaseModel):
         return self
 
 
-class PersonOut(BaseModel):
-    """The minimal shape of an Organiser or Coordinator worth showing on
-    the other side's event page -- who they're dealing with, nothing more."""
 class OrganiserContact(BaseModel):
     """A projection of `users` down to what one party needs to know about
     another: who they are, and how to reach them.
@@ -148,12 +145,6 @@ class EventOut(BaseModel):
     id: int
     organiser_id: int
     coordinator_id: int | None
-    # Populated from the `organiser`/`coordinator` relationships (same
-    # attribute names), so either side's event page can show a name
-    # without a second lookup. `coordinator` is None until one is
-    # assigned; `organiser` is never None -- every event has one.
-    organiser: PersonOut
-    coordinator: PersonOut | None
     # None until the system (or a reassignment) has picked someone -- see
     # app/services/assignment.py. This is what lets an Organiser see who is
     # coordinating their event, straight off GET /events/{id}.
@@ -228,23 +219,3 @@ class EventSummary(BaseModel):
     status: EventStatus
     submitted_at: datetime | None
     updated_at: datetime
-
-
-class EventHistoryEntry(BaseModel):
-    """One row of an event's activity log.
-
-    `from_status` equal to `to_status` is not a contradiction -- it marks
-    an entry that happened *while* the event was in that status (e.g. a
-    Coordinator auto-assignment) rather than a status transition. The
-    `note` carries what actually happened; the two status fields carry
-    when in the lifecycle it happened.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    from_status: str | None
-    to_status: str
-    note: str | None
-    changed_by: int
-    created_at: datetime

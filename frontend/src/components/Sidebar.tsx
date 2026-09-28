@@ -42,10 +42,6 @@ export function Sidebar({ id, open }: SidebarProps) {
           <li>
             <NavLink to={ROLE_HOME_PATH[user.role]}>{roleLabel}</NavLink>
           </li>
-          {/* Each of these sits behind RequireRole for its own role, so
-              linking it for anyone else would just send them to
-              /forbidden -- only render the one the current role can
-              actually reach. */}
           {/* Each of these sits behind RequireRole for exactly one role, so
               linking it for anyone else would just send them to /forbidden. */}
           {user.role === Role.ORGANISER && (
@@ -68,9 +64,6 @@ export function Sidebar({ id, open }: SidebarProps) {
               <NavLink to="/coordinator/events">My assigned events</NavLink>
             </li>
           )}
-          <li>
-            <NavLink to="/notifications">Notifications</NavLink>
-          </li>
           <li>
             <NavLink to="/profile">My profile</NavLink>
           </li>

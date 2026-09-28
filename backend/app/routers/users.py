@@ -30,6 +30,14 @@ def update_my_profile(
     """
     data = body.model_dump(exclude_unset=True)
 
+    # get_current_user returns a transient object built from the JWT claims,
+    # not a row in this session -- load the real one before writing to it.
+    row = db.get(User, user.id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials"
+        )
+
     email = data.get("email")
     if email is not None:
         email = email.lower()
@@ -41,8 +49,8 @@ def update_my_profile(
         data["email"] = email
 
     for field, value in data.items():
-        setattr(user, field, value)
+        setattr(row, field, value)
 
     db.commit()
-    db.refresh(user)
-    return UserOut.model_validate(user)
+    db.refresh(row)
+    return UserOut.model_validate(row)

@@ -32,6 +32,7 @@ const USER: AuthUser = {
   name: 'Jane Organiser',
   email: 'jane@example.com',
   role: 'organiser',
+  is_available: true,
   organisation: 'Acme Events',
   phone_country_code: '+65',
   phone_number: '91234567',

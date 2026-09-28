@@ -15,14 +15,15 @@ from app.core.roles import DEFAULT_ROLE, Role
 # column. Any query touching either non-existent column will fail
 # against the real database.
 #
-# `organisation`, `phone_country_code`, `phone_number` and
-# `communication_preference` were added for the "Edit User Profile" story
-# -- see sql/004_user_profile_fields.sql for the live-database migration.
-# All four are nullable: every existing user row predates them.
-# `is_available` is the one deliberate addition beyond that mirror -- see
+# `is_available` is a deliberate addition beyond that mirror -- see
 # sql/004_coordinator_availability.sql. It backs the Coordinator's "mark
 # myself unavailable" toggle; every other role's row carries it too (one
 # shared table) but never reads or writes it.
+#
+# `organisation`, `phone_country_code`, `phone_number` and
+# `communication_preference` were added for the "Edit User Profile" story
+# -- see sql/009_user_profile_fields.sql for the live-database migration.
+# All four are nullable: every existing user row predates them.
 
 
 class User(Base):

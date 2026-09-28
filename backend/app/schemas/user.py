@@ -23,13 +23,13 @@ class UserOut(BaseModel):
     # as the enum turns a renamed/removed label into a 500 on /auth/me.
     # Permission resolution already fails closed -- see permissions_for().
     role: str
+    # Meaningful for a Coordinator; every other role carries it too (one
+    # shared table) but never acts on it. See PATCH /coordinators/me/availability.
+    is_available: bool
     organisation: str | None
     phone_country_code: str | None
     phone_number: str | None
     communication_preference: str | None
-    # Meaningful for a Coordinator; every other role carries it too (one
-    # shared table) but never acts on it. See PATCH /coordinators/me/availability.
-    is_available: bool
     created_at: datetime
 
 
