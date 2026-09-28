@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -25,6 +26,11 @@ def list_my_notifications(
     # transaction can land on the identical `created_at` (SQLite's
     # CURRENT_TIMESTAMP has only 1-second resolution), and insertion order
     # is the only thing that still distinguishes "newest" between them.
+    """The signed-in user's own notifications, newest first.
+
+    Scoped by row (`user_id == caller`), same principle as the assigned-events
+    routes: everyone can hold this endpoint, but only your own rows come back.
+    """
     notifications = (
         db.query(Notification)
         .filter(Notification.user_id == user.id)

@@ -13,7 +13,8 @@ export interface PlannedWorkflow {
  * Everything still listed here is PLANNED — remove an entry once its
  * screens ship, or the sidebar keeps rendering it as disabled text.
  * ("Create events" was the first to go: the Organiser draft/submit flow
- * now lives at /organiser/events.)
+ * now lives at /organiser/events. "My events" followed it: the Coordinator
+ * now reads their assigned events at /coordinator/events.)
  *
  * The backend currently serves auth (`/auth/*`), `/health` and `/events`;
  * the venues, equipment and registration tables exist in the database but
@@ -57,7 +58,14 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     },
   ],
   [Role.TECH_SUPPORT]: [
-    { title: 'Equipment', description: 'maintain the equipment inventory (equipment).' },
+    {
+      // Renamed, NOT removed, when the catalogue shipped. "View Equipment
+      // Catalogue" is read-only; adding, editing and retiring items is
+      // EQUIPMENT_MANAGE and still has no screen, so this entry has to
+      // keep saying so rather than disappear as if it were done.
+      title: 'Manage equipment',
+      description: 'add, update and retire inventory items (equipment).',
+    },
     {
       title: 'Equipment requests',
       description: 'review, reserve or reject requests (equipment_requests).',

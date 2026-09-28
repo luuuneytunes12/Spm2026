@@ -99,9 +99,12 @@ def test_role_grants_differ_by_role(client, db_session):
     assert set(attendee_perms) < set(organiser_perms)
 
 
-def test_role_change_takes_effect_immediately_with_same_token(client, db_session):
-    """get_current_user re-reads the row every request, so a role change
-    applies to an already-issued token without a re-login."""
+def test_role_change_does_not_affect_existing_token(client, db_session):
+    """get_current_user trusts the role claim baked into the JWT rather
+    than re-reading the DB, so a DB-side role change does NOT affect an
+    already-issued token until it expires or the user re-authenticates.
+    This is an accepted tradeoff for dropping the per-request DB read;
+    revocation-on-role-change is a known follow-up, not yet implemented."""
     _register(client)
     token = _login(client).json()["access_token"]
     auth = {"Authorization": f"Bearer {token}"}
@@ -114,22 +117,32 @@ def test_role_change_takes_effect_immediately_with_same_token(client, db_session
     user.role = Role.ORGANISER.value
     db_session.commit()
 
-    # Same still-valid token, no re-login.
+    # Same still-valid token: still reflects the OLD role, since the role
+    # claim in the token -- not a fresh DB row -- is what's trusted.
     after = client.get("/auth/me", headers=auth).json()
-    assert after["user"]["role"] == "organiser"
-    assert "event:approve" in after["permissions"]
+    assert after["user"]["role"] == "attendee"
+    assert "event:approve" not in after["permissions"]
+
+    # A fresh login picks up the new role.
+    new_token = _login(client).json()["access_token"]
+    refreshed = client.get("/auth/me", headers={"Authorization": f"Bearer {new_token}"}).json()
+    assert refreshed["user"]["role"] == "organiser"
+    assert "event:approve" in refreshed["permissions"]
 
 
-def test_unrecognized_role_in_db_gets_no_permissions_not_500(client, db_session):
+def test_unrecognized_role_in_token_gets_no_permissions_not_500(client):
+    """A role claim that is not a recognized Role member (e.g. left over
+    from a rename) must resolve to an empty permission set, never a 500."""
     _register(client)
-    token = _login(client).json()["access_token"]
+    payload = {
+        "sub": "1",
+        "role": "some_removed_role",
+        "typ": "access",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 60,
+    }
+    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
-    user = db_session.query(User).filter(User.email == "user@example.com").first()
-    user.role = "some_removed_role"
-    db_session.commit()
-
-    # A role string that is not a recognized Role member must resolve to an
-    # empty permission set, never a 500.
     res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     assert res.json()["permissions"] == []

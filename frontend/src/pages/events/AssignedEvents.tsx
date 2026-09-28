@@ -8,10 +8,29 @@ import type { EventSummary } from '../../lib/events'
  *  newest first. There is no draft/submitted split here -- unlike the
  *  Organiser's requests, everything on this list is already submitted
  *  (a draft has no Coordinator to show it to). */
+import {
+  ACTIVE_ASSIGNMENT_STATUSES,
+  EVENT_STATUS_LABELS,
+  EventStatus,
+  formatRange,
+  listAssignedEvents,
+  releaseAssignedEvent,
+} from '../../lib/events'
+import type { EventSummary } from '../../lib/events'
+
+/** The Event Coordinator's list of events assigned to them, and the way in
+ *  to each one's full detail.
+ *
+ *  There are no tabs here, unlike the Organiser's own requests: a Coordinator
+ *  cares about everything on their plate at once, and an assigned event moves
+ *  through several statuses rather than living in two buckets. The status of
+ *  each row is shown as a badge instead. */
 export function AssignedEvents() {
   const [events, setEvents] = useState<EventSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [releasingId, setReleasingId] = useState<number | null>(null)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -27,6 +46,13 @@ export function AssignedEvents() {
               : 'Could not reach the server. Is the backend running?',
           )
         }
+        if (cancelled) return
+        setEvents([])
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : 'Could not reach the server. Is the backend running?',
+        )
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -41,11 +67,40 @@ export function AssignedEvents() {
       <header className="page-header">
         <h1>My assigned events</h1>
         <p className="page-subtitle">Events ConnectSphere has assigned you to coordinate.</p>
+  async function release(id: number) {
+    setReleasingId(id)
+    setReleaseError(null)
+    try {
+      await releaseAssignedEvent(id)
+      // It is no longer assigned to me -- drop it from my own list rather
+      // than re-fetching the whole thing for one row.
+      setEvents((rows) => rows.filter((e) => e.id !== id))
+    } catch (err) {
+      setReleaseError(
+        err instanceof ApiError ? err.message : 'Could not release this event.',
+      )
+    } finally {
+      setReleasingId(null)
+    }
+  }
+
+  return (
+    <div className="stack">
+      <header className="page-header">
+        <h1>My Assigned Events</h1>
+        <p className="page-subtitle">
+          Events you have been assigned to coordinate. Open one to see its full requirements.
+        </p>
       </header>
 
       {error && (
         <p className="form-error" role="alert">
           {error}
+        </p>
+      )}
+      {releaseError && (
+        <p className="form-error" role="alert">
+          {releaseError}
         </p>
       )}
 
@@ -55,6 +110,8 @@ export function AssignedEvents() {
           <p className="page-subtitle">
             When an Organiser submits a request, ConnectSphere assigns it to an available
             Coordinator automatically -- it will show up here.
+            Submitted event requests appear here once ConnectSphere assigns you as their
+            Coordinator.
           </p>
         </div>
       ) : (
@@ -76,6 +133,24 @@ export function AssignedEvents() {
                   {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
                 <Link to={`/coordinator/events/${event.id}`}>View →</Link>
+                <span
+                  className={
+                    event.status === EventStatus.DRAFT ? 'badge badge-muted' : 'badge badge-accent'
+                  }
+                >
+                  {EVENT_STATUS_LABELS[event.status] ?? event.status}
+                </span>
+                <Link to={`/coordinator/events/${event.id}`}>View details →</Link>
+                {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
+                  <button
+                    type="button"
+                    className="btn-link-muted"
+                    onClick={() => void release(event.id)}
+                    disabled={releasingId === event.id}
+                  >
+                    {releasingId === event.id ? 'Declining…' : 'Decline this event'}
+                  </button>
+                )}
               </div>
             </li>
           ))}

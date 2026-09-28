@@ -28,8 +28,8 @@ def _organiser(client, db_session, email="org@example.com"):
     """Register a user and promote them to Organiser.
 
     Registration always assigns `attendee` (by design -- a client can never
-    pick its own role), so the role is set directly here, the same way
-    scripts/create_admin.py bootstraps the first Organiser.
+    pick its own role), so the role is set directly here -- the same way
+    an Organiser is bootstrapped against a real database, with an UPDATE.
     """
     res = client.post(
         "/auth/register", json={"name": "Org User", "email": email, "password": "password123"}
@@ -181,8 +181,11 @@ def test_submit_blocked_when_mandatory_fields_missing(client, db_session):
         "expected_attendance",
         "venue_requirements",
         "accessibility_needs",
-        "equipment_requirements",
     }
+    # `equipment_requirements` is NOT flagged: equipment is now picked from
+    # the catalogue as structured lines, and plenty of events need none at
+    # all, so it is no longer a mandatory field. See
+    # tests/test_event_equipment.py.
     # Blocked means blocked: still a draft.
     assert db_session.get(Event, event_id).status == "draft"
 
@@ -252,16 +255,17 @@ def test_submitting_twice_is_rejected(client, db_session):
     assert client.get(f"/events/{event_id}", headers=headers).json()["submitted_at"] == first["submitted_at"]
 
 
-def test_submitted_request_cannot_be_edited(client, db_session):
-    """A submitted request is under review; edits go through change requests."""
+def test_submitted_request_can_be_corrected_before_decision(client, db_session):
+    """An Organiser can correct a request while it awaits a decision."""
     _, headers = _organiser(client, db_session)
     event_id = client.post("/events", json=COMPLETE, headers=headers).json()["id"]
     client.post(f"/events/{event_id}/submit", headers=headers)
 
     res = client.patch(f"/events/{event_id}", json={"name": "Sneaky rename"}, headers=headers)
 
-    assert res.status_code == 409
-    assert db_session.get(Event, event_id).name == COMPLETE["name"]
+    assert res.status_code == 200
+    assert res.json()["name"] == "Sneaky rename"
+    assert res.json()["status"] == "submitted"
 
 
 # --------------------------------------------------------------------------

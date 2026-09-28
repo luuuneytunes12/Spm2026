@@ -17,8 +17,16 @@ create type booking_status as enum (
     'pending', 'approved', 'rejected', 'cancelled'
 );
 
+-- Lifecycle of an equipment REQUEST (on equipment_requests).
 create type equipment_status as enum (
     'requested', 'reviewing', 'reserved', 'rejected', 'cancelled'
+);
+
+-- Condition of a physical equipment ITEM (on equipment). Deliberately
+-- separate from equipment_status above: "this request is reserved" and
+-- "this projector works" are different facts about different things.
+create type equipment_operational_status as enum (
+    'available', 'maintenance', 'damaged', 'retired'
 );
 
 create type registration_status as enum (
@@ -49,7 +57,28 @@ create table users (
     phone_country_code text,
     phone_number text,
     communication_preference communication_preference
+    -- Toggled by an Event Coordinator to say "don't route events to me
+    -- right now" -- see sql/004_coordinator_availability.sql. Every role
+    -- gets the column since users is one shared table; only Coordinators
+    -- ever read or write it.
+    is_available boolean not null default true,
+    created_at timestamptz not null default now()
 );
+
+-- One row per real change of a Coordinator's is_available flag -- see
+-- sql/008_coordinator_availability_history.sql. Logged even when the
+-- Coordinator has zero active events, unlike event_status_history below
+-- (which needs an event_id and only records a toggle indirectly, as a
+-- side effect of reassigning an event).
+create table coordinator_availability_history (
+    id bigint generated always as identity primary key,
+    coordinator_id bigint not null references users (id) on delete cascade,
+    is_available boolean not null,
+    created_at timestamptz not null default now()
+);
+
+create index idx_coordinator_availability_history_coordinator
+    on coordinator_availability_history (coordinator_id, created_at desc);
 
 -- ===== Event lifecycle =====
 
@@ -165,10 +194,20 @@ create index idx_venue_unavailability_venue_time on venue_unavailability (venue_
 create table equipment (
     id bigint generated always as identity primary key,
     name text not null,
+    -- The equipment "type" the catalogue is filtered by.
     category text,
+    -- Plain-language description of what the item is. Distinct from
+    -- technical_specs, which holds model numbers, wattage and connectors.
+    description text,
     total_quantity integer not null check (total_quantity >= 0),
+    -- Where the item is physically stored; equipment held at another
+    -- venue may not be usable for a given event.
+    location text,
+    operational_status equipment_operational_status not null default 'available',
     technical_specs text
 );
+
+create index idx_equipment_category on equipment (category);
 
 create table equipment_requests (
     id bigint generated always as identity primary key,
@@ -180,7 +219,13 @@ create table equipment_requests (
     status equipment_status not null default 'requested',
     notes text,
     created_at timestamptz not null default now(),
-    reviewed_at timestamptz
+    reviewed_at timestamptz,
+    -- One line per equipment item, per event. Quantity is how you ask for
+    -- more of something, so two lines naming the same item is always a
+    -- mistake -- and would have to be summed everywhere availability is
+    -- calculated. The API rejects duplicates with a 422; this is the
+    -- backstop for anything that writes without going through it.
+    constraint equipment_requests_event_equipment_key unique (event_id, equipment_id)
 );
 
 create index idx_equipment_requests_event on equipment_requests (event_id);

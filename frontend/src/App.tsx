@@ -11,6 +11,9 @@ import { Notifications } from './pages/Notifications'
 import { Profile } from './pages/Profile'
 import { Register } from './pages/Register'
 import { AssignedEvents } from './pages/events/AssignedEvents'
+import { EquipmentCatalogue } from './pages/equipment/EquipmentCatalogue'
+import { AssignedEvents } from './pages/events/AssignedEvents'
+import { AssignedEventView } from './pages/events/AssignedEventView'
 import { EventForm } from './pages/events/EventForm'
 import { EventView } from './pages/events/EventView'
 import { MyRequests } from './pages/events/MyRequests'
@@ -50,12 +53,19 @@ function App() {
             <Route path="/coordinator" element={<Coordinator />} />
             <Route path="/coordinator/events" element={<AssignedEvents />} />
             <Route path="/coordinator/events/:id" element={<EventView />} />
+            <Route path="/coordinator/events/:id" element={<AssignedEventView />} />
           </Route>
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />
           </Route>
           <Route element={<RequireRole roles={[Role.TECH_SUPPORT]} />}>
             <Route path="/tech-support" element={<TechSupport />} />
+            {/* Not nested under /tech-support/ on purpose: the catalogue is
+                one shared reference list, not a per-user view, and the
+                Coordinator's equipment-request story will read the same
+                page. When it does, this guard takes a second role and the
+                URL stays correct. */}
+            <Route path="/equipment" element={<EquipmentCatalogue />} />
           </Route>
           <Route element={<RequireRole roles={[Role.ATTENDEE]} />}>
             <Route path="/attendee" element={<Attendee />} />

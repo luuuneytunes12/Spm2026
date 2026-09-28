@@ -30,11 +30,28 @@ class BookingStatus(enum.StrEnum):
 
 
 class EquipmentStatus(enum.StrEnum):
+    """Lifecycle of an equipment REQUEST (on equipment_requests)."""
+
     requested = "requested"
     reviewing = "reviewing"
     reserved = "reserved"
     rejected = "rejected"
     cancelled = "cancelled"
+
+
+class EquipmentOperationalStatus(enum.StrEnum):
+    """Condition of a physical equipment ITEM (on equipment).
+
+    Separate from EquipmentStatus above, which describes a request. An item
+    that is not `available` must not be treated as freely usable for an
+    event -- `retired` items stay in the catalogue so historical
+    reservations still resolve, but are never offered again.
+    """
+
+    available = "available"
+    maintenance = "maintenance"
+    damaged = "damaged"
+    retired = "retired"
 
 
 class RegistrationStatus(enum.StrEnum):

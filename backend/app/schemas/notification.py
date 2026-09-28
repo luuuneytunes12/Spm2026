@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class NotificationOut(BaseModel):
-    """One notification belonging to the caller."""
+    """One notification for the signed-in user, newest first."""
 
     model_config = ConfigDict(from_attributes=True)
 

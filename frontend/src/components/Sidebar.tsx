@@ -46,9 +46,21 @@ export function Sidebar({ id, open }: SidebarProps) {
               linking it for anyone else would just send them to
               /forbidden -- only render the one the current role can
               actually reach. */}
+          {/* Each of these sits behind RequireRole for exactly one role, so
+              linking it for anyone else would just send them to /forbidden. */}
           {user.role === Role.ORGANISER && (
             <li>
-              <NavLink to="/organiser/events">My event requests</NavLink>
+              <NavLink to="/organiser/events">My Event Requests</NavLink>
+            </li>
+          )}
+          {user.role === Role.COORDINATOR && (
+            <li>
+              <NavLink to="/coordinator/events">My Assigned Events</NavLink>
+            </li>
+          )}
+          {user.role === Role.TECH_SUPPORT && (
+            <li>
+              <NavLink to="/equipment">Equipment Catalogue</NavLink>
             </li>
           )}
           {user.role === Role.COORDINATOR && (

@@ -10,6 +10,9 @@ export interface AuthUser {
   phone_country_code: string | null
   phone_number: string | null
   communication_preference: string | null
+  /** Meaningful for a Coordinator; every other role carries it too but
+   *  never acts on it. See the "Mark myself unavailable" story. */
+  is_available: boolean
   created_at: string
 }
 
@@ -22,6 +25,9 @@ export interface AuthContextValue {
   logout: () => Promise<void>
   /** Re-fetch /auth/me, e.g. after the Profile page saves a change, so
    *  every consumer of `user` (navbar, sidebar, dashboard) picks it up. */
+  /** Re-fetch /auth/me. Used after an action that changes something on the
+   *  user's own row outside the login flow -- e.g. toggling availability --
+   *  so the rest of the app sees the update without a full page reload. */
   refreshUser: () => Promise<void>
 }
 

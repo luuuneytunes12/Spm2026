@@ -14,40 +14,55 @@ import type { EventSummary } from '../../lib/events'
  *  moves a row from the left tab to the right one, which makes the
  *  "no longer appears under drafts" behaviour visible in a single click. */
 const TABS = [
-  { key: 'drafts', label: 'Drafts', status: EventStatus.DRAFT },
-  { key: 'submitted', label: 'Submitted Requests', status: EventStatus.SUBMITTED },
+  { key: 'drafts', label: 'Drafts' },
+  { key: 'submitted', label: 'Submitted Requests' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
+
+/** Which tab a request belongs on.
+ *
+ *  Deliberately "draft or not" rather than a list of statuses. Submitting
+ *  assigns a Coordinator, and that immediately moves the request on to
+ *  `under_review` -- so a tab filtered on `submitted` exactly would lose a
+ *  request the moment it was submitted, which is precisely when the
+ *  Organiser goes looking for it. Approved, rejected and every later stage
+ *  would fall out of it too.
+ *
+ *  A draft is mine and unsent; everything else is with ConnectSphere and
+ *  somewhere in its process. The badge on each row says where. */
+function isDraft(event: EventSummary): boolean {
+  return event.status === EventStatus.DRAFT
+}
 
 export function MyRequests() {
   // The tab lives in the URL so it survives a reload and can be linked to
   // directly -- the form redirects to ?tab=submitted after submitting.
   const [params, setParams] = useSearchParams()
   const active: TabKey = params.get('tab') === 'submitted' ? 'submitted' : 'drafts'
-  const status = TABS.find((t) => t.key === active)!.status
 
-  const [events, setEvents] = useState<EventSummary[]>([])
+  const [all, setAll] = useState<EventSummary[]>([])
   const [error, setError] = useState<string | null>(null)
-  // Which tab the current `events`/`error` belong to. Deriving loading from
-  // this rather than setting a flag at the top of the effect keeps the
-  // effect free of synchronous setState, and means a tab switch cannot show
-  // the previous tab's rows or its error while the new one loads.
-  const [loadedStatus, setLoadedStatus] = useState<EventStatus | null>(null)
-  const loading = loadedStatus !== status
+  // One fetch for both tabs rather than one per tab. The two buckets are a
+  // partition of the same list, so switching is instant and a request can
+  // never be missing from both because its status moved between fetches.
+  const [loaded, setLoaded] = useState(false)
+  const loading = !loaded
   const shownError = loading ? null : error
+
+  const events = all.filter((event) => (active === 'drafts' ? isDraft(event) : !isDraft(event)))
 
   useEffect(() => {
     let cancelled = false
-    listMyEvents(status)
+    listMyEvents()
       .then((rows) => {
         if (cancelled) return
-        setEvents(rows)
+        setAll(rows)
         setError(null)
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setEvents([])
+        setAll([])
         setError(
           err instanceof ApiError
             ? err.message
@@ -55,18 +70,18 @@ export function MyRequests() {
         )
       })
       .finally(() => {
-        if (!cancelled) setLoadedStatus(status)
+        if (!cancelled) setLoaded(true)
       })
     return () => {
       cancelled = true
     }
-  }, [status])
+  }, [])
 
   return (
     <div className="stack">
       <header className="page-header page-header-row">
         <div>
-          <h1>My event requests</h1>
+          <h1>My Event Requests</h1>
           <p className="page-subtitle">
             Drafts are visible only to you until you submit them.
           </p>
@@ -132,16 +147,20 @@ export function MyRequests() {
               </div>
               <div className="request-side">
                 <span
-                  className={
-                    event.status === EventStatus.DRAFT ? 'badge badge-muted' : 'badge badge-accent'
-                  }
+                  className={isDraft(event) ? 'badge badge-muted' : 'badge badge-accent'}
                 >
                   {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
-                {event.status === EventStatus.DRAFT ? (
+                {isDraft(event) ? (
                   <Link to={`/organiser/events/${event.id}/edit`}>Continue editing →</Link>
                 ) : (
-                  <Link to={`/organiser/events/${event.id}`}>View →</Link>
+                  <>
+                    <Link to={`/organiser/events/${event.id}`}>View →</Link>
+                    {(event.status === EventStatus.SUBMITTED ||
+                      event.status === EventStatus.UNDER_REVIEW) && (
+                      <Link to={`/organiser/events/${event.id}/edit`}>Correct request →</Link>
+                    )}
+                  </>
                 )}
               </div>
             </li>

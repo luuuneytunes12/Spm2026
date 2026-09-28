@@ -24,6 +24,16 @@ vi.mock('react-router', async () => {
   return { ...actual, useNavigate: () => navigate }
 })
 
+// The equipment picker fetches its options on mount. Mocked so this suite
+// never touches the network -- an unmocked rejection renders the picker's
+// own role="alert", which then collides with the form's error banner.
+vi.mock('../../lib/equipment', () => ({
+  listEquipmentOptions: vi.fn().mockResolvedValue([
+    { id: 11, name: 'Shure BLX24 Handheld Microphone', category: 'Audio' },
+    { id: 12, name: 'Epson EB-L200SW Projector', category: 'Projection' },
+  ]),
+}))
+
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
   return {
@@ -56,7 +66,7 @@ const AC1_LABELS = [
   'Venue requirements',
   'Room layout preference',
   'Accessibility requirements',
-  'Equipment requirements',
+  'Other equipment notes',
   'Other special arrangements',
 ]
 
@@ -98,6 +108,7 @@ const SAVED: EventDetail = {
   room_layout_preference: 'theatre',
   accessibility_needs: null,
   equipment_requirements: null,
+  equipment_items: [],
   special_arrangements: 'Halal catering',
   registration_enabled: true,
   status: 'draft',
@@ -124,6 +135,11 @@ describe('Story 1 AC1 - the form captures every required piece of information', 
     expect(
       screen.getByRole('checkbox', { name: /attendees must register/i }),
     ).toBeInTheDocument()
+    // Equipment is no longer one labelled box: it is a group of rows, so
+    // the criterion is met by the group being present and able to take a
+    // row, not by a single control carrying the name.
+    expect(screen.getByRole('group', { name: 'Equipment requirements' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add equipment' })).toBeInTheDocument()
   })
 
   it('TC-S1-1b: sends what the organiser typed to the API', async () => {
@@ -192,6 +208,27 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     expect(mockUpdate).toHaveBeenCalledWith(7, expect.any(Object))
     expect(mockCreate).not.toHaveBeenCalled()
   })
+
+  it('saves a correction to a request under review without resubmitting it', async () => {
+    const user = userEvent.setup()
+    mockGet.mockResolvedValue({ ...SAVED, status: 'under_review' })
+    renderEdit()
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
+
+    await user.clear(screen.getByLabelText('Event name'))
+    await user.type(screen.getByLabelText('Event name'), 'Corrected conference name')
+    expect(screen.queryByRole('button', { name: 'Submit request' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ name: 'Corrected conference name' }),
+      ),
+    )
+    expect(mockSubmit).not.toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalledWith('/organiser/events/7', { replace: true })
+  })
 })
 
 describe('Story 2 AC1 - submitting an incomplete request is blocked and the gaps are flagged', () => {
@@ -217,6 +254,38 @@ describe('Story 2 AC1 - submitting an incomplete request is blocked and the gaps
     expect(screen.getByLabelText('Purpose')).not.toHaveAttribute('aria-invalid', 'true')
     // Blocked means blocked -- no navigation away from the form.
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('moves the user to the first problem instead of leaving them at the button', async () => {
+    const user = userEvent.setup()
+    // Reported out of page order on purpose: "first" must mean the topmost
+    // field on screen, not the first one the server happened to list.
+    mockSubmit.mockRejectedValueOnce(
+      new ApiError(422, 'two problems', ['venue_requirements', 'purpose']),
+    )
+    renderNew()
+
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+
+    // Purpose sits above Venue requirements on the form.
+    const purpose = screen.getByLabelText('Purpose')
+    await waitFor(() => expect(purpose).toHaveFocus())
+    // Scrolled by its wrapper -- the whole field, label and all, is what
+    // needs to come into view, not just the box.
+    expect(purpose.closest('.field')!.scrollIntoView).toHaveBeenCalled()
+  })
+
+  it('brings the banner into view when the failure names no field at all', async () => {
+    const user = userEvent.setup()
+    mockSubmit.mockRejectedValueOnce(new Error('network down'))
+    renderNew()
+
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+
+    // Nothing is flagged, so there is no field to jump to -- the message
+    // itself has to be what the user is taken to.
+    const banner = await screen.findByRole('alert')
+    await waitFor(() => expect(banner).toHaveFocus())
   })
 
   it('TC-S2-1d: summarises how many fields are still incomplete', async () => {

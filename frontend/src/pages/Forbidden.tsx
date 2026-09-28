@@ -5,7 +5,7 @@ export function Forbidden() {
     <div className="auth-screen">
       <div className="auth-card">
         <p className="auth-brand">403</p>
-        <h1>No access</h1>
+        <h1>No Access</h1>
         <p className="auth-intro">
           This page belongs to a different role. If you think that's wrong, ask
           an Event Organiser to check your account's role.

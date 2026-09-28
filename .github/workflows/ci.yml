@@ -140,14 +140,42 @@ jobs:
         run: psql "$PGURL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
 
       # Registration always assigns the attendee role by design, so the
-      # organiser the specs log in as has to be seeded directly -- the same
-      # bootstrap path a real deployment uses.
+      # organiser the specs log in as has to be seeded directly.
+      #
+      # Inlined rather than calling a helper script on purpose. This step
+      # used to run `scripts/create_admin.py`, which was deleted in an
+      # unrelated refactor (15c1db7) -- CI then failed on a missing file,
+      # because a workflow silently depended on a developer convenience
+      # script that was not part of the product. Nothing outside this file
+      # can break this step now.
+      #
+      # It goes through the app's own hasher rather than raw SQL so the
+      # stored hash always matches whatever `verify_password` expects; a
+      # hardcoded hash would rot the moment the algorithm changed.
       - name: Seed an organiser
         working-directory: backend
         env:
           DATABASE_URL: ${{ env.E2E_DATABASE_URL }}
-          ADMIN_PASSWORD: e2e-password-123
-        run: uv run python scripts/create_admin.py "E2E Organiser" e2e_organiser@cs.local
+        run: |
+          uv run python - <<'PY'
+          from app.core.db import SessionLocal
+          from app.core.roles import Role
+          from app.core.security import hash_password
+          from app.models.user import User
+
+          db = SessionLocal()
+          db.add(
+              User(
+                  name="E2E Organiser",
+                  email="e2e_organiser@cs.local",
+                  password_hash=hash_password("e2e-password-123"),
+                  role=Role.ORGANISER.value,
+              )
+          )
+          db.commit()
+          db.close()
+          print("Seeded e2e_organiser@cs.local")
+          PY
 
       - name: Install Chromium
         working-directory: frontend

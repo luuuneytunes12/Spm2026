@@ -1,5 +1,6 @@
 import { useAuth } from '../auth/useAuth'
 import { ROLE_LABELS } from '../lib/roles'
+import { ThemeToggle } from './ThemeToggle'
 
 /** First letter of the first two words, e.g. "Wei Lunn" -> "WL".
  *  Decorative only — the full name sits beside it. */
@@ -43,6 +44,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar, sidebarId }: NavbarProps)
 
       {user && (
         <div className="navbar-user">
+          <ThemeToggle />
           <span className="navbar-avatar" aria-hidden="true">
             {initials(user.name)}
           </span>

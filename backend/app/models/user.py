@@ -19,6 +19,10 @@ from app.core.roles import DEFAULT_ROLE, Role
 # `communication_preference` were added for the "Edit User Profile" story
 # -- see sql/004_user_profile_fields.sql for the live-database migration.
 # All four are nullable: every existing user row predates them.
+# `is_available` is the one deliberate addition beyond that mirror -- see
+# sql/004_coordinator_availability.sql. It backs the Coordinator's "mark
+# myself unavailable" toggle; every other role's row carries it too (one
+# shared table) but never reads or writes it.
 
 
 class User(Base):
@@ -49,6 +53,7 @@ class User(Base):
         nullable=False,
         default=DEFAULT_ROLE.value,
     )
+    is_available: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
