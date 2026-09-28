@@ -7,9 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
-from app.models.enums import EventStatus
+from app.models.enums import EventStatus, NotificationType
 from app.models.events import Event, EventStatusHistory
-from app.models.notifications import Notification
 from app.models.user import User
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
@@ -22,6 +21,7 @@ from app.schemas.event import (
     OrganiserContact,
 )
 from app.services.assignment import ACTIVE_ASSIGNMENT_STATUSES, assign_coordinator, reassign_event
+from app.services.notifications import notify
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -310,13 +310,12 @@ def approve_event(
             note="Approved by the Event Coordinator.",
         )
     )
-    db.add(
-        Notification(
-            user_id=event.organiser_id,
-            event_id=event.id,
-            type="event_approved",
-            message=f"Your event '{event.name or 'request'}' has been approved.",
-        )
+    notify(
+        db,
+        user_id=event.organiser_id,
+        type=NotificationType.event_approved,
+        message=f"Your event '{event.name or 'request'}' has been approved.",
+        event_id=event.id,
     )
     db.commit()
     db.refresh(event)
@@ -343,13 +342,12 @@ def reject_event(
             note=body.reason,
         )
     )
-    db.add(
-        Notification(
-            user_id=event.organiser_id,
-            event_id=event.id,
-            type="event_rejected",
-            message=f"Your event '{event.name or 'request'}' was rejected: {body.reason}",
-        )
+    notify(
+        db,
+        user_id=event.organiser_id,
+        type=NotificationType.event_rejected,
+        message=f"Your event '{event.name or 'request'}' was rejected: {body.reason}",
+        event_id=event.id,
     )
     db.commit()
     db.refresh(event)

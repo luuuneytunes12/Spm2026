@@ -4,8 +4,6 @@ import { ApiError } from '../../lib/api'
 import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
 import type { AvailabilityHistoryEntry } from '../../lib/coordinators'
 import { formatTimestamp } from '../../lib/events'
-import { listMyNotifications } from '../../lib/notifications'
-import type { Notification } from '../../lib/notifications'
 import { ROLE_LABELS, ROLE_PERMISSIONS, Role } from '../../lib/roles'
 import { ROLE_WORKFLOWS } from '../../lib/roleWorkflows'
 
@@ -123,64 +121,13 @@ function AvailabilityHistory() {
   )
 }
 
-/** The Coordinator's own notifications -- including "you have been
- *  assigned to coordinate X" and, once someone else takes over one of
- *  their events, "Y has taken over coordinating X" -- both written
- *  server-side the moment an assignment or reassignment happens. */
-function NotificationsList() {
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    listMyNotifications()
-      .then((rows) => {
-        if (!cancelled) setNotifications(rows)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setError(err instanceof ApiError ? err.message : 'Could not load notifications.')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return (
-    <>
-      <h2>Notifications</h2>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      {loading ? null : notifications.length === 0 ? (
-        <p className="page-subtitle">No notifications yet.</p>
-      ) : (
-        <ul className="activity-list" aria-label="Notifications">
-          {notifications.map((n) => (
-            <li key={n.id} className="activity-item">
-              <p className="activity-change">{n.message}</p>
-              <p className="activity-meta">{formatTimestamp(n.created_at)}</p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  )
-}
-
 /** The Coordinator's landing page.
  *
  *  A dedicated layout rather than the shared RoleHome shell every other
- *  role page uses: Availability and Notifications are real, backend-backed
- *  controls a Coordinator checks constantly, so they sit in a bento grid
- *  alongside Permissions and Planned instead of stacked full-width cards
- *  underneath them. */
+ *  role page uses: Availability is a real, backend-backed control a
+ *  Coordinator checks constantly, so it sits in a bento grid alongside
+ *  Permissions and Planned instead of a stacked full-width card underneath
+ *  them. Notifications live in the navbar bell and /notifications. */
 export function Coordinator() {
   const permissions = ROLE_PERMISSIONS[Role.COORDINATOR]
   const planned = ROLE_WORKFLOWS[Role.COORDINATOR]
@@ -196,10 +143,6 @@ export function Coordinator() {
         <section className="card bento-availability">
           <AvailabilityToggle />
           <AvailabilityHistory />
-        </section>
-
-        <section className="card bento-notifications">
-          <NotificationsList />
         </section>
 
         <section className="card bento-permissions">

@@ -65,6 +65,9 @@ export function Sidebar({ id, open }: SidebarProps) {
             </li>
           )}
           <li>
+            <NavLink to="/notifications">Notifications</NavLink>
+          </li>
+          <li>
             <NavLink to="/profile">My profile</NavLink>
           </li>
         </ul>

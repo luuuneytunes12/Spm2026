@@ -165,3 +165,31 @@ export async function apiFetch(path: string, init?: RequestInit, _retried = fals
   }
   return parseBody(res)
 }
+
+/** Open a long-lived streaming response (server-sent events) with the same
+ *  auth handling as apiFetch: bearer token, one refresh-and-retry on 401.
+ *
+ *  Exists because the browser's EventSource cannot send an Authorization
+ *  header, and the access token deliberately never goes in a URL. The
+ *  caller reads `res.body` itself and aborts via `signal` to close it. */
+export async function apiStream(path: string, signal: AbortSignal, _retried = false): Promise<Response> {
+  const headers = new Headers({ Accept: 'text/event-stream' })
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+
+  const res = await fetch(`${API_URL}${path}`, { headers, signal, credentials: 'include' })
+
+  if (res.status === 401 && !_retried) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      return apiStream(path, signal, true)
+    }
+    setAccessToken(null)
+    onSessionExpired?.()
+    throw new ApiError(401, 'Your session has expired. Please log in again.')
+  }
+
+  if (!res.ok) {
+    throw await toApiError(res)
+  }
+  return res
+}

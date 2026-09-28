@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Outlet } from 'react-router'
+import { NotificationsProvider } from '../notifications/NotificationsProvider'
 import { Navbar } from './Navbar'
 import { Sidebar } from './Sidebar'
 
@@ -33,18 +34,20 @@ export function AppLayout() {
   const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), [])
 
   return (
-    <div className="app-layout">
-      <Navbar
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={toggleSidebar}
-        sidebarId={SIDEBAR_ID}
-      />
-      <div className="app-shell">
-        <Sidebar id={SIDEBAR_ID} open={sidebarOpen} />
-        <main className="app-main">
-          <Outlet />
-        </main>
+    <NotificationsProvider>
+      <div className="app-layout">
+        <Navbar
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={toggleSidebar}
+          sidebarId={SIDEBAR_ID}
+        />
+        <div className="app-shell">
+          <Sidebar id={SIDEBAR_ID} open={sidebarOpen} />
+          <main className="app-main">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </NotificationsProvider>
   )
 }
