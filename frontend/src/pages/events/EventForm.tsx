@@ -5,6 +5,7 @@ import { EquipmentPicker } from '../../components/EquipmentPicker'
 import { ApiError } from '../../lib/api'
 import {
   createEvent,
+  EventStatus,
   fromDateTimeLocal,
   getEvent,
   submitEvent,
@@ -108,6 +109,7 @@ export function EventForm() {
   const eventId = id ? Number(id) : null
 
   const [form, setForm] = useState<FormState>(EMPTY)
+  const [canCorrectSubmitted, setCanCorrectSubmitted] = useState(false)
   const [loading, setLoading] = useState(eventId !== null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -157,6 +159,9 @@ export function EventForm() {
       try {
         const e = await getEvent(eventId)
         if (cancelled) return
+        setCanCorrectSubmitted(
+          e.status === EventStatus.SUBMITTED || e.status === EventStatus.UNDER_REVIEW,
+        )
         setForm({
           name: e.name ?? '',
           purpose: e.purpose ?? '',
@@ -226,7 +231,10 @@ export function EventForm() {
     setBusy(true)
     try {
       await persist()
-      navigate('/organiser/events', { replace: true })
+      navigate(
+        canCorrectSubmitted ? `/organiser/events/${eventId}` : '/organiser/events',
+        { replace: true },
+      )
     } catch (err) {
       reportError(err, 'Could not reach the server. Is the backend running?')
     } finally {
@@ -260,7 +268,9 @@ export function EventForm() {
       <header className="page-header">
         <h1>{eventId === null ? 'New Event Request' : 'Edit Event Request'}</h1>
         <p className="page-subtitle">
-          Save as a draft at any point — nothing here is required until you submit.
+          {canCorrectSubmitted
+            ? 'Update the request while it is awaiting a Coordinator decision.'
+            : 'Save as a draft at any point — nothing here is required until you submit.'}
         </p>
       </header>
 
@@ -514,17 +524,22 @@ export function EventForm() {
 
         <div className="form-actions">
           <button type="submit" className="btn-secondary" disabled={busy}>
-            {busy ? 'Saving…' : 'Save as draft'}
+            {busy ? 'Saving…' : canCorrectSubmitted ? 'Save changes' : 'Save as draft'}
           </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy}
-            onClick={onSubmitRequest}
+          {!canCorrectSubmitted && (
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy}
+              onClick={onSubmitRequest}
+            >
+              Submit request
+            </button>
+          )}
+          <Link
+            to={canCorrectSubmitted ? `/organiser/events/${eventId}` : '/organiser/events'}
+            className="form-cancel"
           >
-            Submit request
-          </button>
-          <Link to="/organiser/events" className="form-cancel">
             Cancel
           </Link>
         </div>

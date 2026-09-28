@@ -219,6 +219,11 @@ export function getEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}`) as Promise<EventDetail>
 }
 
+/** Activity history for an event owned by the signed-in Organiser. */
+export function getOwnEventActivity(id: number): Promise<ActivityEntry[]> {
+  return apiFetch(`/events/${id}/activity`) as Promise<ActivityEntry[]>
+}
+
 /** The events the signed-in Coordinator has been assigned. Scoped server-side
  *  to `coordinator_id == me`, so there is no "whose events?" parameter. */
 export function listAssignedEvents(): Promise<EventSummary[]> {
@@ -241,6 +246,20 @@ export function getAssignedEvent(id: number): Promise<AssignedEventDetail> {
  *  approved/rejected/completed/cancelled has no "reassign" to do). */
 export function releaseAssignedEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/assigned/${id}/release`, { method: 'POST' }) as Promise<EventDetail>
+}
+
+/** Approve an event assigned to the signed-in Coordinator. */
+export function approveEvent(id: number): Promise<EventDetail> {
+  return apiFetch(`/events/${id}/approve`, { method: 'POST' }) as Promise<EventDetail>
+}
+
+/** Reject an assigned event and retain the reason for the Organiser. */
+export function rejectEvent(id: number, reason: string): Promise<EventDetail> {
+  return apiFetch(`/events/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  }) as Promise<EventDetail>
 }
 
 export function createEvent(input: EventInput): Promise<EventDetail> {

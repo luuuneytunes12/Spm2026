@@ -2,27 +2,37 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { ApiError } from '../../lib/api'
-import { EVENT_STATUS_LABELS, EventStatus, formatRange, getEvent } from '../../lib/events'
-import type { EventDetail } from '../../lib/events'
+import {
+  EVENT_STATUS_LABELS,
+  EventStatus,
+  formatRange,
+  formatTimestamp,
+  getEvent,
+  getOwnEventActivity,
+} from '../../lib/events'
+import type { ActivityEntry, EventDetail } from '../../lib/events'
 
-/** Read-only view of a request that has left the draft stage.
- *
- * Submitted requests are deliberately not editable here: once a Coordinator
- * may be reviewing it, changing the date underneath them would invalidate
- * the review. Later edits go through the change-request story instead, so
- * this page is a dead end by design rather than by omission. */
+function activityStatusLabel(value: string): string {
+  return EVENT_STATUS_LABELS[value as EventStatus] ?? value
+}
+
+/** View an event request and offer corrections until its review is decided. */
 export function EventView() {
   const { id } = useParams()
   const [event, setEvent] = useState<EventDetail | null>(null)
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    getEvent(Number(id))
-      .then((e) => {
-        if (!cancelled) setEvent(e)
+    Promise.all([getEvent(Number(id)), getOwnEventActivity(Number(id))])
+      .then(([e, entries]) => {
+        if (!cancelled) {
+          setEvent(e)
+          setActivity(entries)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -87,9 +97,11 @@ export function EventView() {
               })}`}
           </p>
         </div>
-        {event.status === EventStatus.DRAFT && (
+        {(event.status === EventStatus.DRAFT ||
+          event.status === EventStatus.SUBMITTED ||
+          event.status === EventStatus.UNDER_REVIEW) && (
           <Link to={`/organiser/events/${event.id}/edit`} className="btn-primary btn-link">
-            Continue editing
+            {event.status === EventStatus.DRAFT ? 'Continue editing' : 'Correct request'}
           </Link>
         )}
       </header>
@@ -133,6 +145,50 @@ export function EventView() {
               Not yet assigned. ConnectSphere will assign one automatically once a Coordinator is
               available.
             </p>
+          )}
+        </section>
+      )}
+
+      {event.status !== EventStatus.DRAFT && (
+        <section className="card">
+          <h2>Activity Log</h2>
+          {activity.length === 0 ? (
+            <p className="page-subtitle">No activity recorded yet.</p>
+          ) : (
+            <ol className="activity-list" aria-label="Activity log">
+              {activity.map((entry, index) => {
+                const sameStatus = entry.from_status === entry.to_status
+                const assignment =
+                  sameStatus &&
+                  (entry.note?.startsWith('Assigned to ') ||
+                    entry.note?.startsWith('Reassigned from '))
+                const timestamp = formatTimestamp(entry.created_at)
+                return (
+                  <li key={`${entry.created_at}-${index}`} className="activity-item">
+                    <p className="activity-change">
+                      {assignment ? (
+                        <strong>Assignment</strong>
+                      ) : sameStatus ? (
+                        <strong>Request update</strong>
+                      ) : entry.from_status ? (
+                        <>
+                          {activityStatusLabel(entry.from_status)}{' '}
+                          <span aria-hidden="true">→</span>{' '}
+                          <strong>{activityStatusLabel(entry.to_status)}</strong>
+                        </>
+                      ) : (
+                        <strong>{activityStatusLabel(entry.to_status)}</strong>
+                      )}
+                    </p>
+                    <p className="activity-meta">
+                      {entry.changed_by_name ?? 'Unknown user'}
+                      {timestamp && ` · ${timestamp}`}
+                    </p>
+                    {entry.note && <p className="activity-note">{entry.note}</p>}
+                  </li>
+                )
+              })}
+            </ol>
           )}
         </section>
       )}

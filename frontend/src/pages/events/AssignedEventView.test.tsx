@@ -21,13 +21,21 @@ import { AssignedEventView } from './AssignedEventView'
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
-  return { ...actual, getAssignedEvent: vi.fn(), releaseAssignedEvent: vi.fn() }
+  return {
+    ...actual,
+    approveEvent: vi.fn(),
+    getAssignedEvent: vi.fn(),
+    rejectEvent: vi.fn(),
+    releaseAssignedEvent: vi.fn(),
+  }
 })
 
-import { getAssignedEvent, releaseAssignedEvent } from '../../lib/events'
+import { approveEvent, getAssignedEvent, rejectEvent, releaseAssignedEvent } from '../../lib/events'
 import type { AssignedEventDetail } from '../../lib/events'
 
 const mockGet = vi.mocked(getAssignedEvent)
+const mockApprove = vi.mocked(approveEvent)
+const mockReject = vi.mocked(rejectEvent)
 const mockRelease = vi.mocked(releaseAssignedEvent)
 
 const EVENT: AssignedEventDetail = {
@@ -417,6 +425,30 @@ describe('AC4 - the activity log', () => {
     // Not rendered as "Submitted -> Submitted".
     expect(within(entry).queryByText('→')).toBeNull()
   })
+
+  it('renders an organiser correction as a request update, not an assignment', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'under_review',
+      activity: [
+        {
+          from_status: 'under_review',
+          to_status: 'under_review',
+          note: 'Updated by the Organiser before review was decided.',
+          changed_by_name: 'Priya Menon',
+          created_at: '2026-09-11T09:00:00Z',
+        },
+        ...EVENT.activity,
+      ],
+    })
+    renderView()
+
+    const log = await screen.findByRole('list', { name: 'Activity log' })
+    const [entry] = within(log).getAllByRole('listitem')
+    expect(entry).toHaveTextContent('Request update')
+    expect(entry).not.toHaveTextContent('Assignment')
+    expect(within(entry).queryByText('→')).toBeNull()
+  })
 })
 
 describe('AC5 - events that are not assigned to me', () => {
@@ -448,6 +480,56 @@ describe('what this screen deliberately does not offer', () => {
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
     expect(screen.queryByRole('link', { name: /edit/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /save|update/i })).toBeNull()
+  })
+})
+
+describe('Coordinator decisions', () => {
+  it('approves the assigned request and refreshes its activity', async () => {
+    const approved = { ...EVENT, status: 'approved' as const }
+    mockApprove.mockResolvedValue(approved)
+    mockGet.mockResolvedValueOnce(EVENT).mockResolvedValueOnce({
+      ...approved,
+      activity: [
+        {
+          from_status: 'under_review',
+          to_status: 'approved',
+          note: 'Approved by the Event Coordinator.',
+          changed_by_name: 'Sam Tan',
+          created_at: '2026-09-12T09:00:00Z',
+        },
+        ...EVENT.activity,
+      ],
+    })
+    renderView()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve request' }))
+
+    await waitFor(() => expect(mockApprove).toHaveBeenCalledWith(7))
+    expect(await screen.findByText('Approved', { selector: '.badge' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
+    expect(screen.getByText('Approved by the Event Coordinator.')).toBeInTheDocument()
+  })
+
+  it('requires a reason before rejecting and submits the recorded reason', async () => {
+    mockReject.mockResolvedValue({ ...EVENT, status: 'rejected' })
+    renderView()
+
+    const reject = await screen.findByRole('button', { name: 'Reject request' })
+    expect(reject).toBeDisabled()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Rejection reason' }), 'Venue unavailable')
+    expect(reject).toBeEnabled()
+    await userEvent.click(reject)
+
+    await waitFor(() => expect(mockReject).toHaveBeenCalledWith(7, 'Venue unavailable'))
+  })
+
+  it('does not offer decision controls once the request has been decided', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    renderView()
+
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reject request' })).not.toBeInTheDocument()
   })
 })
 

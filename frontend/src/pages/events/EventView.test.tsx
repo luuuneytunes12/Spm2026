@@ -16,13 +16,14 @@ import { EventView } from './EventView'
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
-  return { ...actual, getEvent: vi.fn() }
+  return { ...actual, getEvent: vi.fn(), getOwnEventActivity: vi.fn() }
 })
 
-import { getEvent } from '../../lib/events'
-import type { EventDetail } from '../../lib/events'
+import { getEvent, getOwnEventActivity } from '../../lib/events'
+import type { ActivityEntry, EventDetail } from '../../lib/events'
 
 const mockGet = vi.mocked(getEvent)
+const mockActivity = vi.mocked(getOwnEventActivity)
 
 const BASE: EventDetail = {
   id: 7,
@@ -62,6 +63,7 @@ function renderView(id = '7') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockActivity.mockResolvedValue([])
 })
 
 describe('AC2 - the assigned coordinator is visible on the event page', () => {
@@ -75,7 +77,7 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
     renderView()
 
     await waitFor(() => expect(screen.getByText('Your Assigned Event Coordinator')).toBeInTheDocument())
-    expect(screen.getByText('Sam Tan')).toBeInTheDocument()
+    expect(screen.getByText(/Sam Tan/)).toBeInTheDocument()
     const link = screen.getByRole('link', { name: 'sam@connectsphere.test' })
     expect(link).toHaveAttribute('href', 'mailto:sam@connectsphere.test')
   })
@@ -100,5 +102,44 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
 
     await waitFor(() => expect(screen.getByText('Robotics Summit')).toBeInTheDocument())
     expect(screen.queryByText('Your Assigned Event Coordinator')).not.toBeInTheDocument()
+  })
+
+  it('offers correction while a submitted request awaits a decision', async () => {
+    mockGet.mockResolvedValue({ ...BASE, status: 'under_review' })
+
+    renderView()
+
+    expect(await screen.findByRole('link', { name: 'Correct request' })).toHaveAttribute(
+      'href',
+      '/organiser/events/7/edit',
+    )
+  })
+
+  it('does not offer correction after the Coordinator decides', async () => {
+    mockGet.mockResolvedValue({ ...BASE, status: 'approved' })
+
+    renderView()
+
+    await screen.findByText('Approved')
+    expect(screen.queryByRole('link', { name: 'Correct request' })).not.toBeInTheDocument()
+  })
+
+  it('shows the Coordinator rejection reason in the event activity log', async () => {
+    const rejection: ActivityEntry = {
+      from_status: 'under_review',
+      to_status: 'rejected',
+      note: 'The requested venue is unavailable on that date.',
+      changed_by_name: 'Sam Tan',
+      created_at: '2026-09-12T09:00:00Z',
+    }
+    mockGet.mockResolvedValue({ ...BASE, status: 'rejected' })
+    mockActivity.mockResolvedValue([rejection])
+
+    renderView()
+
+    expect(
+      await screen.findByText('The requested venue is unavailable on that date.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Sam Tan/)).toBeInTheDocument()
   })
 })
