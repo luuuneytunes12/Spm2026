@@ -37,6 +37,10 @@ create type change_request_status as enum (
     'pending', 'approved', 'rejected'
 );
 
+create type communication_preference as enum (
+    'email', 'sms', 'phone_call'
+);
+
 -- ===== Identity =====
 
 create table users (
@@ -45,6 +49,14 @@ create table users (
     email text not null unique,
     password_hash text not null,
     role user_role not null,
+    created_at timestamptz not null default now(),
+    -- Added for the "Edit User Profile" story; all nullable since every
+    -- user is expected to fill these in after account creation, not at
+    -- registration time. See sql/004_user_profile_fields.sql.
+    organisation text,
+    phone_country_code text,
+    phone_number text,
+    communication_preference communication_preference
     -- Toggled by an Event Coordinator to say "don't route events to me
     -- right now" -- see sql/004_coordinator_availability.sql. Every role
     -- gets the column since users is one shared table; only Coordinators

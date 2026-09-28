@@ -19,6 +19,16 @@ def list_my_notifications(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[NotificationOut]:
+    """The caller's own notifications, newest first.
+
+    Not gated by a Permission (unlike /events): every authenticated role
+    can receive notifications, and there is nothing to distinguish
+    between them here beyond "this is mine".
+    """
+    # id.desc() as a tiebreaker: two notifications created in the same
+    # transaction can land on the identical `created_at` (SQLite's
+    # CURRENT_TIMESTAMP has only 1-second resolution), and insertion order
+    # is the only thing that still distinguishes "newest" between them.
     """The signed-in user's own notifications, newest first.
 
     Scoped by row (`user_id == caller`), same principle as the assigned-events

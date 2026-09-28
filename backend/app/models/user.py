@@ -4,6 +4,7 @@ from sqlalchemy import BigInteger, DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.communication import CommunicationPreference
 from app.core.db import Base
 from app.core.roles import DEFAULT_ROLE, Role
 
@@ -14,6 +15,10 @@ from app.core.roles import DEFAULT_ROLE, Role
 # column. Any query touching either non-existent column will fail
 # against the real database.
 #
+# `organisation`, `phone_country_code`, `phone_number` and
+# `communication_preference` were added for the "Edit User Profile" story
+# -- see sql/004_user_profile_fields.sql for the live-database migration.
+# All four are nullable: every existing user row predates them.
 # `is_available` is the one deliberate addition beyond that mirror -- see
 # sql/004_coordinator_availability.sql. It backs the Coordinator's "mark
 # myself unavailable" toggle; every other role's row carries it too (one
@@ -51,4 +56,19 @@ class User(Base):
     is_available: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    organisation: Mapped[str | None] = mapped_column(String, nullable=True)
+    # National number only, digits, no dial code -- paired with
+    # `phone_country_code` (e.g. "+65"). Kept as two plain string columns
+    # rather than one E.164 value so the UI can re-populate the country
+    # <select> and the number input independently.
+    phone_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    communication_preference: Mapped[str | None] = mapped_column(
+        PGEnum(
+            *(p.value for p in CommunicationPreference),
+            name="communication_preference",
+            create_type=False,
+        ).with_variant(String(32), "sqlite"),
+        nullable=True,
     )

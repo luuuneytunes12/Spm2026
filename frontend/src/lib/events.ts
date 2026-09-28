@@ -114,6 +114,11 @@ export interface EventSummary {
   updated_at: string
 }
 
+/** The minimal shape of the other party on an event -- who they're
+ *  dealing with, nothing more. */
+export interface Person {
+  id: number
+  name: string
 /** Who a Coordinator or Organiser contacts about the other side of an
  *  event. `users` carries no phone number, so `email` is the whole of
  *  "contact details" today. Reused for both directions -- an Organiser's
@@ -148,6 +153,8 @@ export interface EquipmentLineInput {
 export interface EventDetail extends EventSummary {
   organiser_id: number
   coordinator_id: number | null
+  organiser: Person
+  coordinator: Person | null
   /** None until the system (or a reassignment) has picked someone --
    *  see AC2 of "Mark myself unavailable": this is what lets the Organiser
    *  see who is coordinating their event, right on the event page. */
@@ -162,6 +169,19 @@ export interface EventDetail extends EventSummary {
   equipment_items: EquipmentLine[]
   special_arrangements: string | null
   registration_enabled: boolean
+  created_at: string
+}
+
+/** One row of an event's activity log -- see GET /events/:id/history.
+ *  `from_status === to_status` marks an entry that happened *while* the
+ *  event was in that status (e.g. a Coordinator auto-assignment) rather
+ *  than an actual status change; `note` carries what happened. */
+export interface EventHistoryEntry {
+  id: number
+  from_status: string | null
+  to_status: string
+  note: string | null
+  changed_by: number
   created_at: string
 }
 
@@ -215,10 +235,18 @@ export function listMyEvents(status?: EventStatus): Promise<EventSummary[]> {
   return apiFetch(`/events${query}`) as Promise<EventSummary[]>
 }
 
+/** The Coordinator's equivalent of listMyEvents -- events auto-assigned
+ *  to the caller, rather than ones they organised. */
+export function listAssignedEvents(): Promise<EventSummary[]> {
+  return apiFetch('/events/assigned') as Promise<EventSummary[]>
+}
+
 export function getEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}`) as Promise<EventDetail>
 }
 
+export function getEventHistory(id: number): Promise<EventHistoryEntry[]> {
+  return apiFetch(`/events/${id}/history`) as Promise<EventHistoryEntry[]>
 /** Activity history for an event owned by the signed-in Organiser. */
 export function getOwnEventActivity(id: number): Promise<ActivityEntry[]> {
   return apiFetch(`/events/${id}/activity`) as Promise<ActivityEntry[]>
