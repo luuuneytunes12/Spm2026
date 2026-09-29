@@ -16,11 +16,14 @@ import { AssignedEventView } from './pages/events/AssignedEventView'
 import { EventForm } from './pages/events/EventForm'
 import { EventView } from './pages/events/EventView'
 import { MyRequests } from './pages/events/MyRequests'
+import { AttendeeEvents } from './pages/registrations/AttendeeEvents'
 import { Attendee } from './pages/roles/Attendee'
 import { Coordinator } from './pages/roles/Coordinator'
 import { Organiser } from './pages/roles/Organiser'
 import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
+import { VenueView } from './pages/venues/VenueView'
+import { Venues } from './pages/venues/Venues'
 import './App.css'
 
 function App() {
@@ -56,6 +59,12 @@ function App() {
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />
           </Route>
+          {/* Shared by both internal roles that assess venues, so not
+              nested under either role's home path. */}
+          <Route element={<RequireRole roles={[Role.COORDINATOR, Role.VENUE_STAFF]} />}>
+            <Route path="/venues" element={<Venues />} />
+            <Route path="/venues/:id" element={<VenueView />} />
+          </Route>
           <Route element={<RequireRole roles={[Role.TECH_SUPPORT]} />}>
             <Route path="/tech-support" element={<TechSupport />} />
             {/* Not nested under /tech-support/ on purpose: the catalogue is
@@ -67,6 +76,7 @@ function App() {
           </Route>
           <Route element={<RequireRole roles={[Role.ATTENDEE]} />}>
             <Route path="/attendee" element={<Attendee />} />
+            <Route path="/attendee/events" element={<AttendeeEvents />} />
           </Route>
         </Route>
       </Route>

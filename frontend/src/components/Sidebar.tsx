@@ -42,7 +42,7 @@ export function Sidebar({ id, open }: SidebarProps) {
           <li>
             <NavLink to={ROLE_HOME_PATH[user.role]}>{roleLabel}</NavLink>
           </li>
-          {/* Each of these sits behind RequireRole for exactly one role, so
+          {/* Each of these sits behind RequireRole for specific roles, so
               linking it for anyone else would just send them to /forbidden. */}
           {user.role === Role.ORGANISER && (
             <li>
@@ -54,6 +54,11 @@ export function Sidebar({ id, open }: SidebarProps) {
               <NavLink to="/coordinator/events">My Assigned Events</NavLink>
             </li>
           )}
+          {(user.role === Role.COORDINATOR || user.role === Role.VENUE_STAFF) && (
+            <li>
+              <NavLink to="/venues">Venues</NavLink>
+            </li>
+          )}
           {user.role === Role.TECH_SUPPORT && (
             <li>
               <NavLink to="/equipment">Equipment Catalogue</NavLink>
@@ -62,6 +67,11 @@ export function Sidebar({ id, open }: SidebarProps) {
           {user.role === Role.COORDINATOR && (
             <li>
               <NavLink to="/coordinator/events">My assigned events</NavLink>
+            </li>
+          )}
+          {user.role === Role.ATTENDEE && (
+            <li>
+              <NavLink to="/attendee/events">Events</NavLink>
             </li>
           )}
           <li>
