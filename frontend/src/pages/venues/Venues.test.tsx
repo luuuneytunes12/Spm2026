@@ -312,6 +312,24 @@ describe('the filter bar', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('keeps focus where you are while you tick, rather than jumping to the first choice', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Facilities')
+    await user.click(await within(panel).findByRole('checkbox', { name: 'Projector' }))
+    const second = within(panel).getByRole('checkbox', { name: 'Video conferencing' })
+    await user.click(second)
+    await waitFor(() =>
+      expect(lastSearch()).toEqual({ facilities: ['Projector', 'Video conferencing'] }),
+    )
+
+    // Moving focus on open is right; moving it on every re-render would
+    // drag a keyboard user back to the first ticked box after each tick.
+    expect(second).toHaveFocus()
+  })
+
   it('opens one panel at a time', async () => {
     const user = userEvent.setup()
     renderPage()
