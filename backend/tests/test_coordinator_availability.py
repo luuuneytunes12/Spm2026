@@ -28,10 +28,15 @@ Each test name states the acceptance criterion it covers, in the same style
 as test_assigned_events.py.
 """
 
+from unittest.mock import patch
+
 from app.core.roles import Role
+from app.models.enums import EventStatus
 from app.models.events import Event
 from app.models.notifications import Notification
 from app.models.user import User
+from app.services.assignment import assign_coordinator
+from app.services.notifications import broker
 
 COMPLETE = {
     "name": "Regional Partner Conference",
@@ -595,3 +600,71 @@ def test_only_a_coordinator_can_view_their_availability_history(client, db_sessi
 
 def test_anonymous_cannot_view_availability_history(client):
     assert client.get("/coordinators/me/availability-history").status_code == 401
+
+
+# --------------------------------------------------------------------------
+# Live push -- notifications go out through notify(), only after the commit
+# --------------------------------------------------------------------------
+
+
+def _pushed(publish) -> list[tuple[int, dict]]:
+    """(user_id, payload) for every call made to the patched broker.publish."""
+    return [c.args for c in publish.call_args_list]
+
+
+def test_assignment_is_pushed_live_to_the_assigned_coordinator(client, db_session):
+    """AC2, live: the Coordinator's open streams get the notification, with
+    the same id GET /notifications will later return for it."""
+    _organiser_user, organiser_headers = _organiser(client, db_session)
+    coordinator, coordinator_headers = _coordinator(
+        client, db_session, "sam@connectsphere.test", "Sam Tan"
+    )
+
+    with patch.object(broker, "publish") as publish:
+        event_id = _submit(client, organiser_headers)
+
+    pushed = _pushed(publish)
+    assert len(pushed) == 1
+    user_id, payload = pushed[0]
+    assert user_id == coordinator.id
+    assert payload["type"] == "event_assigned"
+    assert payload["event_id"] == event_id
+    stored = client.get("/notifications", headers=coordinator_headers).json()
+    assert payload["id"] == stored[0]["id"]
+
+
+def test_release_pushes_to_both_coordinators(client, db_session):
+    """Both sides of a hand-off hear about it live, not just on next load."""
+    _organiser_user, organiser_headers = _organiser(client, db_session)
+    outgoing, outgoing_headers = _coordinator(
+        client, db_session, "sam@connectsphere.test", "Sam Tan"
+    )
+    replacement, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    event_id = _submit(client, organiser_headers)
+
+    with patch.object(broker, "publish") as publish:
+        client.post(f"/events/assigned/{event_id}/release", headers=outgoing_headers)
+
+    pushed = {(user_id, payload["type"]) for user_id, payload in _pushed(publish)}
+    assert pushed == {
+        (replacement.id, "event_assigned"),
+        (outgoing.id, "event_reassigned_away"),
+    }
+
+
+def test_rolled_back_assignment_pushes_nothing(client, db_session):
+    """A transaction that never commits must never notify anyone -- and
+    leaves no notification row behind either."""
+    organiser, _ = _organiser(client, db_session)
+    _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    event = Event(organiser_id=organiser.id, name="Draft", status=EventStatus.submitted)
+    db_session.add(event)
+    db_session.commit()
+
+    with patch.object(broker, "publish") as publish:
+        assign_coordinator(db_session, event, actor_id=organiser.id)
+        db_session.rollback()
+
+    publish.assert_not_called()
+    assert db_session.query(Notification).count() == 0
+

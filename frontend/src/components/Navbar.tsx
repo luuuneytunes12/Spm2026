@@ -1,5 +1,6 @@
 import { useAuth } from '../auth/useAuth'
 import { ROLE_LABELS } from '../lib/roles'
+import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
 
 /** First letter of the first two words, e.g. "Wei Lunn" -> "WL".
@@ -44,6 +45,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar, sidebarId }: NavbarProps)
 
       {user && (
         <div className="navbar-user">
+          <NotificationBell />
           <ThemeToggle />
           <span className="navbar-avatar" aria-hidden="true">
             {initials(user.name)}

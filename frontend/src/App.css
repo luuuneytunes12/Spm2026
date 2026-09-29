@@ -337,10 +337,10 @@
 }
 
 /* --- Bento layout (Coordinator home) ----------------------------------
-   Four tiles of deliberately different sizes rather than one more uniform
-   grid: Availability and Notifications are live controls a Coordinator
-   checks constantly, so they get the prominent top row; Permissions and
-   Planned are reference material and sit smaller underneath. */
+   Tiles of deliberately different sizes rather than one more uniform
+   grid: Availability is the live control a Coordinator checks constantly,
+   so it gets the prominent top-left tile; Permissions and Planned are
+   reference material. Notifications moved to the navbar bell. */
 .bento-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -360,20 +360,9 @@
   }
 }
 
-.bento-notifications {
-  grid-column: span 2;
-  grid-row: span 2;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-
-  .activity-list {
-    overflow-y: auto;
-  }
-}
-
 .bento-permissions {
   grid-column: span 2;
+  grid-row: span 2;
 }
 
 .bento-planned {
@@ -386,7 +375,6 @@
   }
 
   .bento-availability,
-  .bento-notifications,
   .bento-permissions,
   .bento-planned {
     grid-column: span 1;
@@ -1238,4 +1226,243 @@
 
 .equipment-request-name {
   color: var(--text-h);
+}
+
+/* --- Notifications: navbar bell, dropdown, and the /notifications page -- */
+
+/* Text for screen readers only, e.g. "(unread)" next to a message whose
+   unread state is otherwise shown by weight and a dot. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.notif-bell {
+  position: relative;
+}
+
+.notif-bell-button {
+  position: relative;
+}
+
+.notif-badge {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(360px, calc(100vw - 32px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.notif-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notif-dropdown-title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.notif-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.notif-dropdown-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--surface-2);
+  }
+}
+
+.notif-dropdown-footer {
+  display: block;
+  padding: 10px 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+
+  &:hover {
+    background: var(--surface-2);
+  }
+}
+
+.notif-empty {
+  margin: 0;
+  padding: 24px 14px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Shared by the dropdown and the page: a dot + bold text marks unread. */
+.notif-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.is-unread .notif-dot {
+  background: var(--accent);
+}
+
+.notif-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.notif-message {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.is-unread .notif-message {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.notif-time {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.notif-page {
+  padding: 0;
+  overflow: hidden;
+}
+
+.notif-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.notif-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.notif-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .btn-secondary {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+.notif-group-label {
+  margin: 0;
+  padding: 10px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notif-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+
+  input[type='checkbox'] {
+    margin-top: 3px;
+  }
+
+  &.is-unread {
+    background: var(--accent-bg);
+  }
+}
+
+.notif-group:last-child .notif-row:last-child {
+  border-bottom: 0;
+}
+
+.notif-link {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }

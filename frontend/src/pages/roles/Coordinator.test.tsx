@@ -1,7 +1,6 @@
 /**
- * Component tests for the Coordinator's availability toggle and
- * notifications list -- the frontend half of the "Mark myself
- * unavailable" story:
+ * Component tests for the Coordinator's availability toggle and history
+ * -- the frontend half of the "Mark myself unavailable" story:
  *
  *   As an Event Coordinator, I want to mark myself as unavailable, so
  *   that my assigned events are automatically reassigned to another
@@ -10,8 +9,10 @@
  * The reassignment itself is entirely server-side (see
  * backend/tests/test_coordinator_availability.py); these tests cover only
  * what the screen does -- reflects current availability, lets it be
- * toggled, and surfaces notifications -- not whether the toggle actually
- * reassigns anything.
+ * toggled, and records the change -- not whether the toggle actually
+ * reassigns anything. The assignment notification (AC2) is shown by the
+ * navbar bell and /notifications -- see NotificationBell.test.tsx and
+ * pages/Notifications.test.tsx.
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,7 +24,6 @@ vi.mock('../../lib/coordinators', () => ({
   setMyAvailability: vi.fn(),
   getMyAvailabilityHistory: vi.fn(),
 }))
-vi.mock('../../lib/notifications', () => ({ listMyNotifications: vi.fn() }))
 
 const mockRefreshUser = vi.fn()
 let mockUser: { is_available: boolean } | null = { is_available: true }
@@ -34,17 +34,13 @@ vi.mock('../../auth/useAuth', () => ({
 
 import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
 import type { AvailabilityHistoryEntry } from '../../lib/coordinators'
-import { listMyNotifications } from '../../lib/notifications'
-import type { Notification } from '../../lib/notifications'
 
 const mockSetAvailability = vi.mocked(setMyAvailability)
 const mockGetAvailabilityHistory = vi.mocked(getMyAvailabilityHistory)
-const mockListNotifications = vi.mocked(listMyNotifications)
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockUser = { is_available: true }
-  mockListNotifications.mockResolvedValue([])
   mockGetAvailabilityHistory.mockResolvedValue([])
 })
 
@@ -90,34 +86,6 @@ describe('AC: available Coordinators can mark themselves unavailable', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong')
     // And the state was not optimistically flipped.
     expect(screen.getByText('Available')).toBeInTheDocument()
-  })
-})
-
-describe('AC: the assigned coordinator receives a notification', () => {
-  it('renders each notification message', async () => {
-    const notifications: Notification[] = [
-      {
-        id: 1,
-        event_id: 7,
-        type: 'event_assigned',
-        message: "You have been assigned to coordinate 'Robotics Summit'.",
-        is_read: false,
-        created_at: '2026-09-10T02:00:00Z',
-      },
-    ]
-    mockListNotifications.mockResolvedValue(notifications)
-
-    render(<Coordinator />)
-
-    expect(
-      await screen.findByText("You have been assigned to coordinate 'Robotics Summit'."),
-    ).toBeInTheDocument()
-  })
-
-  it('shows an empty state rather than an empty box when there are none', async () => {
-    render(<Coordinator />)
-
-    expect(await screen.findByText('No notifications yet.')).toBeInTheDocument()
   })
 })
 

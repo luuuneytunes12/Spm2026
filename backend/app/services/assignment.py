@@ -15,10 +15,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.roles import Role
-from app.models.enums import EventStatus
+from app.models.enums import EventStatus, NotificationType
 from app.models.events import Event, EventStatusHistory
-from app.models.notifications import Notification
 from app.models.user import User
+from app.services.notifications import notify
 
 # Statuses under which an event still needs an active Coordinator working
 # it. COMPLETED, CANCELLED and REJECTED are exits from the pipeline -- an
@@ -88,13 +88,13 @@ def _record(db: Session, event: Event, actor_id: int, note: str) -> None:
 
 
 def _notify(db: Session, coordinator_id: int, event: Event) -> None:
-    db.add(
-        Notification(
-            user_id=coordinator_id,
-            event_id=event.id,
-            type="event_assigned",
-            message=f"You have been assigned to coordinate '{event.name or 'an event'}'.",
-        )
+    # Written in the caller's transaction, pushed live only once it commits.
+    notify(
+        db,
+        user_id=coordinator_id,
+        type=NotificationType.event_assigned,
+        message=f"You have been assigned to coordinate '{event.name or 'an event'}'.",
+        event_id=event.id,
     )
 
 
@@ -175,16 +175,15 @@ def reassign_event(
         f"Reassigned from {outgoing.name} to {coordinator.name}: {why}",
     )
     _notify(db, coordinator.id, event)
-    db.add(
-        Notification(
-            user_id=outgoing.id,
-            event_id=event.id,
-            type="event_reassigned_away",
-            message=(
-                f"{coordinator.name} has taken over coordinating "
-                f"'{event.name or 'an event'}' (previously assigned to you)."
-            ),
-        )
+    notify(
+        db,
+        user_id=outgoing.id,
+        type=NotificationType.event_reassigned_away,
+        message=(
+            f"{coordinator.name} has taken over coordinating "
+            f"'{event.name or 'an event'}' (previously assigned to you)."
+        ),
+        event_id=event.id,
     )
     return coordinator
 

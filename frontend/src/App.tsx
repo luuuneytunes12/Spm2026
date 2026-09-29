@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Forbidden } from './pages/Forbidden'
 import { Login } from './pages/Login'
 import { My } from './pages/My'
+import { Notifications } from './pages/Notifications'
 import { Profile } from './pages/Profile'
 import { Register } from './pages/Register'
 import { EquipmentCatalogue } from './pages/equipment/EquipmentCatalogue'
@@ -33,8 +34,9 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/my" element={<My />} />
-          {/* Profile is per-user, not per-role, so this route sits
-              outside every RequireRole group below. */}
+          {/* Notifications and Profile are per-user, not per-role, so
+              these routes sit outside every RequireRole group below. */}
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
 
           <Route element={<RequireRole roles={[Role.ORGANISER]} />}>
