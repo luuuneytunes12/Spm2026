@@ -76,9 +76,13 @@ The date filter reads the existing `booking_status` enum
 blocking, per the W4 p4 wording.
 
 If the booking stories decide a *pending* request should also hold a venue,
-that is a one-line change in the search plus one flipped test case. Until
-those stories land, the date filter is fully tested but excludes nothing in
-the live app — there is no booking data to exclude by.
+that is a one-line change in the search plus one flipped test case.
+
+Until those stories land, the only rows in either table are the demo data in
+`backend/sql/012_seed_venue_availability_demo.sql`: one approved booking of
+*Harbourfront Seminar Room 2* and one maintenance block on *Raffles Place
+Training Studio*, both over the time of the confirmed *Registration Test
+Event* (8 Oct 2026, 16:46–19:46 Singapore time).
 
 ---
 
@@ -164,7 +168,9 @@ not meant for them. Unchanged from *View Venue Details*.
 
 **Preconditions:** backend and frontend running, signed in as an Event
 Coordinator, `backend/sql/010_seed_venues.sql` and
-`backend/sql/011_seed_venues_for_search.sql` applied (12 venues).
+`backend/sql/011_seed_venues_for_search.sql` and
+`backend/sql/012_seed_venue_availability_demo.sql` applied (12 venues, one
+approved booking, one maintenance block).
 
 | # | Step | Expected result |
 |---|---|---|
@@ -174,10 +180,12 @@ Coordinator, `backend/sql/010_seed_venues.sql` and
 | 4 | Clear, tick **Projector** | 5 venues |
 | 5 | Also tick **Video conferencing** | 3 venues — only those with **both** |
 | 6 | Pick layout **Theatre** with step 5's facilities | The results narrow further |
-| 7 | Set *Available until* earlier than *Available from* | *"The end must be after the start."*; results unchanged |
-| 8 | Search for something that matches nothing | *"No venues match your search."* and a working **Clear filters** |
-| 9 | Click any result | That venue's full details open |
-| 10 | Narrow to ~400px wide | Filters stack; nothing scrolls sideways |
-| 11 | Toggle dark mode | Checkboxes, chips and the Inactive badge stay readable |
+| 7 | Clear, then set *Available from* 8 Oct 2026 16:00 and *Available until* 8 Oct 2026 20:00 | 10 venues — *Harbourfront Seminar Room 2* (booked) and *Raffles Place Training Studio* (closed for maintenance) are gone |
+| 8 | Change both dates to 9 Oct 2026, same times | All 12 venues are back |
+| 9 | Set *Available until* earlier than *Available from* | *"The end must be after the start."*; results unchanged |
+| 10 | Search for something that matches nothing | *"No venues match your search."* and a working **Clear filters** |
+| 11 | Click any result | That venue's full details open |
+| 12 | Narrow to ~400px wide | Filters stack; nothing scrolls sideways |
+| 13 | Toggle dark mode | Checkboxes, chips and the Inactive badge stay readable |
 
 **Tester:** ______________ **Date:** ____________ **Result:** Pass / Fail
