@@ -8,6 +8,9 @@
  *   VS AC4  what each result shows
  *   VS AC5  opening a result
  *
+ * The filters live in a compact bar: one chip per filter, each opening a
+ * small panel. Tests open the chip first, exactly as a person would.
+ *
  * These assert what a Coordinator experiences -- labels, visible text, what
  * is asked of the API -- never CSS class names. Which venues actually match
  * is decided server-side and covered by backend/tests/test_venue_search.py;
@@ -69,6 +72,13 @@ function lastSearch(): VenueSearch {
   return (calls[calls.length - 1]?.[0] ?? {}) as VenueSearch
 }
 
+/** Open a filter's panel by clicking its chip. Matched by the start of its
+ *  name, because an active chip also shows its value ("Layout: Theatre"). */
+async function openFilter(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole('button', { name: new RegExp(`^${name}`) }))
+  return screen.findByRole('dialog', { name: new RegExp(name, 'i') })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockList.mockResolvedValue([BALLROOM, SUITE])
@@ -82,6 +92,32 @@ describe('before anything is entered', () => {
     expect(await screen.findByText('Marina Grand Ballroom')).toBeInTheDocument()
     expect(screen.getByText('Changi Business Suite')).toBeInTheDocument()
     expect(lastSearch()).toEqual({})
+  })
+
+  it('keeps the filters out of the way until one is opened', async () => {
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    // The point of the filter bar: the venues, not the options, fill the
+    // page. No checklist, date field or layout list is shown up front.
+    for (const name of ['Attendance', 'Layout', 'Date & time', 'Facilities', 'Accessibility']) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('says how many venues are listed', async () => {
+    renderPage()
+
+    expect(await screen.findByText('2 venues')).toBeInTheDocument()
+  })
+
+  it('uses the singular for a single venue', async () => {
+    mockList.mockResolvedValue([BALLROOM])
+    renderPage()
+
+    expect(await screen.findByText('1 venue')).toBeInTheDocument()
   })
 })
 
@@ -114,10 +150,13 @@ describe('VS AC2 - filters', () => {
   it('offers the layouts recorded for venues, and filters by the one chosen', async () => {
     const user = userEvent.setup()
     renderPage()
-    const layout = await screen.findByRole('combobox', { name: 'Layout' })
+    await screen.findByText('Marina Grand Ballroom')
 
+    const panel = await openFilter(user, 'Layout')
+    // One choice only -- an event uses one layout -- so radios, not
+    // checkboxes, with "Any layout" as the way back.
     await waitFor(() =>
-      expect(within(layout).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      expect(within(panel).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual([
         'Any layout',
         'Banquet',
         'Boardroom',
@@ -125,7 +164,7 @@ describe('VS AC2 - filters', () => {
       ]),
     )
 
-    await user.selectOptions(layout, 'Theatre')
+    await user.click(within(panel).getByRole('radio', { name: 'Theatre' }))
 
     await waitFor(() => expect(lastSearch()).toEqual({ layout: 'Theatre' }))
   })
@@ -133,8 +172,10 @@ describe('VS AC2 - filters', () => {
   it('asks for every facility ticked, not just one', async () => {
     const user = userEvent.setup()
     renderPage()
-    const facilities = await screen.findByRole('group', { name: 'Facilities' })
+    await screen.findByText('Marina Grand Ballroom')
 
+    const panel = await openFilter(user, 'Facilities')
+    const facilities = within(panel).getByRole('group', { name: 'Facilities' })
     await user.click(await within(facilities).findByRole('checkbox', { name: 'Projector' }))
     await user.click(within(facilities).getByRole('checkbox', { name: 'Video conferencing' }))
 
@@ -146,8 +187,10 @@ describe('VS AC2 - filters', () => {
   it('asks for every accessibility feature ticked', async () => {
     const user = userEvent.setup()
     renderPage()
-    const accessibility = await screen.findByRole('group', { name: 'Accessibility' })
+    await screen.findByText('Marina Grand Ballroom')
 
+    const panel = await openFilter(user, 'Accessibility')
+    const accessibility = within(panel).getByRole('group', { name: 'Accessibility' })
     await user.click(await within(accessibility).findByRole('checkbox', { name: 'Hearing loop' }))
 
     await waitFor(() => expect(lastSearch()).toEqual({ accessibility: ['Hearing loop'] }))
@@ -156,9 +199,10 @@ describe('VS AC2 - filters', () => {
   it('unticking a facility takes it back out of the search', async () => {
     const user = userEvent.setup()
     renderPage()
-    const facilities = await screen.findByRole('group', { name: 'Facilities' })
-    const projector = await within(facilities).findByRole('checkbox', { name: 'Projector' })
+    await screen.findByText('Marina Grand Ballroom')
 
+    const panel = await openFilter(user, 'Facilities')
+    const projector = await within(panel).findByRole('checkbox', { name: 'Projector' })
     await user.click(projector)
     await waitFor(() => expect(lastSearch()).toEqual({ facilities: ['Projector'] }))
     await user.click(projector)
@@ -169,10 +213,12 @@ describe('VS AC2 - filters', () => {
   it('combines the keyword with every filter in one search', async () => {
     const user = userEvent.setup()
     renderPage()
-    const facilities = await screen.findByRole('group', { name: 'Facilities' })
+    await screen.findByText('Marina Grand Ballroom')
 
     await user.type(screen.getByRole('textbox', { name: 'Search venues' }), 'marina')
-    await user.type(screen.getByRole('spinbutton', { name: 'Expected attendance' }), '120')
+    const attendance = await openFilter(user, 'Attendance')
+    await user.type(within(attendance).getByRole('spinbutton', { name: 'Expected attendance' }), '120')
+    const facilities = await openFilter(user, 'Facilities')
     await user.click(await within(facilities).findByRole('checkbox', { name: 'Stage' }))
 
     await waitFor(() =>
@@ -192,15 +238,104 @@ describe('VS AC2 - filters', () => {
   })
 })
 
-describe('VS AC3 - date and time', () => {
-  it('searches for venues free across the window entered', async () => {
+describe('the filter bar', () => {
+  it('shows an applied filter on its chip, so what is filtered is visible at a glance', async () => {
+    const user = userEvent.setup()
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
-    fireEvent.change(screen.getByLabelText('Available from'), {
+    const layout = await openFilter(user, 'Layout')
+    await user.click(await within(layout).findByRole('radio', { name: 'Theatre' }))
+    const facilities = await openFilter(user, 'Facilities')
+    await user.click(await within(facilities).findByRole('checkbox', { name: 'Projector' }))
+    await user.click(within(facilities).getByRole('checkbox', { name: 'Stage' }))
+
+    expect(screen.getByRole('button', { name: 'Layout: Theatre' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Facilities · 2' })).toBeInTheDocument()
+  })
+
+  it('removes one filter with its own ✕, leaving the others', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const layout = await openFilter(user, 'Layout')
+    await user.click(await within(layout).findByRole('radio', { name: 'Theatre' }))
+    const facilities = await openFilter(user, 'Facilities')
+    await user.click(await within(facilities).findByRole('checkbox', { name: 'Stage' }))
+    await waitFor(() => expect(lastSearch()).toEqual({ layout: 'Theatre', facilities: ['Stage'] }))
+
+    await user.click(screen.getByRole('button', { name: 'Remove Layout filter' }))
+
+    await waitFor(() => expect(lastSearch()).toEqual({ facilities: ['Stage'] }))
+    expect(screen.getByRole('button', { name: /^Layout$/ })).toBeInTheDocument()
+  })
+
+  it('clears the keyword and every filter with "Clear all"', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+    expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: 'Search venues' }), 'marina')
+    const facilities = await openFilter(user, 'Facilities')
+    await user.click(await within(facilities).findByRole('checkbox', { name: 'Stage' }))
+    await waitFor(() => expect(lastSearch()).toEqual({ q: 'marina', facilities: ['Stage'] }))
+
+    await user.click(screen.getByRole('button', { name: 'Clear all' }))
+
+    await waitFor(() => expect(lastSearch()).toEqual({}))
+    expect(screen.getByRole('textbox', { name: 'Search venues' })).toHaveValue('')
+    expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+  })
+
+  it('closes a panel with Escape and returns focus to its chip', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    await openFilter(user, 'Facilities')
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Facilities/ })).toHaveFocus()
+  })
+
+  it('closes a panel when you click elsewhere on the page', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    await openFilter(user, 'Facilities')
+    await user.click(screen.getByRole('heading', { name: 'Venues' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('opens one panel at a time', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    await openFilter(user, 'Facilities')
+    await openFilter(user, 'Layout')
+
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /^Facilities/ })).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+
+describe('VS AC3 - date and time', () => {
+  it('searches for venues free across the window entered', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Date & time')
+    fireEvent.change(within(panel).getByLabelText('Available from'), {
       target: { value: '2026-11-02T09:00' },
     })
-    fireEvent.change(screen.getByLabelText('Available until'), {
+    fireEvent.change(within(panel).getByLabelText('Available until'), {
       target: { value: '2026-11-02T17:00' },
     })
 
@@ -215,30 +350,48 @@ describe('VS AC3 - date and time', () => {
   })
 
   it('refuses a window that ends before it starts, and does not search with it', async () => {
+    const user = userEvent.setup()
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
-    fireEvent.change(screen.getByLabelText('Available from'), {
+    const panel = await openFilter(user, 'Date & time')
+    fireEvent.change(within(panel).getByLabelText('Available from'), {
       target: { value: '2026-11-02T17:00' },
     })
-    fireEvent.change(screen.getByLabelText('Available until'), {
+    fireEvent.change(within(panel).getByLabelText('Available until'), {
       target: { value: '2026-11-02T09:00' },
     })
 
-    expect(await screen.findByText('The end must be after the start.')).toBeInTheDocument()
+    expect(await within(panel).findByText('The end must be after the start.')).toBeInTheDocument()
     expect(mockList.mock.calls.every(([search]) => !search?.start && !search?.end)).toBe(true)
   })
 
   it('asks for the other half of the window rather than searching with one end', async () => {
+    const user = userEvent.setup()
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
-    fireEvent.change(screen.getByLabelText('Available from'), {
+    const panel = await openFilter(user, 'Date & time')
+    fireEvent.change(within(panel).getByLabelText('Available from'), {
       target: { value: '2026-11-02T09:00' },
     })
 
-    expect(await screen.findByText('Enter both a start and an end.')).toBeInTheDocument()
+    expect(await within(panel).findByText('Enter both a start and an end.')).toBeInTheDocument()
     expect(mockList.mock.calls.every(([search]) => !search?.start)).toBe(true)
+  })
+
+  it('flags an unfinished window on its chip, so it is not forgotten once closed', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Date & time')
+    fireEvent.change(within(panel).getByLabelText('Available from'), {
+      target: { value: '2026-11-02T09:00' },
+    })
+    await user.keyboard('{Escape}')
+
+    expect(screen.getByRole('button', { name: 'Date & time: incomplete' })).toBeInTheDocument()
   })
 })
 
@@ -248,9 +401,11 @@ describe('VS AC3 - expected attendance', () => {
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
-    await user.type(screen.getByRole('spinbutton', { name: 'Expected attendance' }), '120')
+    const panel = await openFilter(user, 'Attendance')
+    await user.type(within(panel).getByRole('spinbutton', { name: 'Expected attendance' }), '120')
 
     await waitFor(() => expect(lastSearch()).toEqual({ minCapacity: 120 }))
+    expect(screen.getByRole('button', { name: 'Attendance: 120+' })).toBeInTheDocument()
   })
 
   it('ignores an attendance that is not a positive number', async () => {
@@ -258,7 +413,8 @@ describe('VS AC3 - expected attendance', () => {
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
-    await user.type(screen.getByRole('spinbutton', { name: 'Expected attendance' }), '0')
+    const panel = await openFilter(user, 'Attendance')
+    await user.type(within(panel).getByRole('spinbutton', { name: 'Expected attendance' }), '0')
 
     // Zero would be a 422 from the API; it is simply not a filter yet.
     await waitFor(() => expect(lastSearch()).toEqual({}))
