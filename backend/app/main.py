@@ -2,7 +2,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, coordinators, equipment, events, health, notifications, users
+from app.routers import (
+    auth,
+    coordinators,
+    equipment,
+    events,
+    health,
+    notifications,
+    registrations,
+    users,
+    venues,
+)
 
 import app.models  # noqa: F401  (registers models on Base.metadata)
 
@@ -23,3 +33,5 @@ app.include_router(coordinators.router)
 app.include_router(notifications.router)
 app.include_router(equipment.router)
 app.include_router(users.router)
+app.include_router(registrations.router)
+app.include_router(venues.router)

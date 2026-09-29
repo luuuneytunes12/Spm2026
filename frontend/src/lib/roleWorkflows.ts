@@ -14,7 +14,9 @@ export interface PlannedWorkflow {
  * screens ship, or the sidebar keeps rendering it as disabled text.
  * ("Create events" was the first to go: the Organiser draft/submit flow
  * now lives at /organiser/events. "My events" followed it: the Coordinator
- * now reads their assigned events at /coordinator/events.)
+ * now reads their assigned events at /coordinator/events. The Attendee's
+ * "Browse events" and "My registrations" became one page at
+ * /attendee/events. Coordinators and Venue Staff view venues at /venues.)
  *
  * The backend currently serves auth (`/auth/*`), `/health` and `/events`;
  * the venues, equipment and registration tables exist in the database but
@@ -47,7 +49,13 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     },
   ],
   [Role.VENUE_STAFF]: [
-    { title: 'Venues', description: 'create and update venue records (venues).' },
+    {
+      // Renamed, NOT removed, when "View Venue Details" shipped at /venues.
+      // That page is read-only; creating and editing venues still has no
+      // screen.
+      title: 'Manage venues',
+      description: 'create and update venue records (venues).',
+    },
     {
       title: 'Booking requests',
       description: 'approve or reject requests against your venues (venue_bookings).',
@@ -73,11 +81,6 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     { title: 'Event schedule', description: 'see which events need technical support (events).' },
   ],
   [Role.ATTENDEE]: [
-    { title: 'Browse events', description: 'see approved, upcoming events (events).' },
-    {
-      title: 'My registrations',
-      description: 'register for an event or withdraw (registrations).',
-    },
     { title: 'Notifications', description: 'updates about events you registered for (notifications).' },
   ],
 }
