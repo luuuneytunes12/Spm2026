@@ -12,7 +12,18 @@ import { ApiError } from '../../lib/api'
 import { VenueView } from './VenueView'
 import { Venues } from './Venues'
 
-vi.mock('../../lib/venues', () => ({ listVenues: vi.fn(), getVenue: vi.fn() }))
+// listVenueFilterOptions: the list page also loads its filter choices
+// (Search and Filter Venues). Without it in the mock the page would call
+// undefined on mount.
+vi.mock('../../lib/venues', () => ({
+  listVenues: vi.fn(),
+  getVenue: vi.fn(),
+  listVenueFilterOptions: vi.fn().mockResolvedValue({
+    layouts: [],
+    facilities: [],
+    accessibility_features: [],
+  }),
+}))
 
 import { getVenue, listVenues } from '../../lib/venues'
 import type { VenueDetail } from '../../lib/venues'
