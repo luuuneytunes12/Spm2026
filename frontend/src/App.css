@@ -1466,3 +1466,17 @@
     text-decoration: underline;
   }
 }
+
+/* ---------------------------------------------------------------------
+   Venue search filters
+
+   A set of checkboxes laid out in columns -- nothing else in the app shows
+   more than one checkbox at a time. Each row reuses `.checkbox-row`, and
+   the group reuses `.field-group`, so only the grid itself is new.
+   --------------------------------------------------------------------- */
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 6px 16px;
+}

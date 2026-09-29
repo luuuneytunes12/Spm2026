@@ -72,6 +72,10 @@ def test_internal_user_sees_name_location_and_capacity(client, db_session, role)
             "name": "Marina Hall",
             "location": "10 Bayfront Ave, Level 3",
             "capacity": 250,
+            # Added by "Search and Filter Venues": each result shows its
+            # facilities (that story's AC4). Still an exact match, so any
+            # other change to the list row fails here.
+            "facilities": ["Stage", "Projector"],
             "is_active": True,
         }
     ]
