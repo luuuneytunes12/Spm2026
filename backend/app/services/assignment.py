@@ -1,15 +1,18 @@
 """Coordinator assignment: picking one, and leaving a record behind.
 
 Shared by two entry points -- POST /events/{id}/submit (initial assignment)
-and PATCH /coordinators/me/availability (reassignment when one goes
-unavailable) -- so both follow the same selection rule and leave the same
-kind of trail. See the "Mark myself unavailable" story:
+and POST /events/assigned/{id}/release (a Coordinator declining one event) --
+so both follow the same selection rule and leave the same kind of trail.
+
+Marking yourself unavailable (PATCH /coordinators/me/availability) does NOT
+come through here to move events: it only takes the Coordinator out of the
+pool that `_pick_coordinator` draws from, so they stop receiving NEW events.
+Whatever they already hold stays with them. See the "Declare Coordinator
+Global Unavailability" story:
 
     As an Event Coordinator, I want to mark myself as unavailable, so that
-    my assigned events are automatically reassigned to another coordinator.
+    I stop receiving new ones until I'm available again.
 """
-
-from typing import Literal
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -34,6 +37,16 @@ ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
 )
 
 
+def available_coordinators(db: Session):
+    """Query for the assignment pool: Coordinators who are marked available.
+
+    The one definition of "can be assigned a new event" -- `_pick_coordinator`
+    chooses from it and the Organiser-facing count reports its size, so the
+    two can never disagree about who is in the pool.
+    """
+    return db.query(User).filter(User.role == Role.COORDINATOR.value, User.is_available.is_(True))
+
+
 def _pick_coordinator(db: Session, *, exclude_id: int | None = None) -> User | None:
     """The available Coordinator with the lightest current load, or None.
 
@@ -42,7 +55,7 @@ def _pick_coordinator(db: Session, *, exclude_id: int | None = None) -> User | N
     out of. Ties are broken by id, so the choice is deterministic rather
     than whatever order the database happens to return rows in.
     """
-    query = db.query(User).filter(User.role == Role.COORDINATOR.value, User.is_available.is_(True))
+    query = available_coordinators(db)
     if exclude_id is not None:
         query = query.filter(User.id != exclude_id)
     candidates = query.all()
@@ -98,6 +111,28 @@ def _notify(db: Session, coordinator_id: int, event: Event) -> None:
     )
 
 
+def _notify_organiser(db: Session, event: Event, coordinator: User) -> None:
+    """Tell the Organiser who is now coordinating their event, and how to reach them.
+
+    A notification, not an activity-log line: the log (EventStatusHistory)
+    is the event's shared record, readable by everyone involved in it, while
+    this goes only to the Organiser -- the one role whose question is "who
+    owns my request?". The Coordinator gets their own, differently worded
+    notification from `_notify`. The name and email match what EventView's
+    "Your Assigned Event Coordinator" card shows.
+    """
+    notify(
+        db,
+        user_id=event.organiser_id,
+        type=NotificationType.event_coordinator_assigned,
+        message=(
+            f"{coordinator.name} ({coordinator.email}) is now coordinating "
+            f"'{event.name or 'your event'}'."
+        ),
+        event_id=event.id,
+    )
+
+
 def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
     """Auto-assign an available Coordinator to a freshly submitted event.
 
@@ -132,47 +167,47 @@ def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
         )
     )
     _notify(db, coordinator.id, event)
+    _notify_organiser(db, event, coordinator)
     return coordinator
 
 
-def reassign_event(
-    db: Session,
-    event: Event,
-    outgoing: User,
-    *,
-    reason: Literal["unavailable", "declined"] = "unavailable",
-) -> User | None:
+def reassign_event(db: Session, event: Event, outgoing: User) -> User | None:
     """Move `event` off `outgoing` onto another available Coordinator.
 
-    `outgoing` is both whose events these are and who is recorded as having
-    made the change. Two call sites share this: PATCH
-    /coordinators/me/availability (bulk, `reason="unavailable"`, all of
-    `outgoing`'s active events move) and POST /events/assigned/{id}/release
-    (single event, `reason="declined"`, only `event` moves and `outgoing`'s
-    availability is untouched) -- `reason` picks the activity-log wording
-    that matches which of those actually happened. Returns the new
-    Coordinator, or None if nobody else is available (the event is left
-    unassigned rather than stuck with someone who cannot work on it).
+    Used by POST /events/assigned/{id}/release: `outgoing` declined this one
+    event, so only `event` moves and their availability is untouched.
+    `outgoing` is recorded as having made the change -- in the activity log
+    whether or not anyone takes over. Returns the new Coordinator, or None
+    if nobody else is available (the event is left unassigned rather than
+    stuck with someone who declined it).
 
-    Both sides are notified: the new Coordinator that they now own it (same
-    as an initial assignment), and `outgoing` that it moved on and to whom
+    All three sides are notified: the new Coordinator that they now own it
+    (same as an initial assignment), `outgoing` that it moved on and to whom
     -- otherwise the only way they would find out is by noticing it missing
-    from their own list.
+    from their own list -- and the Organiser, with the new Coordinator's
+    name and email.
     """
     coordinator = _pick_coordinator(db, exclude_id=outgoing.id)
     event.coordinator_id = coordinator.id if coordinator else None
     if coordinator is None:
+        # The decline still happened and must be on the record: with nobody
+        # to take over, the event is now unassigned, which is exactly when
+        # who let go of it, and when, is worth knowing.
+        _record(
+            db,
+            event,
+            outgoing.id,
+            f"{outgoing.name} declined this event; no other Coordinator was "
+            "available, so it is now unassigned.",
+        )
         return None
 
-    if reason == "declined":
-        why = f"{outgoing.name} declined this event."
-    else:
-        why = f"{outgoing.name} marked themselves unavailable."
     _record(
         db,
         event,
         outgoing.id,
-        f"Reassigned from {outgoing.name} to {coordinator.name}: {why}",
+        f"Reassigned from {outgoing.name} to {coordinator.name}: "
+        f"{outgoing.name} declined this event.",
     )
     _notify(db, coordinator.id, event)
     notify(
@@ -185,17 +220,5 @@ def reassign_event(
         ),
         event_id=event.id,
     )
+    _notify_organiser(db, event, coordinator)
     return coordinator
-
-
-def events_needing_reassignment(db: Session, coordinator_id: int) -> list[Event]:
-    """Events currently active under `coordinator_id`'s watch.
-
-    What `reassign_event` should be called for, one by one, when that
-    Coordinator marks themselves unavailable.
-    """
-    return (
-        db.query(Event)
-        .filter(Event.coordinator_id == coordinator_id, Event.status.in_(ACTIVE_ASSIGNMENT_STATUSES))
-        .all()
-    )

@@ -62,6 +62,7 @@ class RegistrationStatus(enum.StrEnum):
 class NotificationType(enum.StrEnum):
     event_assigned = "event_assigned"
     event_reassigned_away = "event_reassigned_away"
+    event_coordinator_assigned = "event_coordinator_assigned"
     event_approved = "event_approved"
     event_rejected = "event_rejected"
 
