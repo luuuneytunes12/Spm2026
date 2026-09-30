@@ -154,14 +154,18 @@ export function MyRequests() {
                 >
                   {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
+                {event.has_pending_change_request && (
+                  <span className="badge badge-muted">Change pending</span>
+                )}
                 {isDraft(event) ? (
                   <Link to={`/organiser/events/${event.id}/edit`}>Continue editing →</Link>
                 ) : (
                   <>
                     <Link to={`/organiser/events/${event.id}`}>View →</Link>
                     {(event.status === EventStatus.SUBMITTED ||
-                      event.status === EventStatus.UNDER_REVIEW) && (
-                      <Link to={`/organiser/events/${event.id}/edit`}>Correct request →</Link>
+                      event.status === EventStatus.UNDER_REVIEW) &&
+                      !event.has_pending_change_request && (
+                      <Link to={`/organiser/events/${event.id}/edit`}>Request changes →</Link>
                     )}
                   </>
                 )}

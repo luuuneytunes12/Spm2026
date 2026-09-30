@@ -10,8 +10,9 @@ import {
   formatTimestamp,
   getEvent,
   getOwnEventActivity,
+  listOwnChangeRequests,
 } from '../../lib/events'
-import type { ActivityEntry, EventDetail } from '../../lib/events'
+import type { ActivityEntry, EventChangeRequest, EventDetail } from '../../lib/events'
 
 function activityStatusLabel(value: string): string {
   return EVENT_STATUS_LABELS[value as EventStatus] ?? value
@@ -22,17 +23,23 @@ export function EventView() {
   const { id } = useParams()
   const [event, setEvent] = useState<EventDetail | null>(null)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [changeRequests, setChangeRequests] = useState<EventChangeRequest[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    Promise.all([getEvent(Number(id)), getOwnEventActivity(Number(id))])
-      .then(([e, entries]) => {
+    Promise.all([
+      getEvent(Number(id)),
+      getOwnEventActivity(Number(id)),
+      listOwnChangeRequests(Number(id)),
+    ])
+      .then(([e, entries, requests]) => {
         if (!cancelled) {
           setEvent(e)
           setActivity(entries)
+          setChangeRequests(requests)
         }
       })
       .catch((err: unknown) => {
@@ -77,6 +84,7 @@ export function EventView() {
     ['Registration', event.registration_enabled ? 'Attendees must register' : 'Not required'],
     ['Special arrangements', event.special_arrangements],
   ]
+  const hasPendingChangeRequest = changeRequests.some((request) => request.status === 'pending')
 
   return (
     <div className="stack">
@@ -99,10 +107,10 @@ export function EventView() {
           </p>
         </div>
         {(event.status === EventStatus.DRAFT ||
-          event.status === EventStatus.SUBMITTED ||
-          event.status === EventStatus.UNDER_REVIEW) && (
+          ((event.status === EventStatus.SUBMITTED || event.status === EventStatus.UNDER_REVIEW) &&
+            !hasPendingChangeRequest)) && (
           <Link to={`/organiser/events/${event.id}/edit`} className="btn-primary btn-link">
-            {event.status === EventStatus.DRAFT ? 'Continue editing' : 'Correct request'}
+            {event.status === EventStatus.DRAFT ? 'Continue editing' : 'Request changes'}
           </Link>
         )}
       </header>
@@ -124,6 +132,24 @@ export function EventView() {
           </div>
         </dl>
       </section>
+
+      {changeRequests.length > 0 && (
+        <section className="card">
+          <h2>Change requests</h2>
+          <ol className="activity-list" aria-label="Change requests">
+            {changeRequests.map((request) => (
+              <li key={request.id} className="activity-item">
+                <p className="activity-change">
+                  <strong>{request.status[0].toUpperCase() + request.status.slice(1)}</strong>
+                  {` · ${new Date(request.created_at).toLocaleString()}`}
+                </p>
+                <p>{request.description}</p>
+                {request.review_notes && <p className="activity-note">{request.review_notes}</p>}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {event.status !== EventStatus.DRAFT && (
         <section className="card">

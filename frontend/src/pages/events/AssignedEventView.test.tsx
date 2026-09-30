@@ -29,13 +29,22 @@ vi.mock('../../lib/events', async () => {
   return {
     ...actual,
     approveEvent: vi.fn(),
+    approveEventChangeRequest: vi.fn(),
     getAssignedEvent: vi.fn(),
     rejectEvent: vi.fn(),
+    rejectEventChangeRequest: vi.fn(),
     releaseAssignedEvent: vi.fn(),
   }
 })
 
-import { approveEvent, getAssignedEvent, rejectEvent, releaseAssignedEvent } from '../../lib/events'
+import {
+  approveEvent,
+  approveEventChangeRequest,
+  getAssignedEvent,
+  rejectEvent,
+  rejectEventChangeRequest,
+  releaseAssignedEvent,
+} from '../../lib/events'
 import type { AssignedEventDetail } from '../../lib/events'
 import { setMyAvailability } from '../../lib/coordinators'
 
@@ -43,6 +52,8 @@ const mockGet = vi.mocked(getAssignedEvent)
 const mockApprove = vi.mocked(approveEvent)
 const mockReject = vi.mocked(rejectEvent)
 const mockRelease = vi.mocked(releaseAssignedEvent)
+const mockApproveChangeRequest = vi.mocked(approveEventChangeRequest)
+const mockRejectChangeRequest = vi.mocked(rejectEventChangeRequest)
 
 const EVENT: AssignedEventDetail = {
   id: 7,
@@ -78,6 +89,7 @@ const EVENT: AssignedEventDetail = {
       created_at: '2026-09-10T02:00:00Z',
     },
   ],
+  change_requests: [],
 }
 
 function renderView(id = '7') {
@@ -93,6 +105,34 @@ function renderView(id = '7') {
 beforeEach(() => {
   vi.clearAllMocks()
   mockGet.mockResolvedValue(EVENT)
+  mockApproveChangeRequest.mockResolvedValue({
+    id: 11,
+    event_id: 7,
+    requested_by: 1,
+    description: 'Increase attendance',
+    proposed_changes: { expected_attendance: 150 },
+    status: 'approved',
+    review_notes: null,
+    created_at: '2026-09-10T02:00:00Z',
+    reviewed_at: '2026-09-10T03:00:00Z',
+    important_change: true,
+    venue_bookings_to_reconsider: [],
+    equipment_reservations_to_reconsider: [],
+  })
+  mockRejectChangeRequest.mockResolvedValue({
+    id: 11,
+    event_id: 7,
+    requested_by: 1,
+    description: 'Increase attendance',
+    proposed_changes: { expected_attendance: 150 },
+    status: 'rejected',
+    review_notes: 'Capacity is too low.',
+    created_at: '2026-09-10T02:00:00Z',
+    reviewed_at: '2026-09-10T03:00:00Z',
+    important_change: true,
+    venue_bookings_to_reconsider: [],
+    equipment_reservations_to_reconsider: [],
+  })
 })
 
 describe('AC1 - the full requirements are visible', () => {
@@ -218,6 +258,83 @@ describe('AC1 - the full requirements are visible', () => {
       'listitem',
     )
     expect(items.map((li) => li.textContent)).toEqual(['Halal catering', 'Interpreter booth'])
+  })
+})
+
+describe('change requests - coordinator review and planning impact', () => {
+  it('shows an important proposal and existing commitments, then offers a decision', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      change_requests: [
+        {
+          id: 11,
+          event_id: 7,
+          requested_by: 1,
+          description: 'Increase expected attendance',
+          proposed_changes: { expected_attendance: 180 },
+          status: 'pending',
+          review_notes: null,
+          created_at: '2026-09-10T02:00:00Z',
+          reviewed_at: null,
+          important_change: true,
+          venue_bookings_to_reconsider: [
+            {
+              id: 1,
+              venue_name: 'Main Hall',
+              start_time: '2026-11-02T09:00:00Z',
+              end_time: '2026-11-02T17:00:00Z',
+              status: 'approved',
+            },
+          ],
+          equipment_reservations_to_reconsider: [
+            { id: 2, equipment_name: 'Projector', quantity_requested: 2, status: 'reserved' },
+          ],
+        },
+      ],
+    })
+    renderView()
+
+    expect(await screen.findByText('Important change')).toBeInTheDocument()
+    expect(screen.getByText(/Main Hall/)).toBeInTheDocument()
+    expect(screen.getByText(/Projector/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve changes' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve request' })).toBeDisabled()
+  })
+
+  it('lists proposed equipment by name and quantity instead of raw JSON', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      change_requests: [
+        {
+          id: 12,
+          event_id: 7,
+          requested_by: 1,
+          description: 'Add a projector',
+          proposed_changes: {
+            equipment_items: [
+              {
+                equipment_id: 11,
+                equipment_name: 'Epson Projector',
+                quantity_requested: 2,
+                technical_requirements: null,
+              },
+            ],
+          },
+          status: 'pending',
+          review_notes: null,
+          created_at: '2026-09-10T02:00:00Z',
+          reviewed_at: null,
+          important_change: true,
+          venue_bookings_to_reconsider: [],
+          equipment_reservations_to_reconsider: [],
+        },
+      ],
+    })
+    renderView()
+
+    expect(await screen.findByText('Epson Projector × 2')).toBeInTheDocument()
+    expect(screen.queryByText(/\{"equipment_id"/)).not.toBeInTheDocument()
+    expect(screen.getByText('Add a projector')).toBeInTheDocument()
   })
 })
 

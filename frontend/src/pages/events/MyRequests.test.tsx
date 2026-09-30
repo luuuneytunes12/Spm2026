@@ -112,7 +112,7 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
     )
   })
 
-  it('offers draft editing and submitted request corrections before a decision', async () => {
+  it('offers draft editing and submitted change requests when none are pending', async () => {
     const user = userEvent.setup()
     mockList.mockResolvedValue([DRAFT, SUBMITTED])
     renderAt()
@@ -129,10 +129,21 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
       'href',
       '/organiser/events/2',
     )
-    expect(within(submittedRow).getByRole('link', { name: /correct request/i })).toHaveAttribute(
+    expect(within(submittedRow).getByRole('link', { name: /request changes/i })).toHaveAttribute(
       'href',
       '/organiser/events/2/edit',
     )
+  })
+
+  it('hides the list shortcut and marks an event while a change request is pending', async () => {
+    const pending = { ...SUBMITTED, has_pending_change_request: true }
+    mockList.mockResolvedValue([pending])
+    renderAt('/organiser/events?tab=submitted')
+
+    const row = await screen.findByRole('listitem')
+    expect(within(row).getByText('Change pending')).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: /view/i })).toBeInTheDocument()
+    expect(within(row).queryByRole('link', { name: /request changes/i })).not.toBeInTheDocument()
   })
 })
 

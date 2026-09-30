@@ -40,16 +40,18 @@ vi.mock('../../lib/events', async () => {
     ...actual, // keep the real date helpers
     createEvent: vi.fn(),
     updateEvent: vi.fn(),
+    requestEventChanges: vi.fn(),
     submitEvent: vi.fn(),
     getEvent: vi.fn(),
   }
 })
 
-import { createEvent, getEvent, submitEvent, updateEvent } from '../../lib/events'
+import { createEvent, getEvent, requestEventChanges, submitEvent, updateEvent } from '../../lib/events'
 import type { EventDetail } from '../../lib/events'
 
 const mockCreate = vi.mocked(createEvent)
 const mockUpdate = vi.mocked(updateEvent)
+const mockRequestChanges = vi.mocked(requestEventChanges)
 const mockSubmit = vi.mocked(submitEvent)
 const mockGet = vi.mocked(getEvent)
 
@@ -120,6 +122,20 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockCreate.mockResolvedValue({ ...SAVED })
   mockUpdate.mockResolvedValue({ ...SAVED })
+  mockRequestChanges.mockResolvedValue({
+    id: 12,
+    event_id: 7,
+    requested_by: 5,
+    description: 'Correction needed',
+    proposed_changes: { name: 'Corrected conference name' },
+    status: 'pending',
+    review_notes: null,
+    created_at: '2026-09-10T00:00:00Z',
+    reviewed_at: null,
+    important_change: false,
+    venue_bookings_to_reconsider: [],
+    equipment_reservations_to_reconsider: [],
+  })
   mockSubmit.mockResolvedValue({ ...SAVED, status: 'submitted' })
   mockGet.mockResolvedValue({ ...SAVED })
 })
@@ -208,7 +224,7 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     expect(mockCreate).not.toHaveBeenCalled()
   })
 
-  it('saves a correction to a request under review without resubmitting it', async () => {
+  it('requests a correction to a request under review without mutating or resubmitting it', async () => {
     const user = userEvent.setup()
     mockGet.mockResolvedValue({ ...SAVED, status: 'under_review' })
     renderEdit()
@@ -217,14 +233,17 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     await user.clear(screen.getByLabelText('Event name'))
     await user.type(screen.getByLabelText('Event name'), 'Corrected conference name')
     expect(screen.queryByRole('button', { name: 'Submit request' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.type(screen.getByLabelText('Explanation'), 'Correcting a typo')
+    await user.click(screen.getByRole('button', { name: 'Request changes' }))
 
     await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith(
+      expect(mockRequestChanges).toHaveBeenCalledWith(
         7,
-        expect.objectContaining({ name: 'Corrected conference name' }),
+        'Correcting a typo',
+        { name: 'Corrected conference name' },
       ),
     )
+    expect(mockUpdate).not.toHaveBeenCalled()
     expect(mockSubmit).not.toHaveBeenCalled()
     expect(navigate).toHaveBeenCalledWith('/organiser/events/7', { replace: true })
   })

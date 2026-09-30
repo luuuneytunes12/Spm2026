@@ -29,14 +29,20 @@ vi.mock('../../lib/coordinators', () => ({
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
-  return { ...actual, getEvent: vi.fn(), getOwnEventActivity: vi.fn() }
+  return {
+    ...actual,
+    getEvent: vi.fn(),
+    getOwnEventActivity: vi.fn(),
+    listOwnChangeRequests: vi.fn(),
+  }
 })
 
-import { getEvent, getOwnEventActivity } from '../../lib/events'
-import type { ActivityEntry, EventDetail } from '../../lib/events'
+import { getEvent, getOwnEventActivity, listOwnChangeRequests } from '../../lib/events'
+import type { ActivityEntry, EventChangeRequest, EventDetail } from '../../lib/events'
 
 const mockGet = vi.mocked(getEvent)
 const mockActivity = vi.mocked(getOwnEventActivity)
+const mockChangeRequests = vi.mocked(listOwnChangeRequests)
 
 const BASE: EventDetail = {
   id: 7,
@@ -77,6 +83,7 @@ function renderView(id = '7') {
 beforeEach(() => {
   vi.clearAllMocks()
   mockActivity.mockResolvedValue([])
+  mockChangeRequests.mockResolvedValue([])
 })
 
 describe('AC2 - the assigned coordinator is visible on the event page', () => {
@@ -122,7 +129,7 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
 
     renderView()
 
-    expect(await screen.findByRole('link', { name: 'Correct request' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Request changes' })).toHaveAttribute(
       'href',
       '/organiser/events/7/edit',
     )
@@ -134,7 +141,55 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
     renderView()
 
     await screen.findByText('Approved')
-    expect(screen.queryByRole('link', { name: 'Correct request' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
+  })
+
+  it('shows the organiser the decision and coordinator reason for a change request', async () => {
+    const changeRequest: EventChangeRequest = {
+      id: 11,
+      event_id: 7,
+      requested_by: 1,
+      description: 'Increase attendance',
+      proposed_changes: { expected_attendance: 160 },
+      status: 'rejected',
+      review_notes: 'The venue capacity cannot support that number.',
+      created_at: '2026-09-11T09:00:00Z',
+      reviewed_at: '2026-09-12T09:00:00Z',
+      important_change: true,
+      venue_bookings_to_reconsider: [],
+      equipment_reservations_to_reconsider: [],
+    }
+    mockChangeRequests.mockResolvedValue([changeRequest])
+
+    renderView()
+
+    expect(await screen.findByRole('heading', { name: 'Change requests' })).toBeInTheDocument()
+    expect(screen.getByText('Increase attendance')).toBeInTheDocument()
+    expect(screen.getByText('The venue capacity cannot support that number.')).toBeInTheDocument()
+  })
+
+  it('does not offer another change request while one is pending', async () => {
+    mockChangeRequests.mockResolvedValue([
+      {
+        id: 12,
+        event_id: 7,
+        requested_by: 1,
+        description: 'Increase attendance',
+        proposed_changes: { expected_attendance: 160 },
+        status: 'pending',
+        review_notes: null,
+        created_at: '2026-09-11T09:00:00Z',
+        reviewed_at: null,
+        important_change: true,
+        venue_bookings_to_reconsider: [],
+        equipment_reservations_to_reconsider: [],
+      },
+    ])
+
+    renderView()
+
+    await screen.findByText('Increase attendance')
+    expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
   })
 
   it('shows the Coordinator rejection reason in the event activity log', async () => {

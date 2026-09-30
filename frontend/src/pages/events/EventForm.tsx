@@ -8,6 +8,7 @@ import {
   EventStatus,
   fromDateTimeLocal,
   getEvent,
+  requestEventChanges,
   submitEvent,
   toDateTimeLocal,
   updateEvent,
@@ -109,6 +110,7 @@ export function EventForm() {
   const eventId = id ? Number(id) : null
 
   const [form, setForm] = useState<FormState>(EMPTY)
+  const [changeDescription, setChangeDescription] = useState('')
   const [canCorrectSubmitted, setCanCorrectSubmitted] = useState(false)
   const [loading, setLoading] = useState(eventId !== null)
   const [busy, setBusy] = useState(false)
@@ -118,6 +120,7 @@ export function EventForm() {
   const [missing, setMissing] = useState<string[]>([])
   const formRef = useRef<HTMLFormElement>(null)
   const bannerRef = useRef<HTMLParagraphElement>(null)
+  const originalPayload = useRef<EventInput>(toPayload(EMPTY))
 
   // A failed submit leaves the reason somewhere above the button that was
   // just pressed -- often a screen away on a form this long. Without this
@@ -162,7 +165,7 @@ export function EventForm() {
         setCanCorrectSubmitted(
           e.status === EventStatus.SUBMITTED || e.status === EventStatus.UNDER_REVIEW,
         )
-        setForm({
+        const loadedForm: FormState = {
           name: e.name ?? '',
           purpose: e.purpose ?? '',
           event_type: e.event_type ?? '',
@@ -182,7 +185,9 @@ export function EventForm() {
           })),
           special_arrangements: e.special_arrangements ?? '',
           registration_enabled: e.registration_enabled,
-        })
+        }
+        setForm(loadedForm)
+        originalPayload.current = toPayload(loadedForm)
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : 'Could not load this request.')
@@ -208,7 +213,21 @@ export function EventForm() {
   async function persist(): Promise<number> {
     const payload = toPayload(form)
     if (eventId !== null) {
-      await updateEvent(eventId, payload)
+      if (canCorrectSubmitted) {
+        if (!changeDescription.trim()) {
+          throw new Error('Please explain why these changes are needed.')
+        }
+        const changedFields = Object.fromEntries(
+          Object.entries(payload).filter(
+            ([field, value]) =>
+              JSON.stringify(value) !==
+              JSON.stringify(originalPayload.current[field as keyof EventInput]),
+          ),
+        ) as EventInput
+        await requestEventChanges(eventId, changeDescription.trim(), changedFields)
+      } else {
+        await updateEvent(eventId, payload)
+      }
       return eventId
     }
     return (await createEvent(payload)).id
@@ -269,7 +288,7 @@ export function EventForm() {
         <h1>{eventId === null ? 'New Event Request' : 'Edit Event Request'}</h1>
         <p className="page-subtitle">
           {canCorrectSubmitted
-            ? 'Update the request while it is awaiting a Coordinator decision.'
+            ? 'Propose corrections for the Coordinator to review. The event stays unchanged until approved.'
             : 'Save as a draft at any point — nothing here is required until you submit.'}
         </p>
       </header>
@@ -349,6 +368,23 @@ export function EventForm() {
             <p className="field-hint">Optional.</p>
           </div>
         </section>
+
+        {canCorrectSubmitted && (
+          <section className="card stack-tight">
+            <h2>Reason for this change request</h2>
+            <div className="field">
+              <label htmlFor="change-description">Explanation</label>
+              <textarea
+                id="change-description"
+                rows={3}
+                maxLength={2000}
+                value={changeDescription}
+                onChange={(e) => setChangeDescription(e.target.value)}
+                required
+              />
+            </div>
+          </section>
+        )}
 
         <section className="card stack-tight">
           <h2>Schedule &amp; Size</h2>
@@ -524,7 +560,7 @@ export function EventForm() {
 
         <div className="form-actions">
           <button type="submit" className="btn-secondary" disabled={busy}>
-            {busy ? 'Saving…' : canCorrectSubmitted ? 'Save changes' : 'Save as draft'}
+            {busy ? 'Saving…' : canCorrectSubmitted ? 'Request changes' : 'Save as draft'}
           </button>
           {!canCorrectSubmitted && (
             <button

@@ -136,6 +136,18 @@ describe('what the list shows', () => {
     expect(within(row).getByText(/conference/)).toBeInTheDocument()
   })
 
+  it('flags an event when its organiser has submitted a change request', async () => {
+    mockList.mockResolvedValue([{ ...ASSIGNED, has_pending_change_request: true }])
+    renderList()
+
+    const row = await screen.findByRole('listitem')
+    expect(within(row).getByText('Change request pending')).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: /view details/i })).toHaveAttribute(
+      'href',
+      '/coordinator/events/7',
+    )
+  })
+
   it('explains the empty state rather than showing a blank page', async () => {
     renderList()
 
