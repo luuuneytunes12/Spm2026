@@ -125,7 +125,7 @@ def test_submitting_with_no_coordinator_leaves_it_unassigned(client, db_session)
     assert res.json()["coordinator_id"] is None
 
 
-def test_unavailable_coordinator_is_never_assigned(client, db_session):
+def test_scrum24_ac2_unavailable_coordinator_is_never_assigned(client, db_session):
     """AC1: "available" is load-bearing -- a Coordinator who has marked
     themselves unavailable must not receive new work either."""
     organiser, organiser_headers = _organiser(client, db_session)
@@ -317,7 +317,7 @@ def test_an_unavailable_coordinator_can_still_work_the_events_they_hold(client, 
     assert client.post(f"/events/{event_id}/approve", headers=holder_headers).status_code == 200
 
 
-def test_new_events_skip_the_unavailable_coordinator_but_old_ones_stay(client, db_session):
+def test_scrum24_ac2_new_events_skip_the_unavailable_coordinator_but_old_ones_stay(client, db_session):
     organiser, organiser_headers = _organiser(client, db_session)
     holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
     other, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
@@ -331,7 +331,7 @@ def test_new_events_skip_the_unavailable_coordinator_but_old_ones_stay(client, d
     assert db_session.get(Event, second_id).coordinator_id == other.id  # skipped Sam
 
 
-def test_ac1_profile_shows_unavailable_until_marked_available_again(client, db_session):
+def test_scrum24_ac1_profile_shows_unavailable_until_marked_available_again(client, db_session):
     """SCRUM-24 AC1: the status on the profile (GET /auth/me) is
     "Unavailable" from the moment it is set, survives a fresh login and
     unrelated activity, and only flips back when the Coordinator says so."""
@@ -374,7 +374,7 @@ def test_toggling_to_the_same_value_is_a_no_op(client, db_session):
     assert len(body["activity"]) == 2
 
 
-def test_availability_can_be_turned_back_on(client, db_session):
+def test_scrum24_ac3_availability_can_be_turned_back_on(client, db_session):
     organiser, organiser_headers = _organiser(client, db_session)
     coordinator, coordinator_headers = _coordinator(
         client, db_session, "sam@connectsphere.test", "Sam Tan"
@@ -417,7 +417,7 @@ def test_anonymous_cannot_list_notifications(client):
 # --------------------------------------------------------------------------
 
 
-def test_releasing_one_event_reassigns_only_that_one(client, db_session):
+def test_64_ac1_releasing_one_event_reassigns_only_that_one(client, db_session):
     """The other form of "unavailable": narrower than the global toggle --
     everything else on the Coordinator's plate, and their general
     eligibility for new work, is untouched."""
@@ -547,7 +547,7 @@ def test_anonymous_cannot_release_an_event(client):
 # --------------------------------------------------------------------------
 
 
-def test_toggling_availability_with_zero_active_events_is_still_logged(client, db_session):
+def test_scrum24_ac4_toggling_availability_with_zero_active_events_is_still_logged(client, db_session):
     """AC5: logged even when there's no event for event_status_history to
     attach a row to."""
     _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
@@ -563,7 +563,7 @@ def test_toggling_availability_with_zero_active_events_is_still_logged(client, d
     assert len(entries) == 2
 
 
-def test_toggling_to_the_same_value_does_not_add_a_history_entry(client, db_session):
+def test_scrum24_ac4_toggling_to_the_same_value_does_not_add_a_history_entry(client, db_session):
     _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
 
     client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
@@ -581,7 +581,7 @@ def test_availability_history_is_scoped_to_the_caller(client, db_session):
     assert client.get("/coordinators/me/availability-history", headers=priya_headers).json() == []
 
 
-def test_availability_history_orders_newest_first(client, db_session):
+def test_scrum24_ac4_availability_history_orders_newest_first(client, db_session):
     _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
 
     client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
