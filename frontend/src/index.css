@@ -15,7 +15,9 @@
   /* Text */
   --text: #5a5a6e;
   --text-h: #16161f;
-  --text-muted: #8a8a9e;
+  /* Muted text: #686876 (was #8a8a9e, 3.4:1) clears WCAG AA 4.5:1 on every
+     surface it sits on. */
+  --text-muted: #686876;
 
   /* Lines */
   --border: #e3e3ea;
@@ -75,7 +77,8 @@
 
     --text: #a2a2b5;
     --text-h: #f2f2f7;
-    --text-muted: #70708a;
+    /* #8f8fa4 (was #70708a, 3.7:1) clears WCAG AA 4.5:1 on every dark surface. */
+    --text-muted: #8f8fa4;
 
     --border: #262633;
     --border-strong: #34344a;
@@ -110,7 +113,7 @@
 
   --text: #a2a2b5;
   --text-h: #f2f2f7;
-  --text-muted: #70708a;
+  --text-muted: #8f8fa4;
 
   --border: #262633;
   --border-strong: #34344a;

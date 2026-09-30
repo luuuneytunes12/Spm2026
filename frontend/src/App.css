@@ -322,6 +322,11 @@
   margin-top: 6px;
 }
 
+/* A link inside muted text must be told apart by more than colour. */
+.page-subtitle a {
+  text-decoration: underline;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -405,7 +410,9 @@
 
 .badge-accent {
   background: var(--accent-bg);
-  color: var(--accent);
+  /* --accent-h, not --accent: on the tinted badge background the plain accent
+     is 4.3:1 in the light theme, just under WCAG AA. */
+  color: var(--accent-h);
   border-color: var(--accent-border);
 }
 
@@ -1625,3 +1632,21 @@
   margin: 0;
 }
 
+/* Organiser's "coordinators available" dropdown -- a debugging aid. */
+.pool-details {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.pool-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.pool-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

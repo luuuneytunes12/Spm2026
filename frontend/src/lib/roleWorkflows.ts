@@ -57,7 +57,10 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
       description: 'create and update venue records (venues).',
     },
     {
-      title: 'Booking requests',
+      // Renamed, NOT removed, when "Submit Venue Booking Request" shipped:
+      // the queue is visible at /venue-staff/bookings, but approving or
+      // rejecting a request still has no screen.
+      title: 'Decide on booking requests',
       description: 'approve or reject requests against your venues (venue_bookings).',
     },
     {

@@ -80,7 +80,7 @@ test('TC-S2-3c: a completed request submits and moves out of Drafts', async ({ p
   await page.getByLabel('Expected attendees').fill('120')
   await page.getByLabel('Venue requirements').fill('Main hall, stage, podium')
   await page.getByLabel('Accessibility requirements').fill('Step-free access, hearing loop')
-  await page.getByLabel('Equipment requirements').fill('2 projectors, 4 radio mics')
+  await page.getByLabel('Other equipment notes').fill('2 projectors, 4 radio mics')
 
   await page.getByRole('button', { name: 'Submit request' }).click()
 

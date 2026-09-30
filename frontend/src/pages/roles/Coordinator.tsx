@@ -9,11 +9,11 @@ import { ROLE_WORKFLOWS } from '../../lib/roleWorkflows'
 
 /** The "mark myself unavailable" control at the heart of this story.
  *
- *  Turning availability off is a single API call -- reassigning every event
- *  currently active under this Coordinator, to another available one, is a
- *  server-side side effect of that same call (see
- *  backend/app/services/assignment.py). There is nothing else to trigger
- *  here; the toggle IS the story. */
+ *  Turning availability off is a single API call that only takes this
+ *  Coordinator out of the pool for NEW events (see
+ *  backend/app/services/assignment.py). Events already assigned to them are
+ *  untouched, so there is nothing else to trigger here; the toggle IS the
+ *  story. */
 function AvailabilityToggle() {
   const { user, refreshUser } = useAuth()
   const [pending, setPending] = useState(false)
@@ -40,8 +40,8 @@ function AvailabilityToggle() {
       <h2>Availability</h2>
       <p className="page-subtitle" style={{ marginBottom: 14 }}>
         {isAvailable
-          ? 'New submitted requests can be assigned to you, and anything reassigned from an unavailable Coordinator can come to you too.'
-          : 'You will not receive new or reassigned events. Everything that was assigned to you has been handed to another available Coordinator.'}
+          ? 'New submitted requests can be assigned to you.'
+          : 'You will not be assigned new events until you mark yourself available again. Events already assigned to you stay with you.'}
       </p>
       <p className="availability-row">
         <span className={isAvailable ? 'badge badge-accent' : 'badge badge-muted'}>
@@ -72,16 +72,21 @@ function AvailabilityToggle() {
  *  still records the change even when the Coordinator had zero active
  *  events at the time (nothing there for an event's own log to attach
  *  to). */
-function AvailabilityHistory() {
+function AvailabilityHistory({ isAvailable }: { isAvailable: boolean }) {
   const [entries, setEntries] = useState<AvailabilityHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Reloaded whenever the availability itself changes: toggling refreshes the
+  // signed-in user, and the entry that toggle just wrote should appear
+  // straight away -- not only after the page is reloaded.
   useEffect(() => {
     let cancelled = false
     getMyAvailabilityHistory()
       .then((rows) => {
-        if (!cancelled) setEntries(rows)
+        if (cancelled) return
+        setEntries(rows)
+        setError(null)
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -93,7 +98,7 @@ function AvailabilityHistory() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isAvailable])
 
   return (
     <>
@@ -129,6 +134,7 @@ function AvailabilityHistory() {
  *  Permissions and Planned instead of a stacked full-width card underneath
  *  them. Notifications live in the navbar bell and /notifications. */
 export function Coordinator() {
+  const { user } = useAuth()
   const permissions = ROLE_PERMISSIONS[Role.COORDINATOR]
   const planned = ROLE_WORKFLOWS[Role.COORDINATOR]
 
@@ -142,7 +148,7 @@ export function Coordinator() {
       <div className="bento-grid">
         <section className="card bento-availability">
           <AvailabilityToggle />
-          <AvailabilityHistory />
+          <AvailabilityHistory isAvailable={user?.is_available ?? true} />
         </section>
 
         <section className="card bento-permissions">

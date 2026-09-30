@@ -22,8 +22,10 @@ vi.mock('../lib/notifications', async (importActual) => ({
   streamMyNotifications: vi.fn(() => new Promise(() => {})),
 }))
 
+// Switchable so one file can render the page as either role.
+const auth = vi.hoisted(() => ({ role: 'coordinator' as string }))
 vi.mock('../auth/useAuth', () => ({
-  useAuth: () => ({ user: { id: 3, role: 'coordinator' } }),
+  useAuth: () => ({ user: { id: 3, role: auth.role } }),
 }))
 
 import {
@@ -69,6 +71,7 @@ function row(message: string): HTMLElement {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  auth.role = 'coordinator'
   mockList.mockResolvedValue(ITEMS)
   mockMarkRead.mockResolvedValue({ updated: 1 })
   mockMarkAll.mockResolvedValue({ updated: 2 })
@@ -175,5 +178,44 @@ describe('marking as read', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong')
     await waitFor(() => expect(row('Assigned: Careers Fair')).toHaveClass('is-unread'))
+  })
+})
+
+describe('SCRUM-23 AC2/AC4 - the Organiser is told who their coordinator is', () => {
+  const assignedNotice: Notification = {
+    id: 9,
+    event_id: 7,
+    type: 'event_coordinator_assigned',
+    message: "Sam Tan (sam@connectsphere.test) is now coordinating 'Robotics Summit'.",
+    is_read: false,
+    created_at: new Date().toISOString(),
+  }
+
+  it("shows the coordinator's name and contact and opens the Organiser's event page", async () => {
+    auth.role = 'organiser'
+    mockList.mockResolvedValue([assignedNotice])
+
+    renderPage()
+
+    expect(await screen.findByText(/Sam Tan \(sam@connectsphere.test\)/)).toBeInTheDocument()
+    const link = within(row(assignedNotice.message)).getByRole('link', { name: 'View event' })
+    expect(link).toHaveAttribute('href', '/organiser/events/7')
+  })
+
+  it('shows the new coordinator after a reassignment, newest first', async () => {
+    auth.role = 'organiser'
+    const reassigned: Notification = {
+      ...assignedNotice,
+      id: 10,
+      message: "Priya Nair (priya@connectsphere.test) is now coordinating 'Robotics Summit'.",
+    }
+    mockList.mockResolvedValue([reassigned, assignedNotice])
+
+    renderPage()
+
+    await screen.findByText(/Priya Nair/)
+    const rows = screen.getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('Priya Nair (priya@connectsphere.test)')
+    expect(rows[1]).toHaveTextContent('Sam Tan (sam@connectsphere.test)')
   })
 })
