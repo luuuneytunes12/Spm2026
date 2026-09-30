@@ -112,6 +112,7 @@ export interface EventSummary {
   status: EventStatus
   submitted_at: string | null
   updated_at: string
+  has_pending_change_request?: boolean
 }
 
 /** Who a Coordinator or Organiser contacts about the other side of an
@@ -188,6 +189,35 @@ export interface ActivityEntry {
 export interface AssignedEventDetail extends EventDetail {
   organiser: OrganiserContact
   activity: ActivityEntry[]
+  change_requests: EventChangeRequest[]
+}
+
+export interface EventChangeRequest {
+  id: number
+  event_id: number
+  requested_by: number
+  description: string
+  proposed_changes: EventInput & {
+    equipment_items?: (EquipmentLineInput & { equipment_name?: string })[] | null
+  }
+  status: 'pending' | 'approved' | 'rejected'
+  review_notes: string | null
+  created_at: string
+  reviewed_at: string | null
+  important_change: boolean
+  venue_bookings_to_reconsider: {
+    id: number
+    venue_name: string
+    start_time: string
+    end_time: string
+    status: string
+  }[]
+  equipment_reservations_to_reconsider: {
+    id: number
+    equipment_name: string
+    quantity_requested: number
+    status: string
+  }[]
 }
 
 /** Every field optional -- a draft is allowed to be incomplete. */
@@ -276,6 +306,38 @@ export function updateEvent(id: number, input: EventInput): Promise<EventDetail>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   }) as Promise<EventDetail>
+}
+
+export function listOwnChangeRequests(id: number): Promise<EventChangeRequest[]> {
+  return apiFetch(`/events/${id}/change-requests`) as Promise<EventChangeRequest[]>
+}
+
+export function requestEventChanges(
+  id: number,
+  description: string,
+  proposedChanges: EventInput,
+): Promise<EventChangeRequest> {
+  return apiFetch(`/events/${id}/change-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description, proposed_changes: proposedChanges }),
+  }) as Promise<EventChangeRequest>
+}
+
+export function approveEventChangeRequest(id: number, reviewNotes?: string): Promise<EventChangeRequest> {
+  return apiFetch(`/events/change-requests/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ review_notes: reviewNotes || null }),
+  }) as Promise<EventChangeRequest>
+}
+
+export function rejectEventChangeRequest(id: number, reviewNotes?: string): Promise<EventChangeRequest> {
+  return apiFetch(`/events/change-requests/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ review_notes: reviewNotes || null }),
+  }) as Promise<EventChangeRequest>
 }
 
 /** Submit for review. Rejects with an ApiError carrying `fields` when

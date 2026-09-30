@@ -10,13 +10,15 @@ import {
   EVENT_STATUS_PIPELINE,
   EventStatus,
   approveEvent,
+  approveEventChangeRequest,
   formatRange,
   formatTimestamp,
   getAssignedEvent,
   rejectEvent,
+  rejectEventChangeRequest,
   releaseAssignedEvent,
 } from '../../lib/events'
-import type { ActivityEntry, AssignedEventDetail } from '../../lib/events'
+import type { ActivityEntry, AssignedEventDetail, EventChangeRequest } from '../../lib/events'
 
 /** Turn a stored status slug into its label, falling back to the slug.
  *
@@ -25,6 +27,18 @@ import type { ActivityEntry, AssignedEventDetail } from '../../lib/events'
  *  yesterday's log unrenderable. Hence the lookup-then-fall-back. */
 function statusLabel(value: string): string {
   return EVENT_STATUS_LABELS[value as EventStatus] ?? value
+}
+
+const CHANGE_FIELD_LABELS: Record<string, string> = {
+  proposed_start: 'Proposed start',
+  proposed_end: 'Proposed end',
+  expected_attendance: 'Expected attendance',
+  venue_requirements: 'Venue requirements',
+  room_layout_preference: 'Room layout preference',
+  accessibility_needs: 'Accessibility needs',
+  equipment_requirements: 'Other equipment notes',
+  equipment_items: 'Equipment requirements',
+  registration_enabled: 'Registration required',
 }
 
 /** Where on the pipeline the event has actually reached, or -1 if it has not
@@ -176,6 +190,9 @@ export function AssignedEventView() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState<string | null>(null)
+  const [changeRequestNotes, setChangeRequestNotes] = useState<Record<number, string>>({})
+  const [reviewingChangeRequest, setReviewingChangeRequest] = useState<number | null>(null)
+  const [changeRequestError, setChangeRequestError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -237,6 +254,28 @@ export function AssignedEventView() {
     }
   }
 
+  async function decideChangeRequest(request: EventChangeRequest, decision: 'approve' | 'reject') {
+    if (!event) return
+    setReviewingChangeRequest(request.id)
+    setChangeRequestError(null)
+    try {
+      const notes = changeRequestNotes[request.id]?.trim()
+      if (decision === 'approve') {
+        await approveEventChangeRequest(request.id, notes)
+      } else {
+        await rejectEventChangeRequest(request.id, notes)
+      }
+      setEvent(await getAssignedEvent(event.id))
+      setChangeRequestNotes((current) => ({ ...current, [request.id]: '' }))
+    } catch (err) {
+      setChangeRequestError(
+        err instanceof ApiError ? err.message : 'Could not save the change-request decision.',
+      )
+    } finally {
+      setReviewingChangeRequest(null)
+    }
+  }
+
   if (loading) return null
 
   if (error || !event) {
@@ -271,6 +310,7 @@ export function AssignedEventView() {
   ]
 
   const submitted = formatTimestamp(event.submitted_at)
+  const pendingChangeRequest = event.change_requests.some((request) => request.status === 'pending')
 
   return (
     <div className="stack">
@@ -300,7 +340,7 @@ export function AssignedEventView() {
                 type="button"
                 className="btn-primary"
                 onClick={() => void decide('approve')}
-                disabled={reviewing}
+                disabled={reviewing || pendingChangeRequest}
               >
                 {reviewing ? 'Saving…' : 'Approve request'}
               </button>
@@ -308,7 +348,7 @@ export function AssignedEventView() {
                 type="button"
                 className="btn-secondary"
                 onClick={() => void decide('reject')}
-                disabled={reviewing || !rejectionReason.trim()}
+                disabled={reviewing || pendingChangeRequest || !rejectionReason.trim()}
               >
                 Reject request
               </button>
@@ -327,6 +367,9 @@ export function AssignedEventView() {
               <p className="form-error" role="alert">
                 {reviewError}
               </p>
+            )}
+            {pendingChangeRequest && (
+              <p className="page-subtitle">Review the pending change request before deciding this event.</p>
             )}
           </div>
         )}
@@ -390,6 +433,110 @@ export function AssignedEventView() {
           </div>
         </dl>
       </section>
+
+      {event.change_requests.length > 0 && (
+        <section className="card">
+          <h2>Change requests</h2>
+          <div className="stack">
+            {event.change_requests.map((request) => (
+              <article key={request.id} className="activity-item">
+                <h3>
+                  {request.status[0].toUpperCase() + request.status.slice(1)} change request
+                  {request.important_change && <span className="badge badge-accent">Important change</span>}
+                </h3>
+                <p>{request.description}</p>
+                <dl className="detail-list">
+                  {Object.entries(request.proposed_changes).map(([field, value]) => (
+                    <div key={field} className="detail-row">
+                      <dt>{CHANGE_FIELD_LABELS[field] ?? field.replaceAll('_', ' ')}</dt>
+                      <dd>
+                        {field === 'equipment_items' && Array.isArray(value) ? (
+                          value.length ? (
+                            <ul className="detail-value-list">
+                              {value.map((line, index) => (
+                                <li key={`${line.equipment_id}-${index}`}>
+                                  {line.equipment_name ?? `Equipment #${line.equipment_id}`} ×{' '}
+                                  {line.quantity_requested}
+                                  {line.technical_requirements && ` · ${line.technical_requirements}`}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : 'No equipment requested'
+                        ) : field === 'proposed_start' || field === 'proposed_end' ? (
+                          value ? new Date(String(value)).toLocaleString() : 'Not provided'
+                        ) : field === 'registration_enabled' ? (
+                          value ? 'Yes' : 'No'
+                        ) : (
+                          String(value ?? 'Not provided')
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                {request.important_change && (
+                  <div className="stack-tight">
+                    <h4>Existing arrangements to reconsider</h4>
+                    {request.venue_bookings_to_reconsider.length > 0 ? (
+                      <ul>
+                        {request.venue_bookings_to_reconsider.map((booking) => (
+                          <li key={booking.id}>
+                            {booking.venue_name}: {formatRange(booking.start_time, booking.end_time)} ({booking.status})
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p>No venue bookings are currently recorded.</p>}
+                    {request.equipment_reservations_to_reconsider.length > 0 ? (
+                      <ul>
+                        {request.equipment_reservations_to_reconsider.map((reservation) => (
+                          <li key={reservation.id}>
+                            {reservation.quantity_requested} × {reservation.equipment_name} ({reservation.status})
+                          </li>
+                        ))}
+                      </ul>
+                    ) : <p>No equipment reservations are currently recorded.</p>}
+                  </div>
+                )}
+                {request.review_notes && <p className="activity-note">{request.review_notes}</p>}
+                {request.status === 'pending' && (
+                  <div className="status-actions">
+                    <label className="field">
+                      <span>Review notes</span>
+                      <textarea
+                        value={changeRequestNotes[request.id] ?? ''}
+                        onChange={(e) =>
+                          setChangeRequestNotes((current) => ({ ...current, [request.id]: e.target.value }))
+                        }
+                        maxLength={2000}
+                        rows={2}
+                        disabled={reviewingChangeRequest === request.id}
+                      />
+                    </label>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => void decideChangeRequest(request, 'approve')}
+                        disabled={reviewingChangeRequest !== null}
+                      >
+                        {reviewingChangeRequest === request.id ? 'Saving…' : 'Approve changes'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => void decideChangeRequest(request, 'reject')}
+                        disabled={reviewingChangeRequest !== null}
+                      >
+                        Reject changes
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+          {changeRequestError && <p className="form-error" role="alert">{changeRequestError}</p>}
+        </section>
+      )}
 
       <section className="card">
         <h2>Activity Log</h2>

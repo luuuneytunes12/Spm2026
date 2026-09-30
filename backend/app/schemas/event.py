@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.enums import EquipmentStatus, EventStatus
+from app.models.enums import BookingStatus, ChangeRequestStatus, EquipmentStatus, EventStatus
 
 # The fields an event request must carry before it can be SUBMITTED, in the
 # order the form presents them. Drafts are exempt -- see EventIn below.
@@ -118,6 +118,60 @@ class EventIn(BaseModel):
         return self
 
 
+class EventChangeRequestIn(BaseModel):
+    description: str = Field(..., min_length=1, max_length=2000)
+    proposed_changes: EventIn
+
+    @field_validator("description")
+    @classmethod
+    def description_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Change request description cannot be blank")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _require_changes(self) -> "EventChangeRequestIn":
+        if not self.proposed_changes.model_fields_set:
+            raise ValueError("At least one proposed change is required")
+        return self
+
+
+class EventChangeDecisionIn(BaseModel):
+    review_notes: str | None = Field(default=None, max_length=2000)
+
+
+class VenueBookingImpact(BaseModel):
+    id: int
+    venue_name: str
+    start_time: datetime
+    end_time: datetime
+    status: BookingStatus
+
+
+class EquipmentReservationImpact(BaseModel):
+    id: int
+    equipment_name: str
+    quantity_requested: int
+    status: EquipmentStatus
+
+
+class EventChangeRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    requested_by: int
+    description: str
+    proposed_changes: dict
+    status: ChangeRequestStatus
+    review_notes: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
+    important_change: bool
+    venue_bookings_to_reconsider: list[VenueBookingImpact]
+    equipment_reservations_to_reconsider: list[EquipmentReservationImpact]
+
+
 class OrganiserContact(BaseModel):
     """A projection of `users` down to what one party needs to know about
     another: who they are, and how to reach them.
@@ -198,6 +252,7 @@ class AssignedEventDetail(EventOut):
 
     organiser: OrganiserContact
     activity: list[ActivityEntry]
+    change_requests: list[EventChangeRequestOut] = []
 
 
 class EventSummary(BaseModel):
@@ -219,3 +274,4 @@ class EventSummary(BaseModel):
     status: EventStatus
     submitted_at: datetime | None
     updated_at: datetime
+    has_pending_change_request: bool = False

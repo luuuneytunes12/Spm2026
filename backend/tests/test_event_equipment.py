@@ -15,6 +15,7 @@ See docs/test-cases-organiser-event-equipment.md for the AC mapping.
 from app.core.roles import Role
 from app.models.enums import EquipmentOperationalStatus, EquipmentStatus
 from app.models.equipment import Equipment, EquipmentRequest
+from app.models.events import Event
 from app.models.user import User
 
 # A request with every mandatory field filled in, so a test about equipment
@@ -392,9 +393,12 @@ def test_another_organiser_cannot_add_equipment_to_someone_elses_draft(client, d
     assert res.status_code == 404
 
 
-def test_equipment_can_be_corrected_before_review_decision(client, db_session):
-    """Equipment requirements remain editable while a Coordinator reviews."""
+def test_equipment_change_is_applied_only_after_coordinator_approval(client, db_session):
+    """A submitted equipment change is a proposal until its Coordinator approves."""
     _, headers = _organiser(client, db_session)
+    coordinator, coordinator_headers = _user(
+        client, db_session, Role.COORDINATOR, "coordinator@example.com"
+    )
     mic = _equipment(db_session, "Shure BLX24")
     event_id = _create(
         client,
@@ -404,11 +408,29 @@ def test_equipment_can_be_corrected_before_review_decision(client, db_session):
     )["id"]
     assert client.post(f"/events/{event_id}/submit", headers=headers).status_code == 200
 
-    res = client.patch(f"/events/{event_id}", json={"equipment_items": []}, headers=headers)
+    event = db_session.get(Event, event_id)
+    event.coordinator_id = coordinator.id
+    db_session.commit()
 
-    assert res.status_code == 200
-    assert res.json()["equipment_items"] == []
-    assert db_session.query(EquipmentRequest).count() == 0
+    res = client.post(
+        f"/events/{event_id}/change-requests",
+        json={
+            "description": "We no longer need microphones.",
+            "proposed_changes": {"equipment_items": []},
+        },
+        headers=headers,
+    )
+
+    assert res.status_code == 201
+    assert db_session.query(EquipmentRequest).filter_by(event_id=event_id).count() == 1
+    approved = client.post(
+        f"/events/change-requests/{res.json()['id']}/approve",
+        json={},
+        headers=coordinator_headers,
+    )
+
+    assert approved.status_code == 200
+    assert db_session.query(EquipmentRequest).filter_by(event_id=event_id).count() == 0
 
 
 def test_submitting_is_not_blocked_by_having_no_equipment(client, db_session):

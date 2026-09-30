@@ -115,6 +115,9 @@ export function AssignedEvents() {
                 >
                   {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
+                {event.has_pending_change_request && (
+                  <span className="badge badge-accent">Change request pending</span>
+                )}
                 <Link to={`/coordinator/events/${event.id}`}>View details →</Link>
                 {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
                   <button

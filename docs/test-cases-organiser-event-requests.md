@@ -8,6 +8,10 @@ Covers two product backlog items:
 - **Story 2 — Submit an Event Request.** *As an Event Organiser, I want to
   submit a completed event request, so that ConnectSphere can begin reviewing
   and planning my event.*
+- **Story 3 — Request Changes to a Submitted Event.** *As an Event Organiser,
+  I want to request changes to an event I have already submitted, so that I
+  can correct mistakes or update requirements while the Event Coordinator
+  reviews any impact on existing arrangements.*
 
 Every acceptance criterion below maps to at least one test case, and every
 automated test is named after the criterion it proves, so a criterion can be
@@ -151,6 +155,42 @@ whatever the server reports, so the two cannot drift apart.
 
 ---
 
+## Story 3 — Request Changes to a Submitted Event
+
+### AC1 — proposals remain pending until reviewed
+
+> *Given a submitted event in a permitted review status, when its Organiser
+> submits changed fields and an explanation, then the proposal is stored as
+> pending and the event's current information remains unchanged.*
+
+### AC2/AC3 — coordinator approval or rejection is visible to the organiser
+
+> *Approval applies the proposed JSON values. Rejection leaves the event
+> unchanged. In either case the Organiser can see the outcome and any review
+> notes.*
+
+### AC4 — important changes show existing arrangements
+
+> *Date/time, attendance, venue, accessibility and equipment changes are
+> flagged, and existing venue bookings and reserved equipment are shown for
+> reconsideration.*
+
+### AC5/AC6 — terminal events and ownership
+
+> *Completed, cancelled and rejected events cannot receive change requests;
+> a user who does not own the event cannot submit one.*
+
+| Test case | Type | Where |
+|---|---|---|
+| Pending proposal does not mutate the event | pytest | `test_edit_submitted_event_request.py` › `test_change_request_is_pending_and_does_not_mutate_event` |
+| Coordinator approval applies event and equipment changes | pytest | `test_coordinator_approval_applies_proposed_values`, `test_coordinator_approval_applies_equipment_proposal` |
+| Rejection preserves current values and exposes its reason | pytest | `test_coordinator_rejection_keeps_values_and_exposes_reason` |
+| Important proposals show existing bookings/reservations | pytest + Vitest | `test_important_change_shows_existing_bookings_and_reservations`; `AssignedEventView.test.tsx` |
+| Terminal statuses and non-owners are denied | pytest | `test_terminal_event_cannot_receive_change_request`, `test_non_owner_cannot_request_event_changes` |
+| Organiser submits only changed fields and sees the outcome | Vitest | `EventForm.test.tsx`, `EventView.test.tsx` |
+
+---
+
 ## Additional cases beyond the acceptance criteria
 
 The criteria describe the happy path. These cover the failure, conflict and
@@ -161,7 +201,12 @@ boundary behaviour a reviewer would reasonably expect.
 | `test_organiser_cannot_see_another_organisers_draft` | Ownership. `EVENT_WRITE` is granted to Coordinators too, so permission alone is not enough. Returns 404, not 403, so the endpoint cannot be used to discover which event ids exist. |
 | `test_attendee_cannot_create_an_event_request` | Attendees hold `EVENT_READ` but not `EVENT_WRITE`. |
 | `test_anonymous_cannot_list_events` | Signed-out access reveals nothing. |
-| `test_submitted_request_cannot_be_edited` | A request under review cannot be altered underneath the reviewer. |
+| `test_change_request_is_pending_and_does_not_mutate_event` | Submitted information stays unchanged until a coordinator approves a stored proposal. |
+| `test_coordinator_approval_applies_proposed_values` | Approval applies the proposed JSON values to the event. |
+| `test_coordinator_rejection_keeps_values_and_exposes_reason` | Rejection leaves event data intact and exposes coordinator notes to the organiser. |
+| `test_non_owner_cannot_request_event_changes` | Only the event organiser can submit a proposal. |
+| `test_important_change_shows_existing_bookings_and_reservations` | Date/attendance/requirement proposals flag existing bookings and reserved equipment for reconsideration. |
+| `test_terminal_event_cannot_receive_change_request` | Rejected, completed, and cancelled events do not accept change requests. |
 | `test_submit_records_status_history` | The `draft → submitted` transition is recorded with who and when. |
 | `test_end_before_start_is_rejected_cleanly` | Boundary: mirrors the database CHECK, returning 422 rather than a 500 from an IntegrityError. |
 | `test_zero_attendance_is_rejected_cleanly` | Boundary: mirrors the `expected_attendance > 0` CHECK. |
