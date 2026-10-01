@@ -677,6 +677,45 @@
   color: var(--text-muted);
 }
 
+/* --- Modal -------------------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 10, 20, 0.5);
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+
+.modal h2 {
+  margin-bottom: 10px;
+}
+
+.modal-warning {
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--text-h);
+}
+
+.modal .form-actions {
+  margin-top: 8px;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EquipmentPicker } from '../../components/EquipmentPicker'
+import { ChangeRequestConfirmModal } from '../../components/ChangeRequestConfirmModal'
 import { ApiError } from '../../lib/api'
 import {
   createEvent,
@@ -110,7 +111,7 @@ export function EventForm() {
   const eventId = id ? Number(id) : null
 
   const [form, setForm] = useState<FormState>(EMPTY)
-  const [changeDescription, setChangeDescription] = useState('')
+  const [confirmingChanges, setConfirmingChanges] = useState(false)
   const [canCorrectSubmitted, setCanCorrectSubmitted] = useState(false)
   const [loading, setLoading] = useState(eventId !== null)
   const [busy, setBusy] = useState(false)
@@ -210,11 +211,11 @@ export function EventForm() {
   /** Persist the current form. Used on its own by "Save as draft", and as
    *  the first half of submitting -- so what gets validated is what is on
    *  screen, not whatever was last saved. */
-  async function persist(): Promise<number> {
+  async function persist(changeReason?: string): Promise<number> {
     const payload = toPayload(form)
     if (eventId !== null) {
       if (canCorrectSubmitted) {
-        if (!changeDescription.trim()) {
+        if (!changeReason) {
           throw new Error('Please explain why these changes are needed.')
         }
         const changedFields = Object.fromEntries(
@@ -224,7 +225,7 @@ export function EventForm() {
               JSON.stringify(originalPayload.current[field as keyof EventInput]),
           ),
         ) as EventInput
-        await requestEventChanges(eventId, changeDescription.trim(), changedFields)
+        await requestEventChanges(eventId, changeReason, changedFields)
       } else {
         await updateEvent(eventId, payload)
       }
@@ -237,6 +238,11 @@ export function EventForm() {
     if (err instanceof ApiError) {
       setError(err.message)
       setMissing(err.fields)
+    } else if (err instanceof Error && !(err instanceof TypeError)) {
+      // A check in the form itself (e.g. a missing change description).
+      // fetch reports an unreachable server as a TypeError, handled below.
+      setError(err.message)
+      setMissing([])
     } else {
       setError(fallback)
       setMissing([])
@@ -247,14 +253,31 @@ export function EventForm() {
     e.preventDefault()
     setError(null)
     setMissing([])
+    if (canCorrectSubmitted) {
+      // A change request is final once sent, so confirm and collect the
+      // reason in a modal rather than saving straight away.
+      setConfirmingChanges(true)
+      return
+    }
     setBusy(true)
     try {
       await persist()
-      navigate(
-        canCorrectSubmitted ? `/organiser/events/${eventId}` : '/organiser/events',
-        { replace: true },
-      )
+      navigate('/organiser/events', { replace: true })
     } catch (err) {
+      reportError(err, 'Could not reach the server. Is the backend running?')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onConfirmChanges(reason: string) {
+    setBusy(true)
+    try {
+      await persist(reason)
+      navigate(`/organiser/events/${eventId}`, { replace: true })
+    } catch (err) {
+      // Close the modal so the error banner and any flagged fields are visible.
+      setConfirmingChanges(false)
       reportError(err, 'Could not reach the server. Is the backend running?')
     } finally {
       setBusy(false)
@@ -369,22 +392,6 @@ export function EventForm() {
           </div>
         </section>
 
-        {canCorrectSubmitted && (
-          <section className="card stack-tight">
-            <h2>Reason for this change request</h2>
-            <div className="field">
-              <label htmlFor="change-description">Explanation</label>
-              <textarea
-                id="change-description"
-                rows={3}
-                maxLength={2000}
-                value={changeDescription}
-                onChange={(e) => setChangeDescription(e.target.value)}
-                required
-              />
-            </div>
-          </section>
-        )}
 
         <section className="card stack-tight">
           <h2>Schedule &amp; Size</h2>
@@ -580,6 +587,14 @@ export function EventForm() {
           </Link>
         </div>
       </form>
+
+      {confirmingChanges && (
+        <ChangeRequestConfirmModal
+          busy={busy}
+          onCancel={() => setConfirmingChanges(false)}
+          onConfirm={onConfirmChanges}
+        />
+      )}
     </div>
   )
 }
