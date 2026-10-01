@@ -19,6 +19,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { AssignedEventView } from './AssignedEventView'
 
+vi.mock('../../lib/coordinators', () => ({ setMyAvailability: vi.fn() }))
+vi.mock('../../components/VenueBookingSection', () => ({
+  VenueBookingSection: () => <section aria-label="venue booking stub" />,
+}))
+
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
   return {
@@ -32,6 +37,7 @@ vi.mock('../../lib/events', async () => {
 
 import { approveEvent, getAssignedEvent, rejectEvent, releaseAssignedEvent } from '../../lib/events'
 import type { AssignedEventDetail } from '../../lib/events'
+import { setMyAvailability } from '../../lib/coordinators'
 
 const mockGet = vi.mocked(getAssignedEvent)
 const mockApprove = vi.mocked(approveEvent)
@@ -583,5 +589,69 @@ describe('marking unavailable for this one event', () => {
       "'completed' is not active, so it cannot be reassigned.",
     )
     expect(screen.getByRole('heading', { name: 'Regional Partner Conference' })).toBeInTheDocument()
+  })
+})
+
+describe('SCRUM-64 AC4 - a decline is recorded with who declined and when', () => {
+  it('shows the decliner\'s name, the note and a timestamp on the log entry', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'under_review',
+      activity: [
+        {
+          from_status: 'under_review',
+          to_status: 'under_review',
+          note: 'Reassigned from Sam Tan to Priya Nair: Sam Tan declined this event.',
+          changed_by_name: 'Sam Tan',
+          created_at: '2026-09-12T09:30:00Z',
+        },
+        ...EVENT.activity,
+      ],
+    })
+    renderView()
+
+    const log = await screen.findByRole('list', { name: 'Activity log' })
+    const [entry] = within(log).getAllByRole('listitem')
+    expect(entry).toHaveTextContent('Assignment') // a same-status entry, not a status arrow
+    expect(entry).toHaveTextContent('Sam Tan declined this event.')
+    expect(entry.querySelector('.activity-meta')).toHaveTextContent('Sam Tan')
+    expect(entry.querySelector('.activity-meta')).toHaveTextContent(/2026|Sep/)
+  })
+})
+
+describe('SCRUM-64 AC2/AC3 - declining touches only this event, not my availability', () => {
+  it('says the decline leaves general availability and other events unaffected', async () => {
+    renderView()
+    expect(await screen.findByText(/your general availability, is unaffected/)).toBeInTheDocument()
+  })
+
+  it('releases only this event id, and never calls the availability API', async () => {
+    mockRelease.mockResolvedValue({} as never)
+    renderView()
+    await userEvent.click(await screen.findByRole('button', { name: 'Decline this event' }))
+    await waitFor(() => expect(mockRelease).toHaveBeenCalledTimes(1))
+    expect(mockRelease).toHaveBeenCalledWith(7)
+    expect(setMyAvailability).not.toHaveBeenCalled()
+  })
+})
+
+describe('SCRUM-39 - the venue booking card follows the event status', () => {
+  it('is offered once the event is approved', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    renderView()
+    expect(await screen.findByLabelText('venue booking stub')).toBeInTheDocument()
+  })
+
+  it('is not offered while the request is still awaiting review', async () => {
+    renderView()
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByLabelText('venue booking stub')).not.toBeInTheDocument()
+  })
+
+  it('is not offered for a rejected event', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'rejected' })
+    renderView()
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByLabelText('venue booking stub')).not.toBeInTheDocument()
   })
 })

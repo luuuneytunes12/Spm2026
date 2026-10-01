@@ -16,11 +16,19 @@ import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MyRequests } from './MyRequests'
 
+// The pool is a separate, best-effort request -- covered by its own test.
+// It defaults to empty here so its dropdown adds no list items to a page
+// whose other tests count the list items of the requests themselves.
+vi.mock('../../lib/coordinators', () => ({
+  getAssignmentPool: vi.fn().mockResolvedValue({ available: 0, coordinators: [] }),
+}))
+
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
   return { ...actual, listMyEvents: vi.fn() }
 })
 
+import { getAssignmentPool } from '../../lib/coordinators'
 import { listMyEvents } from '../../lib/events'
 import type { EventSummary } from '../../lib/events'
 
@@ -188,5 +196,31 @@ describe('empty states', () => {
     await user.click(screen.getByRole('tab', { name: 'Submitted Requests' }))
 
     expect(await screen.findByText('Nothing submitted yet.')).toBeInTheDocument()
+  })
+})
+
+describe('coordinators available (debugging aid)', () => {
+  it('shows how many coordinators are currently available for assignment', async () => {
+    vi.mocked(getAssignmentPool).mockResolvedValueOnce({
+      available: 2,
+      coordinators: [
+        { id: 8, name: 'Alex Kim', email: 'alex@connectsphere.test' },
+        { id: 9, name: 'Jordan Lee', email: 'jordan@connectsphere.test' },
+      ],
+    })
+    mockList.mockResolvedValue([DRAFT])
+    render(
+      <MemoryRouter>
+        <MyRequests />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByTestId('available-coordinators')).toHaveTextContent(
+      'Coordinators currently available for assignment: 2',
+    )
+    // ...and the dropdown names them once opened.
+    await userEvent.click(screen.getByText(/Coordinators currently available/))
+    expect(screen.getByText('Alex Kim')).toBeVisible()
+    expect(screen.getByText('Jordan Lee')).toBeVisible()
   })
 })

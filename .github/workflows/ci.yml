@@ -26,6 +26,12 @@ jobs:
       # secret and no service container.
       DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
       JWT_SECRET: ci-not-a-real-secret-just-for-tests
+      # tests/integration/ runs against a real PostgreSQL that Testcontainers
+      # starts in Docker (present on ubuntu-latest). Locally those tests skip
+      # when Docker is off; here that must be a FAILURE, so the layer -- which
+      # is what catches concurrency races SQLite cannot show -- can never
+      # quietly stop running.
+      REQUIRE_INTEGRATION: '1'
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +47,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # Unit tests (in-memory SQLite) and integration tests (real Postgres in
+      # a container) in one run; both write to the same report.
       - name: Run tests
         run: uv run pytest -q --junitxml=pytest-results.xml
 
@@ -86,9 +94,12 @@ jobs:
 
   e2e:
     name: End-to-end (Playwright)
-    # TEMPORARILY DISABLED: the Playwright specs fail after the ron merge fix
-    # and are being investigated. Delete this line to turn the job back on.
-    if: false
+    # Was switched off while the specs failed. The cause was a stale selector
+    # (the request form's equipment field was renamed "Other equipment notes"
+    # when the equipment picker landed); with that fixed the whole suite,
+    # including the coordinator-story and axe accessibility specs, passes
+    # against exactly this setup: postgres:16, backend/db/schema.sql, and the
+    # seeded organiser below.
     runs-on: ubuntu-latest
 
     # A disposable database, started and destroyed by GitHub on this runner.

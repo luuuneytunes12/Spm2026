@@ -16,7 +16,7 @@ import { defineConfig, devices } from '@playwright/test'
 // environment variable at all. The credentials are not a secret -- they
 // belong to a container that is destroyed after every run -- which is why
 // this file is safe to commit.
-const E2E_DATABASE_URL =
+export const E2E_DATABASE_URL =
   process.env.E2E_DATABASE_URL ??
   'postgresql+psycopg://postgres:postgres@localhost:5432/connectsphere_test'
 
@@ -38,6 +38,9 @@ export const E2E_ORGANISER = {
   password: 'e2e-password-123',
 }
 
+/** Signing key the e2e backend is started with (see webServer below). */
+export const E2E_JWT_SECRET = 'e2e-not-a-real-secret-just-for-local-and-ci-tests'
+
 // Dedicated ports, deliberately NOT the 5173/8000 a developer runs `npm run
 // dev` and uvicorn on.
 //
@@ -49,7 +52,7 @@ export const E2E_ORGANISER = {
 // project. Separate ports plus reuseExistingServer:false means Playwright
 // always starts servers it configured itself, and a stray dev server causes
 // an obvious port clash rather than a silent switch to the wrong database.
-const E2E_API_PORT = 8001
+export const E2E_API_PORT = 8001
 const E2E_WEB_PORT = 5174
 
 export default defineConfig({
@@ -88,7 +91,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         DATABASE_URL: E2E_DATABASE_URL,
-        JWT_SECRET: 'e2e-not-a-real-secret-just-for-local-and-ci-tests',
+        JWT_SECRET: E2E_JWT_SECRET,
         CORS_ORIGINS: `http://localhost:${E2E_WEB_PORT}`,
       },
     },

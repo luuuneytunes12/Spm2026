@@ -10,8 +10,9 @@
  * and wiring. The real request/response behaviour (format rules, digit
  * counts, persistence) is covered by backend/tests/test_users.py.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../lib/api'
 
@@ -142,5 +143,76 @@ describe('network failure', () => {
     expect(
       await screen.findByText('Could not reach the server. Is the backend running?'),
     ).toBeInTheDocument()
+  })
+})
+
+describe("SCRUM-24 AC1 - a Coordinator's profile shows their availability", () => {
+  const COORDINATOR: AuthUser = { ...USER, role: 'coordinator', name: 'Sam Tan' }
+
+  function renderAs(user: AuthUser) {
+    mockUseAuth.mockReturnValue({ user, refreshUser })
+    return render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>,
+    )
+  }
+
+  it('shows "Available" when the Coordinator is in the assignment pool', () => {
+    renderAs({ ...COORDINATOR, is_available: true })
+
+    const card = screen.getByRole('region', { name: 'Availability' })
+    expect(within(card).getByText('Available')).toBeInTheDocument()
+    expect(within(card).queryByText('Unavailable')).not.toBeInTheDocument()
+  })
+
+  it('shows "Unavailable" once they have marked themselves unavailable', () => {
+    renderAs({ ...COORDINATOR, is_available: false })
+
+    const card = screen.getByRole('region', { name: 'Availability' })
+    expect(within(card).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(card).getByText(/will not be assigned new events/)).toBeInTheDocument()
+    expect(within(card).getByText(/Events already assigned to you stay with you/)).toBeInTheDocument()
+  })
+
+  it('reflects a change: Unavailable becomes Available when the status flips back', () => {
+    const view = renderAs({ ...COORDINATOR, is_available: false })
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+
+    mockUseAuth.mockReturnValue({ user: { ...COORDINATOR, is_available: true }, refreshUser })
+    view.rerender(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Available')).toBeInTheDocument()
+    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument()
+  })
+
+  it('is read-only here and points to the Coordinator page to change it', () => {
+    renderAs({ ...COORDINATOR, is_available: true })
+
+    const card = screen.getByRole('region', { name: 'Availability' })
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
+    expect(
+      within(card).getByRole('link', { name: 'Change on your Event Coordinator page' }),
+    ).toHaveAttribute('href', '/coordinator')
+  })
+
+  it.each(['organiser', 'attendee', 'venue_staff', 'tech_support'])(
+    'is not shown to a %s, who has no availability to report',
+    (role) => {
+      renderAs({ ...USER, role: role as AuthUser['role'], is_available: false })
+
+      expect(screen.queryByRole('region', { name: 'Availability' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Unavailable')).not.toBeInTheDocument()
+    },
+  )
+
+  it('still shows the editable profile form beneath the status', () => {
+    renderAs({ ...COORDINATOR, is_available: false })
+
+    expect(screen.getByLabelText('Name')).toHaveValue('Sam Tan')
   })
 })

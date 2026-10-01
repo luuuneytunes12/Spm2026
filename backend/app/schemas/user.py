@@ -8,6 +8,7 @@ import app.schemas.types  # noqa: F401
 from app.core.communication import CommunicationPreference
 from app.core.phone import PHONE_DIGIT_RANGE
 from app.core.roles import Permission, Role
+from app.schemas.event import OrganiserContact
 
 
 class UserOut(BaseModel):
@@ -130,3 +131,16 @@ class AvailabilityHistoryEntry(BaseModel):
     id: int
     is_available: bool
     created_at: datetime
+
+
+class AvailableCoordinatorCount(BaseModel):
+    """The assignment pool: who a new event could go to, and how many.
+
+    `coordinators` is the pool itself (name and email, as an Organiser
+    already sees for their own assigned Coordinator) and `available` is its
+    size -- always `len(coordinators)`, sent separately so a caller that
+    only wants the number need not count.
+    """
+
+    available: int
+    coordinators: list[OrganiserContact]

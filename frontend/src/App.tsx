@@ -22,6 +22,7 @@ import { Coordinator } from './pages/roles/Coordinator'
 import { Organiser } from './pages/roles/Organiser'
 import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
+import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
 import './App.css'
@@ -58,6 +59,7 @@ function App() {
           </Route>
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />
+            <Route path="/venue-staff/bookings" element={<VenueBookingQueue />} />
           </Route>
           {/* Shared by both internal roles that assess venues, so not
               nested under either role's home path. */}

@@ -176,6 +176,10 @@ create table venue_bookings (
 create index idx_venue_bookings_event on venue_bookings (event_id);
 create index idx_venue_bookings_venue_time on venue_bookings (venue_id, start_time, end_time);
 
+-- One live (pending or approved) request per event; see sql/013.
+create unique index uq_venue_bookings_one_live_per_event
+    on venue_bookings (event_id) where status in ('pending', 'approved');
+
 create table venue_unavailability (
     id bigint generated always as identity primary key,
     venue_id bigint not null references venues (id) on delete cascade,

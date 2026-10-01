@@ -28,8 +28,16 @@ router = APIRouter(prefix="/events", tags=["events"])
 REVIEWABLE_STATUSES = (EventStatus.submitted, EventStatus.under_review)
 
 
-def _get_own_event(event_id: int, user: User, db: Session) -> Event:
+def _get_own_event(event_id: int, user: User, db: Session, *, lock: bool = False) -> Event:
     """Fetch an event the caller owns, or raise.
+
+    `lock=True` takes a row lock (SELECT ... FOR UPDATE) for the rest of the
+    transaction. Use it wherever the handler goes on to check the event's
+    state and then change it: without the lock two overlapping requests --
+    a double-clicked button -- both read the SAME state and both act on it.
+    The second then waits, and reads what the first left behind. (SQLite,
+    which the unit tests use, ignores the lock; the Postgres integration
+    tests are what prove it.)
 
     Ownership is checked here rather than relying on the permission alone:
     EVENT_WRITE is granted to Coordinators as well as Organisers, so a
@@ -39,14 +47,18 @@ def _get_own_event(event_id: int, user: User, db: Session) -> Event:
     "not yours" are deliberately indistinguishable, so this endpoint cannot
     be used to probe which event ids exist.
     """
-    event = db.get(Event, event_id)
+    event = db.get(Event, event_id, with_for_update=lock)
     if event is None or event.organiser_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return event
 
 
-def _get_assigned_event(event_id: int, user: User, db: Session) -> Event:
+def _get_assigned_event(event_id: int, user: User, db: Session, *, lock: bool = False) -> Event:
     """Fetch an event ASSIGNED to the caller, or raise.
+
+    `lock=True` locks the row -- see `_get_own_event`. A caller that then
+    hands the event on (Decline) needs it: the loser of a race re-reads the
+    row, finds it is no longer theirs, and gets the same 404 as anyone else.
 
     "Assigned to me" means `coordinator_id == user.id`. Being allowed to
     read events in general is not the same thing: EVENT_READ is held by
@@ -58,7 +70,7 @@ def _get_assigned_event(event_id: int, user: User, db: Session) -> Event:
     indistinguishable, so this endpoint cannot be used to probe which event
     ids exist or who is coordinating them.
     """
-    event = db.get(Event, event_id)
+    event = db.get(Event, event_id, with_for_update=lock)
     if event is None or event.coordinator_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return event
@@ -260,17 +272,17 @@ def release_assigned_event(
 ) -> EventOut:
     """Hand ONE event off to another available Coordinator.
 
-    Distinct from PATCH /coordinators/me/availability, which takes the
-    caller fully out of the pool and moves every active event they hold.
-    This touches only `event_id` -- everything else assigned to the
-    caller, and their general eligibility for new work, is untouched. For
-    "I can't do this particular one" rather than "I'm away".
+    Distinct from PATCH /coordinators/me/availability, which only takes the
+    caller out of the pool for NEW events and moves nothing. This moves
+    `event_id` -- everything else assigned to the caller, and their general
+    eligibility for new work, is untouched. For "I can't do this particular
+    one" rather than "I'm away".
 
     404s for an event that is not assigned to the caller, exactly like
     GET /events/assigned/{id} -- same reasoning: "not yours" and "does not
     exist" should be indistinguishable.
     """
-    event = _get_assigned_event(event_id, user, db)
+    event = _get_assigned_event(event_id, user, db, lock=True)
     if event.status not in ACTIVE_ASSIGNMENT_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -284,7 +296,7 @@ def release_assigned_event(
     if outgoing is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
-    reassign_event(db, event, outgoing=outgoing, reason="declined")
+    reassign_event(db, event, outgoing=outgoing)
 
     db.commit()
     db.refresh(event)
@@ -442,7 +454,9 @@ def submit_event(
     frontend parses server-side and client-side validation errors with the
     same code path.
     """
-    event = _get_own_event(event_id, user, db)
+    # Locked: two overlapping submits must not both see a draft and both go
+    # on to assign a Coordinator and notify everyone.
+    event = _get_own_event(event_id, user, db, lock=True)
 
     if event.status != EventStatus.draft:
         raise HTTPException(

@@ -1,9 +1,19 @@
-"""Tests for the "Mark myself unavailable" story (Event Coordinator).
+"""Tests for the coordinator assignment and availability stories.
+
+Global unavailability (SCRUM-24):
 
     As an Event Coordinator, I want to mark myself as unavailable, so that
-    my assigned events are automatically reassigned to another coordinator.
+    I stop receiving new ones until I'm available again.
 
-Acceptance criteria:
+    - Marking "Unavailable" shows "Unavailable" on my profile until I mark
+      myself "Available" again.
+    - While unavailable I am excluded from the pool of assignable
+      Coordinators; once available again I am included.
+    - Each change is recorded with a timestamp, even with no active events.
+    - It does NOT move events I already hold: it only stops NEW ones.
+
+Coordinator assignment (originally written as ACs of the older "Mark
+myself unavailable" story, kept here as numbered):
     AC1 - The Event Organiser can see who their assigned coordinator is on
           their event page.
     AC2 - The assigned coordinator receives a notification of their
@@ -19,8 +29,8 @@ are still here (test_submitting_with_*, test_unavailable_coordinator_*,
 test_assignment_picks_*) but are not numbered against the ACs above.
 
 Unavailability comes in two forms, both covered here: the global toggle
-(PATCH /coordinators/me/availability -- takes the caller out of the pool
-entirely and moves every active event they hold) and per-event release
+(PATCH /coordinators/me/availability -- takes the caller out of the pool for
+NEW events only; nothing they already hold moves) and per-event release
 (POST /events/assigned/{id}/release -- hands off just the one event,
 leaving the caller's other work and general eligibility untouched).
 
@@ -115,7 +125,7 @@ def test_submitting_with_no_coordinator_leaves_it_unassigned(client, db_session)
     assert res.json()["coordinator_id"] is None
 
 
-def test_unavailable_coordinator_is_never_assigned(client, db_session):
+def test_scrum24_ac2_unavailable_coordinator_is_never_assigned(client, db_session):
     """AC1: "available" is load-bearing -- a Coordinator who has marked
     themselves unavailable must not receive new work either."""
     organiser, organiser_headers = _organiser(client, db_session)
@@ -234,126 +244,114 @@ def test_assignment_is_recorded_in_the_activity_log(client, db_session):
 
 
 # --------------------------------------------------------------------------
-# Marking unavailable reassigns active events
+# Marking unavailable stops NEW events -- it does not move existing ones
 # --------------------------------------------------------------------------
 
 
-def test_marking_unavailable_reassigns_active_events_to_another_coordinator(client, db_session):
+def _go_unavailable(client, headers):
+    res = client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
+    assert res.status_code == 200
+    return res
+
+
+def test_marking_unavailable_leaves_current_events_with_the_coordinator(client, db_session):
     organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    replacement, replacement_headers = _coordinator(
-        client, db_session, "priya@connectsphere.test", "Priya Nair"
-    )
+    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    other, other_headers = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
 
     event_id = _submit(client, organiser_headers)
-    assert db_session.get(Event, event_id).coordinator_id == outgoing.id
+    assert db_session.get(Event, event_id).coordinator_id == holder.id
 
-    res = client.patch(
-        "/coordinators/me/availability", json={"is_available": False}, headers=outgoing_headers
-    )
+    res = _go_unavailable(client, holder_headers)
 
-    assert res.status_code == 200
     assert res.json()["is_available"] is False
-    assert db_session.get(Event, event_id).coordinator_id == replacement.id
-
-    # The replacement is notified, same as an initial assignment.
-    notifications = client.get("/notifications", headers=replacement_headers).json()
-    assert any(n["event_id"] == event_id for n in notifications)
-
-    # And it shows up in their own assigned-events list.
-    assigned = client.get("/events/assigned", headers=replacement_headers).json()
-    assert [e["id"] for e in assigned] == [event_id]
+    assert db_session.get(Event, event_id).coordinator_id == holder.id
+    assert [e["id"] for e in client.get("/events/assigned", headers=holder_headers).json()] == [event_id]
+    assert client.get("/events/assigned", headers=other_headers).json() == []
 
 
-def test_outgoing_coordinator_is_notified_who_took_over(client, db_session):
-    """The Coordinator who went unavailable can still see, in their own
-    Notifications, who ended up with the event that used to be theirs --
-    not just silently lose it off their list."""
+def test_marking_unavailable_keeps_the_event_even_when_nobody_else_is_available(client, db_session):
+    """No replacement is looked for, so nobody's absence can leave the
+    event unassigned -- unlike declining a single event."""
     organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    _replacement, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
     event_id = _submit(client, organiser_headers)
 
-    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=outgoing_headers)
+    _go_unavailable(client, holder_headers)
 
-    notifications = client.get("/notifications", headers=outgoing_headers).json()
-    reassigned_away = [n for n in notifications if n["type"] == "event_reassigned_away"]
-    assert len(reassigned_away) == 1
-    assert reassigned_away[0]["event_id"] == event_id
-    assert "Priya Nair" in reassigned_away[0]["message"]
+    assert db_session.get(Event, event_id).coordinator_id == holder.id
+    body = client.get(f"/events/{event_id}", headers=organiser_headers).json()
+    assert body["coordinator"]["id"] == holder.id
 
 
-def test_no_reassigned_away_notification_when_nobody_replaces_them(client, db_session):
-    """Nothing to report -- the event was simply unassigned, not handed to
-    anyone, so there is no "who took over" to notify about."""
+def test_marking_unavailable_leaves_no_trace_on_the_event_or_in_notifications(client, db_session):
+    """Nothing was handed over, so there is nothing to log against the event
+    and nobody to tell: not the Coordinator, the Organiser, or a bystander."""
     organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
+    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    _other, other_headers = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    event_id = _submit(client, organiser_headers)
+    before = {
+        name: len(client.get("/notifications", headers=h).json())
+        for name, h in (("organiser", organiser_headers), ("holder", holder_headers), ("other", other_headers))
+    }
+    log_before = client.get(f"/events/{event_id}/activity", headers=organiser_headers).json()
+
+    _go_unavailable(client, holder_headers)
+
+    after = {
+        name: len(client.get("/notifications", headers=h).json())
+        for name, h in (("organiser", organiser_headers), ("holder", holder_headers), ("other", other_headers))
+    }
+    assert after == before
+    assert client.get(f"/events/{event_id}/activity", headers=organiser_headers).json() == log_before
+
+
+def test_an_unavailable_coordinator_can_still_work_the_events_they_hold(client, db_session):
+    organiser, organiser_headers = _organiser(client, db_session)
+    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    event_id = _submit(client, organiser_headers)
+    _go_unavailable(client, holder_headers)
+
+    assert client.get(f"/events/assigned/{event_id}", headers=holder_headers).status_code == 200
+    assert client.post(f"/events/{event_id}/approve", headers=holder_headers).status_code == 200
+
+
+def test_scrum24_ac2_new_events_skip_the_unavailable_coordinator_but_old_ones_stay(client, db_session):
+    organiser, organiser_headers = _organiser(client, db_session)
+    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    other, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    first_id = _submit(client, organiser_headers, name="Already assigned")
+    assert db_session.get(Event, first_id).coordinator_id == holder.id
+    _go_unavailable(client, holder_headers)
+
+    second_id = _submit(client, organiser_headers, name="Submitted afterwards")
+
+    assert db_session.get(Event, first_id).coordinator_id == holder.id  # unchanged
+    assert db_session.get(Event, second_id).coordinator_id == other.id  # skipped Sam
+
+
+def test_scrum24_ac1_profile_shows_unavailable_until_marked_available_again(client, db_session):
+    """SCRUM-24 AC1: the status on the profile (GET /auth/me) is
+    "Unavailable" from the moment it is set, survives a fresh login and
+    unrelated activity, and only flips back when the Coordinator says so."""
+    organiser, organiser_headers = _organiser(client, db_session)
+    _sam, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    assert client.get("/auth/me", headers=headers).json()["user"]["is_available"] is True
+
+    _go_unavailable(client, headers)
+    assert client.get("/auth/me", headers=headers).json()["user"]["is_available"] is False
+
+    # A brand-new session, and other people's activity, change nothing.
+    token = client.post(
+        "/auth/login", json={"email": "sam@connectsphere.test", "password": "password123"}
+    ).json()["access_token"]
+    fresh_headers = {"Authorization": f"Bearer {token}"}
     _submit(client, organiser_headers)
+    assert client.get("/auth/me", headers=fresh_headers).json()["user"]["is_available"] is False
 
-    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=outgoing_headers)
-
-    notifications = client.get("/notifications", headers=outgoing_headers).json()
-    assert [n for n in notifications if n["type"] == "event_reassigned_away"] == []
-
-
-def test_reassignment_is_recorded_in_the_activity_log(client, db_session):
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    _replacement, replacement_headers = _coordinator(
-        client, db_session, "priya@connectsphere.test", "Priya Nair"
-    )
-    event_id = _submit(client, organiser_headers)
-
-    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=outgoing_headers)
-
-    body = client.get(f"/events/assigned/{event_id}", headers=replacement_headers).json()
-    reassignment_entries = [e for e in body["activity"] if "Reassigned from Sam Tan" in (e["note"] or "")]
-    assert len(reassignment_entries) == 1
-    assert reassignment_entries[0]["changed_by_name"] == "Sam Tan"
-    assert "marked themselves unavailable" in reassignment_entries[0]["note"]
-
-
-def test_marking_unavailable_with_no_replacement_leaves_event_unassigned(client, db_session):
-    """No other Coordinator exists -- the event is left unassigned rather
-    than the availability toggle failing."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    event_id = _submit(client, organiser_headers)
-
-    res = client.patch(
-        "/coordinators/me/availability", json={"is_available": False}, headers=outgoing_headers
-    )
-
-    assert res.status_code == 200
-    assert db_session.get(Event, event_id).coordinator_id is None
-
-
-def test_marking_unavailable_does_not_touch_completed_events(client, db_session):
-    """Only events still active need a working Coordinator -- one that has
-    already finished (however it finished) stays exactly as it is."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    event_id = _submit(client, organiser_headers)
-    event = db_session.get(Event, event_id)
-    event.status = "completed"
-    db_session.commit()
-
-    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=outgoing_headers)
-
-    assert db_session.get(Event, event_id).coordinator_id == outgoing.id
+    client.patch("/coordinators/me/availability", json={"is_available": True}, headers=fresh_headers)
+    assert client.get("/auth/me", headers=fresh_headers).json()["user"]["is_available"] is True
 
 
 def test_toggling_to_the_same_value_is_a_no_op(client, db_session):
@@ -376,7 +374,7 @@ def test_toggling_to_the_same_value_is_a_no_op(client, db_session):
     assert len(body["activity"]) == 2
 
 
-def test_availability_can_be_turned_back_on(client, db_session):
+def test_scrum24_ac3_availability_can_be_turned_back_on(client, db_session):
     organiser, organiser_headers = _organiser(client, db_session)
     coordinator, coordinator_headers = _coordinator(
         client, db_session, "sam@connectsphere.test", "Sam Tan"
@@ -419,7 +417,7 @@ def test_anonymous_cannot_list_notifications(client):
 # --------------------------------------------------------------------------
 
 
-def test_releasing_one_event_reassigns_only_that_one(client, db_session):
+def test_64_ac1_releasing_one_event_reassigns_only_that_one(client, db_session):
     """The other form of "unavailable": narrower than the global toggle --
     everything else on the Coordinator's plate, and their general
     eligibility for new work, is untouched."""
@@ -549,7 +547,7 @@ def test_anonymous_cannot_release_an_event(client):
 # --------------------------------------------------------------------------
 
 
-def test_toggling_availability_with_zero_active_events_is_still_logged(client, db_session):
+def test_scrum24_ac4_toggling_availability_with_zero_active_events_is_still_logged(client, db_session):
     """AC5: logged even when there's no event for event_status_history to
     attach a row to."""
     _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
@@ -565,7 +563,7 @@ def test_toggling_availability_with_zero_active_events_is_still_logged(client, d
     assert len(entries) == 2
 
 
-def test_toggling_to_the_same_value_does_not_add_a_history_entry(client, db_session):
+def test_scrum24_ac4_toggling_to_the_same_value_does_not_add_a_history_entry(client, db_session):
     _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
 
     client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
@@ -583,7 +581,7 @@ def test_availability_history_is_scoped_to_the_caller(client, db_session):
     assert client.get("/coordinators/me/availability-history", headers=priya_headers).json() == []
 
 
-def test_availability_history_orders_newest_first(client, db_session):
+def test_scrum24_ac4_availability_history_orders_newest_first(client, db_session):
     _, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
 
     client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
@@ -615,7 +613,7 @@ def _pushed(publish) -> list[tuple[int, dict]]:
 def test_assignment_is_pushed_live_to_the_assigned_coordinator(client, db_session):
     """AC2, live: the Coordinator's open streams get the notification, with
     the same id GET /notifications will later return for it."""
-    _organiser_user, organiser_headers = _organiser(client, db_session)
+    organiser, organiser_headers = _organiser(client, db_session)
     coordinator, coordinator_headers = _coordinator(
         client, db_session, "sam@connectsphere.test", "Sam Tan"
     )
@@ -623,19 +621,23 @@ def test_assignment_is_pushed_live_to_the_assigned_coordinator(client, db_sessio
     with patch.object(broker, "publish") as publish:
         event_id = _submit(client, organiser_headers)
 
+    # Role-specific: the Coordinator hears they were assigned, the Organiser
+    # hears who their Coordinator is -- each with their own notification.
     pushed = _pushed(publish)
-    assert len(pushed) == 1
-    user_id, payload = pushed[0]
-    assert user_id == coordinator.id
-    assert payload["type"] == "event_assigned"
+    assert {(user_id, payload["type"]) for user_id, payload in pushed} == {
+        (coordinator.id, "event_assigned"),
+        (organiser.id, "event_coordinator_assigned"),
+    }
+    payload = next(p for user_id, p in pushed if user_id == coordinator.id)
     assert payload["event_id"] == event_id
     stored = client.get("/notifications", headers=coordinator_headers).json()
     assert payload["id"] == stored[0]["id"]
 
 
 def test_release_pushes_to_both_coordinators(client, db_session):
-    """Both sides of a hand-off hear about it live, not just on next load."""
-    _organiser_user, organiser_headers = _organiser(client, db_session)
+    """Everyone in a hand-off hears about it live, not just on next load:
+    both Coordinators, and the Organiser who needs to know who took over."""
+    organiser, organiser_headers = _organiser(client, db_session)
     outgoing, outgoing_headers = _coordinator(
         client, db_session, "sam@connectsphere.test", "Sam Tan"
     )
@@ -649,6 +651,7 @@ def test_release_pushes_to_both_coordinators(client, db_session):
     assert pushed == {
         (replacement.id, "event_assigned"),
         (outgoing.id, "event_reassigned_away"),
+        (organiser.id, "event_coordinator_assigned"),
     }
 
 
@@ -668,3 +671,90 @@ def test_rolled_back_assignment_pushes_nothing(client, db_session):
     publish.assert_not_called()
     assert db_session.query(Notification).count() == 0
 
+
+# --------------------------------------------------------------------------
+# SCRUM-64 -- declining ONE event: AC2, AC3, AC4 stated in the ticket's words
+# --------------------------------------------------------------------------
+
+
+def test_64_ac2_a_coordinator_who_declined_still_receives_new_events(client, db_session):
+    """After declining, the Coordinator is still in the pool: the next event
+    submitted goes to them (they now hold the fewest, having just given one
+    away), not around them."""
+    organiser, organiser_headers = _organiser(client, db_session)
+    decliner, decliner_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    other, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    declined_id = _submit(client, organiser_headers, name="To be declined")
+    assert db_session.get(Event, declined_id).coordinator_id == decliner.id
+
+    client.post(f"/events/assigned/{declined_id}/release", headers=decliner_headers)
+    assert db_session.get(Event, declined_id).coordinator_id == other.id
+
+    new_id = _submit(client, organiser_headers, name="Submitted after the decline")
+
+    assert db_session.get(Event, new_id).coordinator_id == decliner.id
+
+
+def test_64_ac3_declining_does_not_change_the_profile_status(client, db_session):
+    """The profile (GET /auth/me) still says available -- and the history a
+    Coordinator sees of their own availability gains no entry, because
+    nothing about their availability changed."""
+    organiser, organiser_headers = _organiser(client, db_session)
+    decliner, decliner_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    event_id = _submit(client, organiser_headers)
+    history_before = client.get(
+        "/coordinators/me/availability-history", headers=decliner_headers
+    ).json()
+
+    res = client.post(f"/events/assigned/{event_id}/release", headers=decliner_headers)
+
+    assert res.status_code == 200
+    assert client.get("/auth/me", headers=decliner_headers).json()["user"]["is_available"] is True
+    assert (
+        client.get("/coordinators/me/availability-history", headers=decliner_headers).json()
+        == history_before
+    )
+
+
+def test_64_ac4_the_decline_is_logged_with_a_timestamp_and_the_decliners_name(client, db_session):
+    """One entry, attributed to the Coordinator who declined, timestamped,
+    and readable by the Organiser and the Coordinator who took over."""
+    organiser, organiser_headers = _organiser(client, db_session)
+    decliner, decliner_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    _other, other_headers = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
+    event_id = _submit(client, organiser_headers)
+
+    client.post(f"/events/assigned/{event_id}/release", headers=decliner_headers)
+
+    for headers, view in (
+        (organiser_headers, lambda h: client.get(f"/events/{event_id}/activity", headers=h).json()),
+        (
+            other_headers,
+            lambda h: client.get(f"/events/assigned/{event_id}", headers=h).json()["activity"],
+        ),
+    ):
+        entries = [e for e in view(headers) if "declined this event" in (e["note"] or "")]
+        assert len(entries) == 1
+        assert entries[0]["changed_by_name"] == "Sam Tan"
+        assert entries[0]["created_at"] is not None
+
+
+def test_64_ac4_a_decline_is_logged_even_when_nobody_else_can_take_the_event(client, db_session):
+    """The criterion is unconditional: "the decline is recorded in that
+    event's activity log with a timestamp and my name". With no replacement
+    the event becomes unassigned -- which is exactly when a record of who
+    let go of it, and when, matters most."""
+    organiser, organiser_headers = _organiser(client, db_session)
+    decliner, decliner_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
+    event_id = _submit(client, organiser_headers)
+
+    client.post(f"/events/assigned/{event_id}/release", headers=decliner_headers)
+
+    assert db_session.get(Event, event_id).coordinator_id is None
+    log = client.get(f"/events/{event_id}/activity", headers=organiser_headers).json()
+    entries = [e for e in log if "declined this event" in (e["note"] or "")]
+    assert len(entries) == 1
+    assert entries[0]["changed_by_name"] == "Sam Tan"
+    assert entries[0]["created_at"] is not None
+    assert "unassigned" in entries[0]["note"]

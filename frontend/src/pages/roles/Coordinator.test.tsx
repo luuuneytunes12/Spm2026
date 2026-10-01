@@ -1,18 +1,16 @@
 /**
  * Component tests for the Coordinator's availability toggle and history
- * -- the frontend half of the "Mark myself unavailable" story:
+ * -- the frontend half of SCRUM-24:
  *
  *   As an Event Coordinator, I want to mark myself as unavailable, so
- *   that my assigned events are automatically reassigned to another
- *   coordinator.
+ *   that I stop receiving new ones until I'm available again.
  *
- * The reassignment itself is entirely server-side (see
+ * Whether an unavailable Coordinator is actually left out of new
+ * assignments is server-side (see
  * backend/tests/test_coordinator_availability.py); these tests cover only
  * what the screen does -- reflects current availability, lets it be
- * toggled, and records the change -- not whether the toggle actually
- * reassigns anything. The assignment notification (AC2) is shown by the
- * navbar bell and /notifications -- see NotificationBell.test.tsx and
- * pages/Notifications.test.tsx.
+ * toggled, says truthfully what that means, and shows the recorded
+ * history. Marking unavailable does not move events already assigned.
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -115,5 +113,56 @@ describe('AC: an availability change is recorded with a timestamp, even with no 
     render(<Coordinator />)
 
     expect(await screen.findAllByRole('alert')).not.toHaveLength(0)
+  })
+})
+
+describe('what "Unavailable" means, as the page words it', () => {
+  it('says new events are not assigned and existing ones stay, once unavailable', () => {
+    mockUser = { is_available: false }
+
+    render(<Coordinator />)
+
+    expect(screen.getByText(/will not be assigned new events/)).toBeInTheDocument()
+    expect(screen.getByText(/Events already assigned to you stay with you/)).toBeInTheDocument()
+    expect(screen.queryByText(/handed to another/)).not.toBeInTheDocument()
+  })
+
+  it('does not promise a hand-over when marking unavailable', () => {
+    mockUser = { is_available: true }
+
+    render(<Coordinator />)
+
+    expect(screen.getByText('New submitted requests can be assigned to you.')).toBeInTheDocument()
+    expect(screen.queryByText(/reassigned/)).not.toBeInTheDocument()
+  })
+})
+
+describe('SCRUM-24 AC4 - the history follows the status without a page reload', () => {
+  it('reloads the history when the availability changes, so the new entry appears at once', async () => {
+    mockUser = { is_available: true }
+    mockGetAvailabilityHistory.mockResolvedValueOnce([])
+    const view = render(<Coordinator />)
+    expect(await screen.findByText('No changes yet.')).toBeInTheDocument()
+
+    // The toggle succeeded and the signed-in user was refreshed.
+    mockUser = { is_available: false }
+    mockGetAvailabilityHistory.mockResolvedValueOnce([
+      { id: 1, is_available: false, created_at: '2026-09-30T09:00:00Z' },
+    ])
+    view.rerender(<Coordinator />)
+
+    expect(await screen.findByText('Marked unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('No changes yet.')).not.toBeInTheDocument()
+    expect(mockGetAvailabilityHistory).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not reload the history when nothing about the availability changed', async () => {
+    mockUser = { is_available: true }
+    const view = render(<Coordinator />)
+    await screen.findByText('No changes yet.')
+
+    view.rerender(<Coordinator />)
+
+    expect(mockGetAvailabilityHistory).toHaveBeenCalledTimes(1)
   })
 })

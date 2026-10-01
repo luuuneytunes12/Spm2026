@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -6,10 +8,36 @@ from app.core.deps import require_role
 from app.core.roles import Role
 from app.models.coordinator_availability import CoordinatorAvailabilityHistory
 from app.models.user import User
-from app.schemas.user import AvailabilityHistoryEntry, AvailabilityUpdate, UserOut
-from app.services.assignment import events_needing_reassignment, reassign_event
+from app.schemas.event import OrganiserContact
+from app.schemas.user import (
+    AvailabilityHistoryEntry,
+    AvailabilityUpdate,
+    AvailableCoordinatorCount,
+    UserOut,
+)
+from app.services.assignment import available_coordinators
 
 router = APIRouter(prefix="/coordinators", tags=["coordinators"])
+
+
+@router.get("/available-count", response_model=AvailableCoordinatorCount)
+def get_available_coordinator_count(
+    db: Session = Depends(get_db),
+    _caller: User = Depends(require_role(Role.ORGANISER)),
+) -> AvailableCoordinatorCount:
+    """Who a newly submitted event could be assigned to, and how many.
+
+    A debugging aid for Organisers -- it explains why a request is sitting
+    "Not yet assigned" (the pool is empty) and which Coordinators are in it.
+    Read straight from `available_coordinators`, the very query assignment
+    picks from, so the list can never disagree with who actually gets
+    chosen. Only name and email are exposed -- not what anyone holds.
+    """
+    pool = available_coordinators(db).order_by(User.id).all()
+    return AvailableCoordinatorCount(
+        available=len(pool),
+        coordinators=[OrganiserContact.model_validate(c) for c in pool],
+    )
 
 
 @router.patch("/me/availability", response_model=UserOut)
@@ -24,22 +52,34 @@ def set_my_availability(
     itself -- and the name a reassignment note needs -- still has to come
     from the database, the same way GET /auth/me re-fetches its profile.
 
-    Turning availability OFF immediately reassigns every event currently
-    active under this Coordinator to another available one (or leaves it
-    unassigned if none exists) -- the whole point of the story is that an
-    Organiser's event does not sit stuck with a Coordinator who cannot work
-    on it.
+    Availability only decides who is picked for NEW events: while it is off
+    the caller is excluded from the assignment pool, and back in it once it
+    is turned on again. Events already assigned to them are left exactly as
+    they are -- turning it off never moves, unassigns or notifies about
+    anything. Every actual change is recorded in the caller's availability
+    history, even when they hold no events.
     """
-    user = db.get(User, caller.id)
+    # Locked so two overlapping requests (two tabs, a double click) are
+    # applied one after the other: the second re-reads the value the first
+    # set, sees "no change", and records nothing -- rather than both reading
+    # the old value and both logging a change.
+    user = db.get(User, caller.id, with_for_update=True)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
     if user.is_available != body.is_available:
         user.is_available = body.is_available
-        db.add(CoordinatorAvailabilityHistory(coordinator_id=user.id, is_available=user.is_available))
-        if body.is_available is False:
-            for event in events_needing_reassignment(db, user.id):
-                reassign_event(db, event, outgoing=user)
+        # Stamped here, under the lock, not by the database's now(): in
+        # Postgres now() is the moment the TRANSACTION began, so a request
+        # that waited for the lock could carry an earlier time than the
+        # change it followed and the history would read out of order.
+        db.add(
+            CoordinatorAvailabilityHistory(
+                coordinator_id=user.id,
+                is_available=user.is_available,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
 
     db.commit()
     db.refresh(user)

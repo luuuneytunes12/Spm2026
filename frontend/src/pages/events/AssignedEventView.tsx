@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
+import { VenueBookingSection } from '../../components/VenueBookingSection'
+import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
 import { ApiError } from '../../lib/api'
 import {
   ACTIVE_ASSIGNMENT_STATUSES,
@@ -352,6 +354,10 @@ export function AssignedEventView() {
           </div>
         )}
       </section>
+
+      {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
+        <VenueBookingSection eventId={event.id} expectedAttendance={event.expected_attendance} />
+      )}
 
       <section className="card">
         <h2>Event Details</h2>

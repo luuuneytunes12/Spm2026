@@ -68,3 +68,16 @@ export const ROLE_HOME_PATH: Record<Role, string> = {
   [Role.TECH_SUPPORT]: '/tech-support',
   [Role.ATTENDEE]: '/attendee',
 }
+
+// Where a notification's `event_id` should link to for the signed-in
+// role's own event detail page (the one with that event's Activity Log).
+// Only Organiser and Coordinator have one today — everyone else gets no
+// link rather than a guess that would 404 or hit RequireRole's /forbidden.
+const EVENT_DETAIL_PATH: Partial<Record<Role, (eventId: number) => string>> = {
+  [Role.ORGANISER]: (eventId) => `/organiser/events/${eventId}`,
+  [Role.COORDINATOR]: (eventId) => `/coordinator/events/${eventId}`,
+}
+
+export function eventDetailPath(role: Role, eventId: number): string | null {
+  return EVENT_DETAIL_PATH[role]?.(eventId) ?? null
+}
