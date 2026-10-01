@@ -10,6 +10,7 @@ from app.core.roles import Permission, Role
 from app.models.enums import BookingStatus, ChangeRequestStatus, EquipmentStatus, EventStatus, NotificationType
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
+from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import VenueBooking
 from app.services.equipment_lines import replace_equipment_lines

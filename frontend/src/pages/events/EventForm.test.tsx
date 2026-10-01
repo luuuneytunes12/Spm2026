@@ -11,7 +11,7 @@
  * `lib/events` is mocked: this layer is about rendering and wiring. The real
  * request/response behaviour is covered by backend/tests/test_events.py.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -233,8 +233,14 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     await user.clear(screen.getByLabelText('Event name'))
     await user.type(screen.getByLabelText('Event name'), 'Corrected conference name')
     expect(screen.queryByRole('button', { name: 'Submit request' })).not.toBeInTheDocument()
-    await user.type(screen.getByLabelText('Explanation'), 'Correcting a typo')
+    expect(screen.queryByLabelText('Reason for change')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Request changes' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Submit change request?' })
+    expect(within(dialog).getByText(/cannot be edited/)).toBeInTheDocument()
+    expect(mockRequestChanges).not.toHaveBeenCalled()
+    await user.type(within(dialog).getByLabelText('Reason for change'), 'Correcting a typo')
+    await user.click(within(dialog).getByRole('button', { name: 'Submit change request' }))
 
     await waitFor(() =>
       expect(mockRequestChanges).toHaveBeenCalledWith(
@@ -246,6 +252,39 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     expect(mockUpdate).not.toHaveBeenCalled()
     expect(mockSubmit).not.toHaveBeenCalled()
     expect(navigate).toHaveBeenCalledWith('/organiser/events/7', { replace: true })
+  })
+
+  it('requires a reason in the confirmation modal before sending', async () => {
+    const user = userEvent.setup()
+    mockGet.mockResolvedValue({ ...SAVED, status: 'under_review' })
+    renderEdit()
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
+
+    await user.click(screen.getByRole('button', { name: 'Request changes' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Submit change request' }))
+
+    expect(
+      within(dialog).getByText('Please explain why these changes are needed.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Could not reach the server/)).not.toBeInTheDocument()
+    expect(mockRequestChanges).not.toHaveBeenCalled()
+  })
+
+  it('closes the confirmation modal without sending when going back', async () => {
+    const user = userEvent.setup()
+    mockGet.mockResolvedValue({ ...SAVED, status: 'under_review' })
+    renderEdit()
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
+
+    await user.click(screen.getByRole('button', { name: 'Request changes' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Go back' }),
+    )
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mockRequestChanges).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
   })
 })
 
