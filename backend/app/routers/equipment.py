@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
@@ -7,7 +9,9 @@ from app.core.deps import require_permission
 from app.core.roles import Permission
 from app.models.enums import EquipmentOperationalStatus, EquipmentStatus
 from app.models.equipment import Equipment, EquipmentRequest
+from app.models.events import Event
 from app.schemas.equipment import EquipmentCatalogueOut, EquipmentOption, EquipmentOut
+from app.services.equipment_availability import available_quantity, held_after
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 
@@ -20,33 +24,23 @@ def _reserved_units_subquery():
     never will be -- counting any of those would hide stock that is in
     fact free, and Technical Support would turn down events they could
     actually support.
+
+    And only until the event ends: reserved kit is freed at its event's end
+    time, the same rule the availability check uses.
     """
     return (
         select(
             EquipmentRequest.equipment_id.label("equipment_id"),
             func.coalesce(func.sum(EquipmentRequest.quantity_requested), 0).label("reserved"),
         )
-        .where(EquipmentRequest.status == EquipmentStatus.reserved)
+        .join(Event, Event.id == EquipmentRequest.event_id)
+        .where(
+            EquipmentRequest.status == EquipmentStatus.reserved,
+            held_after(datetime.now(timezone.utc)),
+        )
         .group_by(EquipmentRequest.equipment_id)
         .subquery()
     )
-
-
-def _available_quantity(item: Equipment, reserved: int) -> int:
-    """How many units can actually be used for an event.
-
-    An item that is not operational reports 0 regardless of the
-    arithmetic: two damaged mixers are not two available mixers. The Week 1
-    briefing is explicit that equipment recorded as unavailable must not be
-    treated as freely available.
-
-    Clamped at 0 so over-reservation (more reserved than owned, possible if
-    stock is reduced after the fact) reports "none left" rather than a
-    negative count.
-    """
-    if item.operational_status is not EquipmentOperationalStatus.available:
-        return 0
-    return max(item.total_quantity - reserved, 0)
 
 
 def _to_out(item: Equipment, reserved: int) -> EquipmentOut:
@@ -64,7 +58,7 @@ def _to_out(item: Equipment, reserved: int) -> EquipmentOut:
         total_quantity=item.total_quantity,
         location=item.location,
         operational_status=item.operational_status,
-        available_quantity=_available_quantity(item, reserved),
+        available_quantity=available_quantity(item, reserved),
         technical_specs=item.technical_specs,
     )
 
