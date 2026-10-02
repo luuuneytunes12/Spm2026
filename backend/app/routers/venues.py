@@ -1,10 +1,11 @@
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.datetimes import as_utc
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
@@ -40,14 +41,6 @@ def _reject(field: str, message: str) -> None:
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail=[{"loc": ["query", field], "msg": message}],
     )
-
-
-def _utc(moment: datetime) -> datetime:
-    """Normalise to UTC. A time sent without a zone is read as UTC -- the
-    frontend always sends one, so this only matters for hand-typed calls."""
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
 
 
 def _folded(values: Iterable[str] | None) -> set[str]:
@@ -137,7 +130,7 @@ def list_venues(
     # venues as free for a period nobody actually asked about.
     if (start is None) != (end is None):
         _reject("end" if end is None else "start", "Give both a start and an end.")
-    if start is not None and end is not None and _utc(end) <= _utc(start):
+    if start is not None and end is not None and as_utc(end) <= as_utc(start):
         _reject("end", "The end must be after the start.")
 
     stmt = select(Venue)
@@ -158,7 +151,7 @@ def list_venues(
         stmt = stmt.where(Venue.capacity >= min_capacity)
 
     if start is not None and end is not None:
-        window_start, window_end = _utc(start), _utc(end)
+        window_start, window_end = as_utc(start), as_utc(end)
         # Two periods overlap when each starts before the other ends. Strict
         # comparisons, so back-to-back is not an overlap: a session ending at
         # 09:00 leaves the room free for one starting at 09:00.

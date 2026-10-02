@@ -66,7 +66,14 @@ export function Sidebar({ id, open }: SidebarProps) {
           )}
           {user.role === Role.TECH_SUPPORT && (
             <li>
-              <NavLink to="/equipment">Equipment Catalogue</NavLink>
+              <NavLink to="/equipment" end>
+                Equipment Catalogue
+              </NavLink>
+            </li>
+          )}
+          {user.role === Role.TECH_SUPPORT && (
+            <li>
+              <NavLink to="/equipment/reservations">Equipment Reservations</NavLink>
             </li>
           )}
           {user.role === Role.ATTENDEE && (

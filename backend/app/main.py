@@ -6,6 +6,7 @@ from app.routers import (
     auth,
     coordinators,
     equipment,
+    equipment_reservations,
     events,
     health,
     notifications,
@@ -33,6 +34,7 @@ app.include_router(events.router)
 app.include_router(coordinators.router)
 app.include_router(notifications.router)
 app.include_router(equipment.router)
+app.include_router(equipment_reservations.router)
 app.include_router(users.router)
 app.include_router(registrations.router)
 app.include_router(venues.router)

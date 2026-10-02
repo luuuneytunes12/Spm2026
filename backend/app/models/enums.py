@@ -22,6 +22,17 @@ class EventStatus(enum.StrEnum):
     cancelled = "cancelled"
 
 
+# An event that has been approved and has not yet finished: the window in
+# which resources (a venue, equipment) are committed to it. Anything earlier
+# is not yet a plan, and a rejected, completed or cancelled event has nothing
+# left to hold resources for.
+PLANNED_EVENT_STATUSES = (
+    EventStatus.approved,
+    EventStatus.planning,
+    EventStatus.confirmed,
+)
+
+
 class BookingStatus(enum.StrEnum):
     pending = "pending"
     approved = "approved"
