@@ -12,13 +12,35 @@ import {
 import type { EquipmentRequirement } from '../lib/equipmentRequirements'
 import { EventStatus } from '../lib/events'
 import type { EquipmentLine } from '../lib/events'
+import { EquipmentLines } from './EquipmentLines'
 import { EquipmentRequirementItem } from './EquipmentRequirementItem'
 
 interface Props {
   eventId: number
   eventStatus: EventStatus
-  /** What the Organiser asked for, so a requirement can be based on a pick. */
+  /** What the Organiser asked for: shown as context, and what a requirement
+   *  can be based on. */
   organiserLines: EquipmentLine[]
+  /** The Organiser's "Other equipment notes". Context only. */
+  organiserNotes: string | null
+}
+
+/** One of the Organiser's requests, in the words used to pick and to recall it. */
+function describeLine(line: EquipmentLine): string {
+  return `${line.equipment_name} × ${line.quantity_requested}`
+}
+
+/** Where a requirement came from, for the row and the editor. A link to a
+ *  request this page does not have (the page is older than an approved change
+ *  that replaced the Organiser's list) is still a link, so it is not shown as
+ *  Coordinator-added. Once the page is reloaded the database has cleared such
+ *  a link, and the requirement reads as Coordinator-added from then on. */
+function originOf(requirement: EquipmentRequirement, organiserLines: EquipmentLine[]): string {
+  if (requirement.organiser_equipment_request_id === null) return 'Coordinator-added requirement'
+  const line = organiserLines.find((l) => l.id === requirement.organiser_equipment_request_id)
+  return line
+    ? `Based on organiser equipment request: ${describeLine(line)}`
+    : 'Based on an organiser equipment request'
 }
 
 /** Statuses before an event is approved: equipment cannot be recorded yet,
@@ -32,16 +54,25 @@ const BEFORE_APPROVAL: EventStatus[] = [
 
 /** The Coordinator's "equipment this event needs" card.
  *
- *  Each requirement is a type (one of the catalogue's categories), a
- *  quantity and technical notes -- what Technical Support will review. It
- *  can be based on one of the Organiser's picks, which fills the form in and
- *  remembers where it came from, or on nothing at all: the Coordinator may
- *  know of a need the Organiser never mentioned.
+ *  Each requirement is an equipment TYPE (one of the catalogue's categories,
+ *  never a specific model: choosing the exact item is Technical Support's
+ *  job), a quantity and technical notes -- what Technical Support will
+ *  review. Adding one saves it at once, visible to Technical Support.
+ *
+ *  What the Organiser asked for is shown above, read-only, as planning
+ *  context. A requirement can be based on one of those requests, which fills
+ *  in its type and quantity and remembers where it came from, or on nothing
+ *  at all: the Coordinator may know of a need the Organiser never mentioned.
  *
  *  Whether anything can be changed follows the event's status, using the
  *  same window the server enforces. The server is the real gate; this just
  *  stops the card offering what it will refuse. */
-export function EquipmentRequirementsSection({ eventId, eventStatus, organiserLines }: Props) {
+export function EquipmentRequirementsSection({
+  eventId,
+  eventStatus,
+  organiserLines,
+  organiserNotes,
+}: Props) {
   const editable = canRecordEquipment(eventStatus)
 
   const [requirements, setRequirements] = useState<EquipmentRequirement[] | null>(null)
@@ -101,6 +132,10 @@ export function EquipmentRequirementsSection({ eventId, eventStatus, organiserLi
     <section className="card stack-tight">
       <h2>Equipment Requirements</h2>
 
+      <OrganiserContext lines={organiserLines} notes={organiserNotes} />
+
+      <h3 className="requirement-subtitle">Coordinator requirements</h3>
+
       {loadFailed && (
         <p className="form-error" role="alert">
           Could not load the equipment requirements.
@@ -113,7 +148,7 @@ export function EquipmentRequirementsSection({ eventId, eventStatus, organiserLi
       )}
 
       {requirements !== null && requirements.length === 0 && !loadFailed && (
-        <p className="text-muted">No equipment recorded yet.</p>
+        <p className="text-muted">No Coordinator equipment requirements recorded yet.</p>
       )}
 
       {requirements !== null && requirements.length > 0 && (
@@ -123,6 +158,7 @@ export function EquipmentRequirementsSection({ eventId, eventStatus, organiserLi
               <li key={requirement.id} className="requirement requirement-editing">
                 <RequirementEditor
                   requirement={requirement}
+                  origin={originOf(requirement, organiserLines)}
                   types={types}
                   onCancel={() => setEditingId(null)}
                   onSave={async (changes) => {
@@ -146,6 +182,7 @@ export function EquipmentRequirementsSection({ eventId, eventStatus, organiserLi
                 quantity={requirement.quantity_needed}
                 notes={requirement.technical_notes}
                 status={requirement.status}
+                origin={originOf(requirement, organiserLines)}
                 actions={
                   editable && (
                     <>
@@ -205,6 +242,28 @@ export function EquipmentRequirementsSection({ eventId, eventStatus, organiserLi
   )
 }
 
+/** What the Organiser asked for, read-only: the Coordinator plans against it.
+ *  Never copied into a requirement -- the Coordinator writes their own. */
+function OrganiserContext({ lines, notes }: { lines: EquipmentLine[]; notes: string | null }) {
+  const headingId = useId()
+  const written = notes?.trim()
+  return (
+    <section className="requirement-context stack-tight" aria-labelledby={headingId}>
+      <h3 id={headingId} className="requirement-subtitle">
+        Requested by the Organiser
+      </h3>
+      <EquipmentLines lines={lines} />
+      {written && (
+        <div className="requirement-context-notes">
+          <span className="requirement-context-label">Other equipment notes</span>
+          <p>{written}</p>
+        </div>
+      )}
+      <p className="field-hint">For reference. It is not copied into your requirements.</p>
+    </section>
+  )
+}
+
 interface AddFormProps {
   types: string[]
   typesFailed: boolean
@@ -230,12 +289,13 @@ function AddRequirementForm({ types, typesFailed, organiserLines, onAdd }: AddFo
   function chooseBasedOn(value: string) {
     setBasedOn(value)
     const pick = organiserLines.find((line) => String(line.id) === value)
-    // Filling in is a convenience, never a lock: every field stays editable,
-    // and going back to "not based on a request" keeps what was typed.
+    // Type and quantity are what can be derived from a request. Technical
+    // notes are the Coordinator's own, so they are left as they are. Filling
+    // in is a convenience, never a lock: every field stays editable, and
+    // going back to "not based on an organiser request" keeps what was typed.
     if (!pick) return
     setCategory(pick.equipment_category ?? '')
     setQuantity(String(pick.quantity_requested))
-    setNotes(pick.technical_requirements ?? '')
     setProblem(null)
   }
 
@@ -275,12 +335,12 @@ function AddRequirementForm({ types, typesFailed, organiserLines, onAdd }: AddFo
       <h3 className="requirement-form-title">Add a requirement</h3>
       {organiserLines.length > 0 && (
         <div className="field">
-          <label htmlFor={`${ids}-based`}>Based on the Organiser’s request</label>
+          <label htmlFor={`${ids}-based`}>Based on organiser equipment request (optional)</label>
           <select id={`${ids}-based`} value={basedOn} onChange={(e) => chooseBasedOn(e.target.value)}>
-            <option value="">Not based on a request</option>
+            <option value="">Not based on an organiser request</option>
             {organiserLines.map((line) => (
               <option key={line.id} value={line.id}>
-                {`${line.equipment_name} × ${line.quantity_requested}`}
+                {describeLine(line)}
               </option>
             ))}
           </select>
@@ -334,6 +394,8 @@ function AddRequirementForm({ types, typesFailed, organiserLines, onAdd }: AddFo
 
       {problem && <p className="field-error">{problem}</p>}
 
+      <p className="field-hint">Once added, this requirement will be visible to Technical Support.</p>
+
       <div className="form-actions">
         <button type="submit" className="btn-secondary" disabled={busy}>
           Add requirement
@@ -345,6 +407,9 @@ function AddRequirementForm({ types, typesFailed, organiserLines, onAdd }: AddFo
 
 interface EditorProps {
   requirement: EquipmentRequirement
+  /** Where it came from. Shown, never editable: it is a fact about the
+   *  requirement, not a field. */
+  origin: string
   types: string[]
   onCancel: () => void
   onSave: (changes: {
@@ -354,7 +419,7 @@ interface EditorProps {
   }) => Promise<void>
 }
 
-function RequirementEditor({ requirement, types, onCancel, onSave }: EditorProps) {
+function RequirementEditor({ requirement, origin, types, onCancel, onSave }: EditorProps) {
   const ids = useId()
   const [category, setCategory] = useState(requirement.category)
   const [quantity, setQuantity] = useState(String(requirement.quantity_needed))
@@ -383,6 +448,7 @@ function RequirementEditor({ requirement, types, onCancel, onSave }: EditorProps
     <form onSubmit={submit} noValidate>
       <fieldset className="field-group requirement-editor">
         <legend className="visually-hidden">{`Edit ${requirement.category} requirement`}</legend>
+        <p className="requirement-origin">{origin}</p>
         <div className="form-row">
           <div className="field">
             <label htmlFor={`${ids}-type`}>Equipment type</label>
@@ -419,7 +485,7 @@ function RequirementEditor({ requirement, types, onCancel, onSave }: EditorProps
         {problem && <p className="field-error">{problem}</p>}
         <div className="form-actions">
           <button type="submit" className="btn-secondary" disabled={busy}>
-            Save
+            Save changes
           </button>
           <button type="button" className="btn-link-muted" onClick={onCancel}>
             Cancel

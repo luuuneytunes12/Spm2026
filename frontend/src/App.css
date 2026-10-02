@@ -1770,10 +1770,38 @@
   margin-bottom: 0;
 }
 
-.requirement-form-title {
+.requirement-form-title,
+.requirement-subtitle {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-h);
+}
+
+/* What the Organiser asked for: read-only context, so it is set apart and
+   tinted like the editor is, rather than looking like something to fill in. */
+.requirement-context {
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.requirement-context-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.requirement-context-notes p {
+  margin: 2px 0 0;
+  /* The notes are free text; keep the Organiser's own line breaks. */
+  white-space: pre-line;
+}
+
+/* Where a requirement came from: secondary to its type, quantity and notes. */
+.requirement-origin {
+  font-size: 13px;
+  color: var(--text);
 }
 

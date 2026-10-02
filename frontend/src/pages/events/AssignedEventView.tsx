@@ -410,6 +410,7 @@ export function AssignedEventView() {
         eventId={event.id}
         eventStatus={event.status}
         organiserLines={event.equipment_items}
+        organiserNotes={event.equipment_requirements}
       />
 
       <section className="card">
