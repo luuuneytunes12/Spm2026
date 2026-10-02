@@ -13,12 +13,16 @@ import {
   EventStatus,
   approveEvent,
   approveEventChangeRequest,
+  confirmEvent,
   formatRange,
   formatTimestamp,
+  fromDateTimeLocal,
   getAssignedEvent,
   rejectEvent,
   rejectEventChangeRequest,
   releaseAssignedEvent,
+  setEventRegistration,
+  toDateTimeLocal,
 } from '../../lib/events'
 import type { ActivityEntry, AssignedEventDetail, EventChangeRequest } from '../../lib/events'
 
@@ -195,13 +199,26 @@ export function AssignedEventView() {
   const [changeRequestNotes, setChangeRequestNotes] = useState<Record<number, string>>({})
   const [reviewingChangeRequest, setReviewingChangeRequest] = useState<number | null>(null)
   const [changeRequestError, setChangeRequestError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [registrationOn, setRegistrationOn] = useState(false)
+  const [opensAt, setOpensAt] = useState('')
+  const [closesAt, setClosesAt] = useState('')
+  const [savingRegistration, setSavingRegistration] = useState(false)
+  const [registrationError, setRegistrationError] = useState<string | null>(null)
+  const [registrationFields, setRegistrationFields] = useState<string[]>([])
+  const [registrationSaved, setRegistrationSaved] = useState(false)
 
   useEffect(() => {
     if (!id) return
     let cancelled = false
     getAssignedEvent(Number(id))
       .then((e) => {
-        if (!cancelled) setEvent(e)
+        if (cancelled) return
+        setEvent(e)
+        setRegistrationOn(e.registration_enabled)
+        setOpensAt(toDateTimeLocal(e.registration_opens_at ?? null))
+        setClosesAt(toDateTimeLocal(e.registration_closes_at ?? null))
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -253,6 +270,49 @@ export function AssignedEventView() {
       setReviewError(err instanceof ApiError ? err.message : 'Could not save the review decision.')
     } finally {
       setReviewing(false)
+    }
+  }
+
+  async function confirm() {
+    if (!event) return
+    setConfirming(true)
+    setConfirmError(null)
+    try {
+      await confirmEvent(event.id)
+      setEvent(await getAssignedEvent(event.id))
+    } catch (err) {
+      setConfirmError(err instanceof ApiError ? err.message : 'Could not confirm this event.')
+      // The outstanding list may have changed since the page loaded.
+      const refreshed = await getAssignedEvent(event.id).catch(() => null)
+      if (refreshed) setEvent(refreshed)
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  async function saveRegistration() {
+    if (!event) return
+    setSavingRegistration(true)
+    setRegistrationError(null)
+    setRegistrationFields([])
+    setRegistrationSaved(false)
+    try {
+      await setEventRegistration(event.id, {
+        registration_enabled: registrationOn,
+        registration_opens_at: fromDateTimeLocal(opensAt),
+        registration_closes_at: fromDateTimeLocal(closesAt),
+      })
+      setEvent(await getAssignedEvent(event.id))
+      setRegistrationSaved(true)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setRegistrationError(err.message)
+        setRegistrationFields(err.fields)
+      } else {
+        setRegistrationError('Could not save the registration settings.')
+      }
+    } finally {
+      setSavingRegistration(false)
     }
   }
 
@@ -308,6 +368,14 @@ export function AssignedEventView() {
       'Registration needs',
       event.registration_enabled ? 'Attendees must register' : 'Registration not required',
     ],
+    ...(event.registration_opens_at && event.registration_closes_at
+      ? ([
+          [
+            'Registration window',
+            `${formatTimestamp(event.registration_opens_at)} – ${formatTimestamp(event.registration_closes_at)}`,
+          ],
+        ] as [string, string | null][])
+      : []),
     ['Special arrangements', event.special_arrangements],
   ]
 
@@ -375,6 +443,40 @@ export function AssignedEventView() {
             )}
           </div>
         )}
+        {event.status === EventStatus.APPROVED && (
+          <div className="status-actions">
+            <h3>Confirm event</h3>
+            <p className="page-subtitle">
+              Confirm once the venue booking is approved and every equipment requirement is
+              reserved. Confirming lets you open registration and tells the Organiser.
+            </p>
+            {(event.confirmation_outstanding ?? []).length > 0 && (
+              <div role="status">
+                <p>Still outstanding:</p>
+                <ul className="detail-value-list">
+                  {(event.confirmation_outstanding ?? []).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void confirm()}
+                disabled={confirming}
+              >
+                {confirming ? 'Confirming…' : 'Confirm'}
+              </button>
+            </div>
+            {confirmError && (
+              <p className="form-error" role="alert">
+                {confirmError}
+              </p>
+            )}
+          </div>
+        )}
         {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
           <div className="status-actions">
             <button
@@ -400,6 +502,68 @@ export function AssignedEventView() {
 
       {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
         <VenueBookingSection eventId={event.id} expectedAttendance={event.expected_attendance} />
+      )}
+
+      {event.status === EventStatus.CONFIRMED && (
+        <section className="card">
+          <h2>Registration</h2>
+          <p className="page-subtitle">
+            Let Attendees register for this event between the dates below.
+          </p>
+          <div className="stack-tight">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={registrationOn}
+                onChange={(e) => setRegistrationOn(e.target.checked)}
+                disabled={savingRegistration}
+              />
+              <span>Enable registration</span>
+            </label>
+            <div className={`field${registrationFields.includes('registration_opens_at') ? ' field-invalid' : ''}`}>
+              <label htmlFor="registration_opens_at">Registration opens</label>
+              <input
+                id="registration_opens_at"
+                type="datetime-local"
+                value={opensAt}
+                onChange={(e) => setOpensAt(e.target.value)}
+                disabled={savingRegistration}
+                aria-invalid={registrationFields.includes('registration_opens_at') || undefined}
+              />
+            </div>
+            <div className={`field${registrationFields.includes('registration_closes_at') ? ' field-invalid' : ''}`}>
+              <label htmlFor="registration_closes_at">Registration closes</label>
+              <input
+                id="registration_closes_at"
+                type="datetime-local"
+                value={closesAt}
+                onChange={(e) => setClosesAt(e.target.value)}
+                disabled={savingRegistration}
+                aria-invalid={registrationFields.includes('registration_closes_at') || undefined}
+              />
+            </div>
+            {registrationError && (
+              <p className="form-error" role="alert">
+                {registrationError}
+              </p>
+            )}
+            {registrationSaved && !registrationError && (
+              <p className="page-subtitle" role="status">
+                Registration settings saved.
+              </p>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void saveRegistration()}
+                disabled={savingRegistration}
+              >
+                {savingRegistration ? 'Saving…' : 'Save registration settings'}
+              </button>
+            </div>
+          </div>
+        </section>
       )}
 
       <section className="card">

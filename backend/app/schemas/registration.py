@@ -19,4 +19,6 @@ class RegistrableEvent(BaseModel):
     proposed_start: datetime | None
     proposed_end: datetime | None
     registration_open: bool
+    registration_opens_at: datetime | None = None
+    registration_closes_at: datetime | None = None
     my_status: RegistrationStatus | None

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../auth/useAuth'
+import { RoleLanding } from '../../components/RoleLanding'
 import { ApiError } from '../../lib/api'
 import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
 import type { AvailabilityHistoryEntry } from '../../lib/coordinators'
 import { formatTimestamp } from '../../lib/events'
-import { ROLE_LABELS, ROLE_PERMISSIONS, Role } from '../../lib/roles'
-import { ROLE_WORKFLOWS } from '../../lib/roleWorkflows'
+import { Role } from '../../lib/roles'
 
 /** The "mark myself unavailable" control at the heart of this story.
  *
@@ -101,8 +101,16 @@ function AvailabilityHistory({ isAvailable }: { isAvailable: boolean }) {
   }, [isAvailable])
 
   return (
-    <>
-      <h3>History</h3>
+    // Collapsed by default: the toggle above is what a Coordinator uses, the
+    // log is there when they want to look something up. A native <details>
+    // gives keyboard and screen-reader support for free.
+    <details className="history-dropdown">
+      <summary>
+        Availability history
+        {!loading && entries.length > 0 && (
+          <span className="history-count">{entries.length}</span>
+        )}
+      </summary>
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -122,67 +130,21 @@ function AvailabilityHistory({ isAvailable }: { isAvailable: boolean }) {
           ))}
         </ul>
       )}
-    </>
+    </details>
   )
 }
 
-/** The Coordinator's landing page.
- *
- *  A dedicated layout rather than the shared RoleHome shell every other
- *  role page uses: Availability is a real, backend-backed control a
- *  Coordinator checks constantly, so it sits in a bento grid alongside
- *  Permissions and Planned instead of a stacked full-width card underneath
- *  them. Notifications live in the navbar bell and /notifications. */
+/** The Coordinator's landing page: the shared welcome and tiles, with their
+ *  availability -- a live control they check constantly -- between the two. */
 export function Coordinator() {
   const { user } = useAuth()
-  const permissions = ROLE_PERMISSIONS[Role.COORDINATOR]
-  const planned = ROLE_WORKFLOWS[Role.COORDINATOR]
 
   return (
-    <div className="stack">
-      <header className="page-header">
-        <h1>{ROLE_LABELS[Role.COORDINATOR]}</h1>
-        <p className="page-subtitle">What this role can do today, and what is planned for it.</p>
-      </header>
-
-      <div className="bento-grid">
-        <section className="card bento-availability">
-          <AvailabilityToggle />
-          <AvailabilityHistory isAvailable={user?.is_available ?? true} />
-        </section>
-
-        <section className="card bento-permissions">
-          <h2>Permissions</h2>
-          <p className="page-subtitle" style={{ marginBottom: 14 }}>
-            Granted by the role, enforced by the backend on every request.
-          </p>
-          <ul className="chip-list">
-            {permissions.map((permission) => (
-              <li key={permission} className="chip">
-                {permission}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="card bento-planned">
-          <h2>
-            Planned <span className="badge badge-muted">not yet implemented</span>
-          </h2>
-          <p className="page-subtitle" style={{ marginBottom: 14 }}>
-            The backend does not yet expose venue, equipment or registration
-            endpoints for this role. Nothing below is real data.
-          </p>
-          <ul className="workflow-list">
-            {planned.map((workflow) => (
-              <li key={workflow.title} className="workflow">
-                <span className="workflow-title">{workflow.title}</span>
-                <span className="workflow-desc">{workflow.description}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
-    </div>
+    <RoleLanding role={Role.COORDINATOR}>
+      <section className="card landing-panel">
+        <AvailabilityToggle />
+        <AvailabilityHistory isAvailable={user?.is_available ?? true} />
+      </section>
+    </RoleLanding>
   )
 }

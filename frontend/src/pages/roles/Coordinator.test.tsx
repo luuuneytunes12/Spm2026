@@ -12,7 +12,8 @@
  * toggled, says truthfully what that means, and shows the recorded
  * history. Marking unavailable does not move events already assigned.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
@@ -29,6 +30,17 @@ let mockUser: { is_available: boolean } | null = { is_available: true }
 vi.mock('../../auth/useAuth', () => ({
   useAuth: () => ({ user: mockUser, refreshUser: mockRefreshUser }),
 }))
+
+// The page now also carries the landing tiles, which link around the app and
+// show the unread count from the navbar's provider. Neither is under test here.
+vi.mock('../../notifications/useNotifications', () => ({
+  useNotifications: () => ({ unreadCount: 0 }),
+}))
+
+function render(ui: React.ReactElement) {
+  // `wrapper` (not wrapping `ui`) so a later `rerender` keeps the router too.
+  return rtlRender(ui, { wrapper: MemoryRouter })
+}
 
 import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
 import type { AvailabilityHistoryEntry } from '../../lib/coordinators'

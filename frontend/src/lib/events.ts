@@ -163,6 +163,10 @@ export interface EventDetail extends EventSummary {
   equipment_items: EquipmentLine[]
   special_arrangements: string | null
   registration_enabled: boolean
+  /** The window Attendees may register in; null until a Coordinator opens
+   *  registration and sets it. */
+  registration_opens_at?: string | null
+  registration_closes_at?: string | null
   created_at: string
 }
 
@@ -190,6 +194,8 @@ export interface AssignedEventDetail extends EventDetail {
   organiser: OrganiserContact
   activity: ActivityEntry[]
   change_requests: EventChangeRequest[]
+  /** What still blocks confirming an Approved event; empty when it is ready. */
+  confirmation_outstanding?: string[]
 }
 
 export interface EventChangeRequest {
@@ -281,6 +287,28 @@ export function releaseAssignedEvent(id: number): Promise<EventDetail> {
 /** Approve an event assigned to the signed-in Coordinator. */
 export function approveEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}/approve`, { method: 'POST' }) as Promise<EventDetail>
+}
+
+/** Confirm an approved event whose venue and equipment are arranged. Rejects
+ *  with a 409 ApiError naming the outstanding items when it is not ready. */
+export function confirmEvent(id: number): Promise<EventDetail> {
+  return apiFetch(`/events/${id}/confirm`, { method: 'POST' }) as Promise<EventDetail>
+}
+
+export interface RegistrationSettings {
+  registration_enabled: boolean
+  registration_opens_at: string | null
+  registration_closes_at: string | null
+}
+
+/** Open or close registration on a confirmed event and set its dates.
+ *  A 422 ApiError carries `fields` naming the date inputs to flag. */
+export function setEventRegistration(id: number, settings: RegistrationSettings): Promise<EventDetail> {
+  return apiFetch(`/events/assigned/${id}/registration`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  }) as Promise<EventDetail>
 }
 
 /** Reject an assigned event and retain the reason for the Organiser. */

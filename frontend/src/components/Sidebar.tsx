@@ -1,11 +1,24 @@
 import { NavLink } from 'react-router'
+import type { ReactNode } from 'react'
 import { useAuth } from '../auth/useAuth'
-import { ROLE_HOME_PATH, ROLE_LABELS, Role } from '../lib/roles'
-import { ROLE_WORKFLOWS } from '../lib/roleWorkflows'
+import { ROLE_HOME_PATH, Role } from '../lib/roles'
+import { Icon } from './Icon'
+import type { IconName } from './Icon'
 
 interface SidebarProps {
   id: string
   open: boolean
+}
+
+function Item({ to, icon, end, children }: { to: string; icon: IconName; end?: boolean; children: ReactNode }) {
+  return (
+    <li>
+      <NavLink to={to} end={end}>
+        <Icon name={icon} />
+        <span>{children}</span>
+      </NavLink>
+    </li>
+  )
 }
 
 /**
@@ -13,11 +26,8 @@ interface SidebarProps {
  *
  * Only routes the current user can actually reach are listed: every role
  * page is guarded by RequireRole for exactly one role, so linking to the
- * other four would just send people to /forbidden.
- *
- * The workflow entries below the navigation are deliberately rendered as
- * disabled text rather than links — those screens do not exist yet, and a
- * link that goes nowhere is worse than an honest "planned" marker.
+ * other four would just send people to /forbidden. "Home" is the role's own
+ * landing page, which is also where signing in lands.
  *
  * When collapsed it is removed from the accessibility tree and taken out
  * of the tab order via `hidden`, rather than merely hidden visually — a
@@ -27,74 +37,56 @@ export function Sidebar({ id, open }: SidebarProps) {
   const { user } = useAuth()
   if (!user) return null
 
-  const roleLabel = ROLE_LABELS[user.role] ?? user.role
-  const workflows = ROLE_WORKFLOWS[user.role] ?? []
-
   return (
     <aside id={id} className="sidebar" hidden={!open}>
       <nav aria-label="Main">
         <ul className="sidebar-nav">
-          <li>
-            <NavLink to="/" end>
-              Dashboard
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to={ROLE_HOME_PATH[user.role]}>{roleLabel}</NavLink>
-          </li>
-          {/* Each of these sits behind RequireRole for specific roles, so
-              linking it for anyone else would just send them to /forbidden. */}
+          <Item to={ROLE_HOME_PATH[user.role]} icon="home" end>
+            Home
+          </Item>
           {user.role === Role.ORGANISER && (
-            <li>
-              <NavLink to="/organiser/events">My Event Requests</NavLink>
-            </li>
+            <Item to="/organiser/events" icon="list">
+              My Event Requests
+            </Item>
           )}
           {user.role === Role.COORDINATOR && (
-            <li>
-              <NavLink to="/coordinator/events">My Assigned Events</NavLink>
-            </li>
+            <Item to="/coordinator/events" icon="list">
+              My Assigned Events
+            </Item>
           )}
           {(user.role === Role.COORDINATOR || user.role === Role.VENUE_STAFF) && (
-            <li>
-              <NavLink to="/venues">Venues</NavLink>
-            </li>
+            <Item to="/venues" icon="venue">
+              Venues
+            </Item>
           )}
           {user.role === Role.VENUE_STAFF && (
-            <li>
-              <NavLink to="/venue-staff/bookings">Booking Requests</NavLink>
-            </li>
+            <Item to="/venue-staff/bookings" icon="inbox">
+              Booking Requests
+            </Item>
           )}
           {user.role === Role.TECH_SUPPORT && (
-            <li>
-              <NavLink to="/equipment">Equipment Catalogue</NavLink>
-            </li>
+            <Item to="/equipment" icon="equipment">
+              Equipment Catalogue
+            </Item>
           )}
           {user.role === Role.ATTENDEE && (
-            <li>
-              <NavLink to="/attendee/events">Events</NavLink>
-            </li>
+            <>
+              <Item to="/attendee/events" icon="ticket">
+                Events
+              </Item>
+              <Item to="/attendee/registrations" icon="check">
+                My Registrations
+              </Item>
+            </>
           )}
-          <li>
-            <NavLink to="/notifications">Notifications</NavLink>
-          </li>
-          <li>
-            <NavLink to="/profile">My profile</NavLink>
-          </li>
+          <Item to="/notifications" icon="bell">
+            Notifications
+          </Item>
+          <Item to="/profile" icon="user">
+            My Profile
+          </Item>
         </ul>
       </nav>
-
-      {workflows.length > 0 && (
-        <div className="sidebar-planned">
-          <h2>Planned</h2>
-          <ul>
-            {workflows.map((workflow) => (
-              <li key={workflow.title} title={`Not yet implemented — ${workflow.description}`}>
-                {workflow.title}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </aside>
   )
 }

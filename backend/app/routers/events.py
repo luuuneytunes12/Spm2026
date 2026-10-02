@@ -26,6 +26,7 @@ from app.schemas.event import (
     EventOut,
     EventSummary,
     OrganiserContact,
+    RegistrationSettingsIn,
 )
 from app.services.assignment import ACTIVE_ASSIGNMENT_STATUSES, assign_coordinator, reassign_event
 from app.services.notifications import notify
@@ -114,6 +115,41 @@ def _get_reviewable_event(event_id: int, user: User, db: Session) -> Event:
             detail="Resolve the pending change request before deciding this event.",
         )
     return event
+
+
+def _confirmation_outstanding(db: Session, event: Event) -> list[str]:
+    """What still stands between this event and "Confirmed".
+
+    An event may be confirmed once it has an APPROVED venue booking and every
+    equipment requirement is RESERVED. Cancelled lines are ignored -- the
+    Organiser withdrew them, so there is nothing left to arrange. An event
+    that asked for no equipment has no equipment to wait on.
+    """
+    outstanding: list[str] = []
+
+    has_approved_venue = (
+        db.query(VenueBooking.id)
+        .filter(
+            VenueBooking.event_id == event.id,
+            VenueBooking.status == BookingStatus.approved,
+        )
+        .first()
+        is not None
+    )
+    if not has_approved_venue:
+        outstanding.append("Venue booking is not approved")
+
+    for line in event.equipment_items:
+        if line.status in (EquipmentStatus.reserved, EquipmentStatus.cancelled):
+            continue
+        outstanding.append(f"Equipment '{line.equipment.name}' is not reserved (status: {line.status})")
+    return outstanding
+
+
+def _utc(value: datetime) -> datetime:
+    """Treat a naive datetime as UTC. SQLite (the test DB) hands back naive
+    values; Postgres timestamptz hands back aware ones."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 class RejectionRequest(BaseModel):
@@ -416,6 +452,9 @@ def get_assigned_event(
         **EventOut.model_validate(event).model_dump(),
         organiser=OrganiserContact.model_validate(event.organiser),
         activity=_event_activity(db, event.id),
+        confirmation_outstanding=(
+            _confirmation_outstanding(db, event) if event.status == EventStatus.approved else []
+        ),
         change_requests=[
             _change_request_out(db, request)
             for request in db.query(EventChangeRequest)
@@ -593,6 +632,109 @@ def release_assigned_event(
 
     reassign_event(db, event, outgoing=outgoing)
 
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
+@router.post("/{event_id}/confirm", response_model=EventOut)
+def confirm_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> EventOut:
+    """Confirm an Approved event once its venue and equipment are arranged.
+
+    Blocked -- with the outstanding items named -- while the venue booking
+    is not approved or any equipment requirement is not reserved. Records
+    who confirmed it and when in the activity log, and tells the Organiser.
+    """
+    # Locked: two overlapping confirms must not both see "approved" and both
+    # log a transition and notify the Organiser.
+    event = _get_assigned_event(event_id, user, db, lock=True)
+    if event.status != EventStatus.approved:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Only an approved event can be confirmed; this one is '{event.status}'.",
+        )
+
+    outstanding = _confirmation_outstanding(db, event)
+    if outstanding:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot confirm yet. Outstanding: " + "; ".join(outstanding) + ".",
+        )
+
+    previous_status = event.status
+    event.status = EventStatus.confirmed
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=previous_status,
+            to_status=event.status,
+            note="Confirmed by the Event Coordinator.",
+        )
+    )
+    notify(
+        db,
+        user_id=event.organiser_id,
+        type=NotificationType.event_confirmed,
+        message=f"Your event '{event.name or 'request'}' has been confirmed.",
+        event_id=event.id,
+    )
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
+@router.put("/assigned/{event_id}/registration", response_model=EventOut)
+def set_event_registration(
+    event_id: int,
+    body: RegistrationSettingsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> EventOut:
+    """Open or close registration on a confirmed event, and set its dates.
+
+    Enabling needs a confirmed event and both an open and a close date, with
+    the close no earlier than the open; each offending field is reported the
+    way the submit endpoint reports missing ones, so the form can flag it.
+    Switching registration off is always allowed.
+    """
+    event = _get_assigned_event(event_id, user, db, lock=True)
+
+    if body.registration_enabled:
+        if event.status != EventStatus.confirmed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Registration can only be opened for a confirmed event.",
+            )
+        problems = []
+        if body.registration_opens_at is None:
+            problems.append(("registration_opens_at", "Registration open date is required."))
+        if body.registration_closes_at is None:
+            problems.append(("registration_closes_at", "Registration close date is required."))
+        if (
+            body.registration_opens_at is not None
+            and body.registration_closes_at is not None
+            and _utc(body.registration_closes_at) < _utc(body.registration_opens_at)
+        ):
+            problems.append(
+                ("registration_opens_at", "Registration cannot close before it opens."),
+            )
+            problems.append(
+                ("registration_closes_at", "Registration cannot close before it opens."),
+            )
+        if problems:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=[{"loc": ["body", field], "msg": msg} for field, msg in problems],
+            )
+        event.registration_opens_at = body.registration_opens_at
+        event.registration_closes_at = body.registration_closes_at
+
+    event.registration_enabled = body.registration_enabled
     db.commit()
     db.refresh(event)
     return EventOut.model_validate(event)
