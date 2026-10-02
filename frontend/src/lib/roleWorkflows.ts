@@ -16,7 +16,9 @@ export interface PlannedWorkflow {
  * now lives at /organiser/events. "My events" followed it: the Coordinator
  * now reads their assigned events at /coordinator/events. The Attendee's
  * "Browse events" and "My registrations" became one page at
- * /attendee/events. Coordinators and Venue Staff view venues at /venues.)
+ * /attendee/events. Coordinators and Venue Staff view venues at /venues.
+ * Venue Staff's "Decide on booking requests" went when approving and
+ * rejecting shipped at /venue-staff/bookings.)
  *
  * The backend currently serves auth (`/auth/*`), `/health` and `/events`;
  * the venues, equipment and registration tables exist in the database but
@@ -55,13 +57,6 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
       // screen.
       title: 'Manage venues',
       description: 'create and update venue records (venues).',
-    },
-    {
-      // Renamed, NOT removed, when "Submit Venue Booking Request" shipped:
-      // the queue is visible at /venue-staff/bookings, but approving or
-      // rejecting a request still has no screen.
-      title: 'Decide on booking requests',
-      description: 'approve or reject requests against your venues (venue_bookings).',
     },
     {
       title: 'Unavailability',

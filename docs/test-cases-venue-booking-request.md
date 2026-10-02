@@ -24,4 +24,4 @@
 
 ## Not covered (separate stories)
 
-Venue Staff approve/reject; notifying Venue Staff (SCRUM-54).
+Venue Staff approve/reject — see [test-cases-venue-booking-decision.md](test-cases-venue-booking-decision.md); notifying Venue Staff (SCRUM-54).

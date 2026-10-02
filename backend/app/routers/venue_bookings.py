@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -8,8 +10,8 @@ from app.core.roles import Role
 from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event
 from app.models.user import User
-from app.models.venues import Venue, VenueBooking
-from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut
+from app.models.venues import Venue, VenueBooking, VenueUnavailability
+from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut, VenueBookingRejection
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
@@ -46,6 +48,10 @@ def _out(booking: VenueBooking) -> VenueBookingOut:
         accessibility_needs=event.accessibility_needs,
         venue_requirements=event.venue_requirements,
         requested_by=booking.requested_by_user,
+        decision_notes=booking.decision_notes,
+        suggested_alternative=booking.suggested_alternative,
+        reviewed_by=booking.reviewed_by_user,
+        reviewed_at=booking.reviewed_at,
     )
 
 
@@ -54,7 +60,36 @@ def _with_relations(stmt):
         joinedload(VenueBooking.event),
         joinedload(VenueBooking.venue),
         joinedload(VenueBooking.requested_by_user),
+        joinedload(VenueBooking.reviewed_by_user),
     )
+
+
+def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
+    """The request Venue Staff are about to decide on, row-locked.
+
+    The lock is what makes a decision final: two overlapping decisions (a
+    double-click, or two staff on the same request) cannot both find it
+    pending, so the second is refused instead of overwriting the first.
+    """
+    booking = db.get(VenueBooking, booking_id, with_for_update=True)
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    if booking.status != BookingStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This booking request has already been {booking.status}.",
+        )
+    return booking
+
+
+def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Session) -> VenueBookingOut:
+    """Record the outcome with who decided and when, and return it."""
+    booking.status = decision
+    booking.reviewed_by = staff.id
+    booking.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    booking = db.scalars(_with_relations(select(VenueBooking).where(VenueBooking.id == booking.id))).one()
+    return _out(booking)
 
 
 @router.post(
@@ -181,3 +216,71 @@ def get_venue_booking(
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
     return _out(booking)
+
+
+@router.post("/{booking_id}/approve", response_model=VenueBookingOut)
+def approve_venue_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> VenueBookingOut:
+    """Approve a pending request, confirming the venue for the event.
+
+    Refused when the venue is no longer free for that time -- already
+    confirmed for another event, or blocked out -- since approving would
+    double-book it. The venue row is locked so two requests for the same
+    venue and time, approved at the same moment, cannot both get through.
+    """
+    booking = _pending_for_decision(booking_id, db)
+    db.get(Venue, booking.venue_id, with_for_update=True)
+
+    # Same overlap rule as the venue search: each starts before the other
+    # ends, so back-to-back bookings do not clash.
+    taken = db.scalar(
+        select(VenueBooking.id).where(
+            VenueBooking.venue_id == booking.venue_id,
+            VenueBooking.id != booking.id,
+            VenueBooking.status == BookingStatus.approved,
+            VenueBooking.start_time < booking.end_time,
+            VenueBooking.end_time > booking.start_time,
+        )
+    )
+    if taken is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The venue is already booked for another event at that time.",
+        )
+    blocked = db.scalar(
+        select(VenueUnavailability.id).where(
+            VenueUnavailability.venue_id == booking.venue_id,
+            VenueUnavailability.start_time < booking.end_time,
+            VenueUnavailability.end_time > booking.start_time,
+        )
+    )
+    if blocked is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The venue is marked unavailable at that time.",
+        )
+
+    return _decide(booking, BookingStatus.approved, user, db)
+
+
+@router.post("/{booking_id}/reject", response_model=VenueBookingOut)
+def reject_venue_booking(
+    booking_id: int,
+    body: VenueBookingRejection,
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> VenueBookingOut:
+    """Reject a pending request, telling the Coordinator why, what to try
+    instead, or both. The event is then free to be requested again."""
+    if body.reason is None and body.suggested_alternative is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Give a reason, an alternative, or both before rejecting.",
+        )
+    booking = _pending_for_decision(booking_id, db)
+    booking.decision_notes = body.reason
+    booking.suggested_alternative = body.suggested_alternative
+    return _decide(booking, BookingStatus.rejected, user, db)

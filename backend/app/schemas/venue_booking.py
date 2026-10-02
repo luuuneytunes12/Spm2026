@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import BookingStatus
 
@@ -17,6 +17,21 @@ class VenueBookingCreate(BaseModel):
     """
 
     venue_id: int | None = None
+
+
+class VenueBookingRejection(BaseModel):
+    """What Venue Staff send when rejecting: a reason, an alternative, or
+    both. Each is optional on its own, so "neither given" reaches the router
+    and is refused with a message, rather than as a bare schema error.
+    """
+
+    reason: str | None = Field(default=None, max_length=2000)
+    suggested_alternative: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason", "suggested_alternative")
+    @classmethod
+    def blank_is_not_given(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
 
 
 class BookingEventRef(BaseModel):
@@ -45,7 +60,11 @@ class BookingPerson(BaseModel):
 class VenueBookingOut(BaseModel):
     """A booking request as Venue Staff open it: the selected venue, the
     event's date and time, expected attendance, layout requirements and
-    accessibility or facility needs."""
+    accessibility or facility needs.
+
+    Once decided it also carries the outcome as the Coordinator reads it:
+    who decided and when, and for a rejection the reason and/or alternative.
+    All four are null while the request is pending."""
 
     id: int
     status: BookingStatus
@@ -59,3 +78,7 @@ class VenueBookingOut(BaseModel):
     accessibility_needs: str | None
     venue_requirements: str | None
     requested_by: BookingPerson
+    decision_notes: str | None
+    suggested_alternative: str | None
+    reviewed_by: BookingPerson | None
+    reviewed_at: datetime | None

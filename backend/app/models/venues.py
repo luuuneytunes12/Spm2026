@@ -64,6 +64,9 @@ class VenueBooking(Base):
         default=BookingStatus.pending,
     )
     decision_notes: Mapped[str | None] = mapped_column(Text)
+    # What Venue Staff offer instead when rejecting -- another venue, another
+    # time (see sql/014_venue_bookings_suggested_alternative.sql).
+    suggested_alternative: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]
 
