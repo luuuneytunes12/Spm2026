@@ -47,7 +47,7 @@ Suggested wording for Jira, so the criteria say what is built:
 | Components (Vitest) | `cd frontend && npm test` | nothing — jsdom, API mocked |
 | All of the above | push to any branch | GitHub Actions runs them |
 
-**107 pytest · 80 Vitest · 1 manual script.** No Playwright — the end-to-end CI
+**107 pytest · 106 Vitest · 1 manual script.** No Playwright — the end-to-end CI
 job is disabled for now.
 
 ---
@@ -79,6 +79,40 @@ SQLite's foreign keys on (they are off by default, and `SET NULL` is exactly
 what is being proved) and asserts they are on, rather than passing vacuously.
 It was **mutation-checked**: changing the rule to `ON DELETE CASCADE` makes it
 fail.
+
+### The Organiser's request: context, and an optional starting point
+
+W1 Step 8 has Technical Support reviewing equipment *"required and requested by
+the Event Organiser"*, so the Coordinator plans against what the Organiser asked
+for. W4 p4 only requires the Coordinator to record **type, quantity and
+technical requirements** — nothing says a requirement must be linked to an
+Organiser request. So the link is **optional**, and the card is built around
+that.
+
+| Rule | Tested by (Vitest) |
+|---|---|
+| The Organiser's equipment requests and their **Other equipment notes** are shown **read-only** above the requirements, as planning context — no field, dropdown or button | *the Organiser's request, shown as planning context* |
+| The Organiser's general note is **never copied** into a requirement's technical notes | `…never copies the Organiser's notes into a requirement's technical notes` |
+| The link field is **"Based on organiser equipment request (optional)"**; its empty choice is **"Not based on an organiser request"** | *basing a requirement on an Organiser equipment request (optional)* |
+| The Coordinator chooses an equipment **type** (a catalogue category), never an exact item or model; picking the exact resource is Technical Support's job, later | `…offers the catalogue's own equipment types, and no others` |
+| Choosing a request fills in **type and quantity** (where derivable); both stay editable. Technical notes are the Coordinator's own and are **not** filled in | `…fills in the equipment type and quantity…` · `…does not fill in technical notes…` · `…leaves notes already typed alone…` |
+| An **independent** requirement can always be added, even when the Organiser requested equipment | `…can add an independent requirement even though the Organiser requested equipment` |
+| **Add requirement** saves at once, as *Requested*, visible to Technical Support. There is **no draft/submit step**, and the card says so | *adding is immediate* |
+| A saved requirement shows the request it was based on, or **"Coordinator-added requirement"** | *where a requirement came from* |
+| **Edit** shows that origin read-only and offers no way to relink it; it changes type, quantity and notes only, and **Save changes** saves them | `…shows the Organiser request it was based on, read-only` · `…changes only type, quantity and notes, and keeps the link…` |
+
+The backend already ignores any attempt to change the link on an edit
+(`test_er_ac1_the_link_to_an_organisers_pick_cannot_be_edited`).
+
+**Known limit.** When an approved change request replaces the Organiser's list,
+the database clears the link (`ON DELETE SET NULL`) so the requirement
+survives. After that, the requirement reads *Coordinator-added requirement*
+even though it was originally based on a request. The card does not keep a
+history of what it was based on.
+
+**Technical notes stay optional.** A requirement needs a type and a quantity;
+notes may be empty (W4 p4 says *relevant* technical requirements, and a
+projector may have none). Blank notes are stored as no notes.
 
 ### Where equipment can be recorded — PROVISIONAL
 
@@ -166,12 +200,15 @@ then every requirement is `requested`, so add, edit and delete are plain.
 | `test_replacing_the_organisers_lines_never_deletes_a_requirement` ⭐ · `test_a_requirement_is_not_one_of_the_organisers_picks` · `test_the_organiser_never_receives_the_coordinators_requirements` | pytest |
 | Service, called directly: records without a web layer · takes its category rule as a dependency · raises domain errors, never `HTTPException` · refuses outside the window (7) · edits and removes · an empty edit changes nothing | pytest (unit) |
 | Error hierarchy: each error knows its own status (404, 409, 422, 403) · a field-naming `InvalidInput` · the status window is exactly approved/planning/confirmed | pytest (unit) |
-| Card: lists type, quantity, notes, status · empty state · load failure | Vitest |
+| Card: lists type, quantity, notes, status · empty state ("No Coordinator equipment requirements recorded yet.") · load failure | Vitest |
 | Card, add: records type/quantity/notes · shows the new row and clears the form · quantity defaults to 1 · offers only the catalogue's types · empty notes sent as `null` · asks for a type rather than sending without one · shows the server's reason and keeps what was typed · still usable if the type list fails to load | Vitest |
-| Card, based on the Organiser's request: absent when they picked nothing · fills in the form · remembers which pick · filled values stay editable · can go back to "not based on a request" | Vitest |
-| Card, edit and remove: opens filled in · saves changes · cancel changes nothing · shows the server's reason and stays open · removes · keeps the row and says why when refused · **the add form stays distinguishable from an open editor** | Vitest |
+| Card, Organiser context: shows the Organiser's requests read-only (no field, dropdown or button) · shows their other equipment notes · says so when they asked for none · leaves the notes row out when they wrote none (null, empty, blank — 3) · still shown while nothing can be recorded · says it is for reference · never copies the notes into a requirement | Vitest |
+| Card, based on an Organiser equipment request (optional): absent when they requested nothing · labelled "Based on organiser equipment request (optional)" with "Not based on an organiser request" as the empty choice · fills in type and quantity · does **not** fill in technical notes · leaves typed notes alone · filled values stay editable · remembers the request · **an independent requirement can be added even when the Organiser requested equipment** · can go back to "not based" | Vitest |
+| Card, adding is immediate: says Technical Support will see it · no draft or submit step, one click saves it as Requested · the promise is not made where nothing can be added | Vitest |
+| Card, where a requirement came from: names the Organiser request · "Coordinator-added requirement" otherwise · shown straight after adding (both ways) · a link to a request the page does not have is not called Coordinator-added | Vitest |
+| Card, edit and remove: opens filled in · saves changes · "Save changes", not "Save" · shows its Organiser request read-only with no way to relink · "Coordinator-added" in the editor of an independent one · changes only type, quantity and notes and keeps the link · cancel changes nothing · shows the server's reason and stays open · removes · keeps the row and says why when refused · **the add form stays distinguishable from an open editor** | Vitest |
 | Card, status window: editable in approved/planning/confirmed (3) · explains the wait while under review · no controls in any other status (7) · still shows what was recorded after the event finishes | Vitest |
-| Event page: the card is on it, for that event · is handed the Organiser's picks · is present under review · doesn't replace the Organiser's own equipment under *Event Details* | Vitest |
+| Event page: the card is on it, for that event · is handed the Organiser's picks · is handed the Organiser's other equipment notes · is present under review · doesn't replace the Organiser's own equipment under *Event Details* | Vitest |
 | `lib`: window is exactly approved/planning/confirmed · recordable in each (3) · not in any other (7) · status labels · an unknown status is shown as it arrives | Vitest (lib) |
 
 ### ER AC2 — visible to Technical Support from the event record
@@ -212,20 +249,22 @@ yet; they are covered by the automated tests.
 
 | # | Step | Expected result |
 |---|---|---|
-| 1 | Sign in as the event's Coordinator → **My Assigned Events** → open the approved event | An **Equipment Requirements** card sits above *Event Details*; the Organiser's own equipment is still listed under *Event Details* |
-| 2 | In the card, choose **Audio**, quantity `6`, notes `Handheld wireless` → **Add requirement** | The row appears with type, **× 6**, the notes and a **Requested** badge; the form clears |
-| 3 | If the Organiser picked equipment: choose it under **Based on the Organiser's request** | Type, quantity and notes fill in; they stay editable |
-| 4 | Add a second **Audio** requirement | Allowed — two rows of the same type |
-| 5 | Click **Add requirement** with no type chosen | *"Choose an equipment type."*; nothing is saved |
-| 6 | Click **Edit** on a row | The row is tinted and filled in. **Add a requirement** is still titled, so the two forms can't be confused |
-| 7 | Change the quantity → **Save** · then try **Cancel** on another | Save updates the row; Cancel changes nothing |
-| 8 | Click **Remove** on a row | It disappears |
-| 9 | Sign in as an Organiser who owns the event | Their own request does **not** show the Coordinator's requirements |
-| 10 | Sign in as `tech_supp@cs.local` → **Equipment Requirements** | The event is listed with its requirement count |
-| 11 | Open it | Event details (date, attendance, venue requirements, Coordinator) and every requirement; **no buttons** |
-| 12 | Open an event that is still under review as its Coordinator | The card says *"Equipment can be recorded once the event is approved."* and offers no form |
-| 13 | Narrow the window to ~400px | Rows wrap; nothing scrolls sideways |
-| 14 | Toggle dark mode | Chips, badges and the tinted editor stay readable |
+| 1 | Sign in as the event's Coordinator → **My Assigned Events** → open the approved event | An **Equipment Requirements** card sits above *Event Details*. At its top, **Requested by the Organiser** shows their equipment and, if they wrote any, their **Other equipment notes** — plain text, nothing to click |
+| 2 | Read the card's empty state | *"No Coordinator equipment requirements recorded yet."* |
+| 3 | Choose **Audio**, quantity `6`, notes `Handheld wireless` → **Add requirement** (no Organiser request chosen) | The row appears with type, **× 6**, the notes, a **Requested** badge and **Coordinator-added requirement**; the form clears. Above the button: *"Once added, this requirement will be visible to Technical Support."* |
+| 4 | If the Organiser requested equipment: under **Based on organiser equipment request (optional)** choose one | Type and quantity fill in; **notes stay empty** (the Organiser's note is not copied). All three stay editable |
+| 5 | Add it | The row shows **Based on organiser equipment request: *item* × *n*** |
+| 6 | Add a second **Audio** requirement | Allowed — two rows of the same type |
+| 7 | Click **Add requirement** with no type chosen | *"Choose an equipment type."*; nothing is saved |
+| 8 | Click **Edit** on a row | The row is tinted and filled in, and states where it came from. There is **no** control to change that. **Add a requirement** is still titled, so the two forms can't be confused |
+| 9 | Change the quantity → **Save changes** · then try **Cancel** on another | Save changes updates the row; Cancel changes nothing |
+| 10 | Click **Remove** on a row | It disappears |
+| 11 | Sign in as an Organiser who owns the event | Their own request does **not** show the Coordinator's requirements |
+| 12 | Sign in as `tech_supp@cs.local` → **Equipment Requirements** | The event is listed with its requirement count |
+| 13 | Open it | Event details (date, attendance, venue requirements, Coordinator) and every requirement; **no buttons** |
+| 14 | Open an event that is still under review as its Coordinator | The card still shows what the Organiser requested, says *"Equipment can be recorded once the event is approved."* and offers no form |
+| 15 | Narrow the window to ~400px | Rows wrap; nothing scrolls sideways |
+| 16 | Toggle dark mode | Chips, badges and the tinted editor stay readable |
 
 **Tester:** ______________ **Date:** ____________ **Result:** Pass / Fail
 
