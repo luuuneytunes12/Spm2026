@@ -65,16 +65,21 @@ export function Sidebar({ id, open }: SidebarProps) {
             </li>
           )}
           {user.role === Role.TECH_SUPPORT && (
-            <li>
-              <NavLink to="/equipment" end>
-                Equipment Catalogue
-              </NavLink>
-            </li>
-          )}
-          {user.role === Role.TECH_SUPPORT && (
-            <li>
-              <NavLink to="/equipment/reservations">Equipment Reservations</NavLink>
-            </li>
+            <>
+              {/* `end`, so the catalogue is not also highlighted on
+                  /equipment/reservations, which sits beneath /equipment. */}
+              <li>
+                <NavLink to="/equipment" end>
+                  Equipment Catalogue
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to="/equipment-requirements">Equipment Requirements</NavLink>
+              </li>
+              <li>
+                <NavLink to="/equipment/reservations">Equipment Reservations</NavLink>
+              </li>
+            </>
           )}
           {user.role === Role.ATTENDEE && (
             <li>

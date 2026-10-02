@@ -18,7 +18,11 @@ export interface PlannedWorkflow {
  * "Browse events" and "My registrations" became one page at
  * /attendee/events. Coordinators and Venue Staff view venues at /venues.
  * Venue Staff's "Decide on booking requests" went when approving and
- * rejecting shipped at /venue-staff/bookings.)
+ * rejecting shipped at /venue-staff/bookings. The Coordinator's "Request
+ * equipment" went when recording equipment requirements shipped, as a card
+ * on the assigned-event page. Technical Support's "Equipment requests"
+ * stays: it describes reviewing and reserving, which has not shipped --
+ * Technical Support can only READ requirements so far.)
  *
  * The backend currently serves auth (`/auth/*`), `/health` and `/events`;
  * the venues, equipment and registration tables exist in the database but
@@ -44,10 +48,6 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
     {
       title: 'Registrations',
       description: 'view and manage attendee registrations (registrations).',
-    },
-    {
-      title: 'Request equipment',
-      description: 'raise equipment requests for an event (equipment_requests).',
     },
   ],
   [Role.VENUE_STAFF]: [

@@ -390,6 +390,18 @@ describe('editing and removing', () => {
     expect(screen.getByRole('group', { name: 'Edit Audio requirement' })).toBeInTheDocument()
   })
 
+  it('keeps the add form distinguishable from an editor open at the same time', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([AUDIO])
+    renderSection()
+    await user.click(await screen.findByRole('button', { name: 'Edit Audio requirement' }))
+
+    // Both forms carry "Equipment type", "Quantity needed" and "Technical
+    // notes". Only the add form has a title, and the editor is its own group.
+    expect(screen.getByRole('heading', { name: 'Add a requirement' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Edit Audio requirement' })).toBeInTheDocument()
+  })
+
   it('removes a requirement', async () => {
     const user = userEvent.setup()
     mockList.mockResolvedValue([AUDIO, PROJECTION])

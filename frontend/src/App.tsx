@@ -11,6 +11,8 @@ import { Notifications } from './pages/Notifications'
 import { Profile } from './pages/Profile'
 import { Register } from './pages/Register'
 import { EquipmentCatalogue } from './pages/equipment/EquipmentCatalogue'
+import { EquipmentRequirementsList } from './pages/equipment/EquipmentRequirementsList'
+import { EquipmentRequirementsRecord } from './pages/equipment/EquipmentRequirementsRecord'
 import { EquipmentReservations } from './pages/equipment/EquipmentReservations'
 import { AssignedEvents } from './pages/events/AssignedEvents'
 import { AssignedEventView } from './pages/events/AssignedEventView'
@@ -76,6 +78,13 @@ function App() {
                 page. When it does, this guard takes a second role and the
                 URL stays correct. */}
             <Route path="/equipment" element={<EquipmentCatalogue />} />
+            {/* Technical Support only: the Coordinator records requirements
+                on the event page, so there is nothing here for them. */}
+            <Route path="/equipment-requirements" element={<EquipmentRequirementsList />} />
+            <Route
+              path="/equipment-requirements/:eventId"
+              element={<EquipmentRequirementsRecord />}
+            />
             <Route path="/equipment/reservations" element={<EquipmentReservations />} />
           </Route>
           <Route element={<RequireRole roles={[Role.ATTENDEE]} />}>
