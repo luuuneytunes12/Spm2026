@@ -30,6 +30,7 @@ vi.mock('../../components/EquipmentRequirementsSection', () => ({
     eventId: number
     eventStatus: string
     organiserLines: { equipment_name: string }[]
+    organiserNotes: string | null
   }) => (
     <section
       aria-label="equipment requirements stub"
@@ -39,6 +40,7 @@ vi.mock('../../components/EquipmentRequirementsSection', () => ({
       {props.organiserLines.map((line) => (
         <span key={line.equipment_name}>{line.equipment_name}</span>
       ))}
+      {props.organiserNotes && <span>{`stub notes: ${props.organiserNotes}`}</span>}
     </section>
   ),
 }))
@@ -822,6 +824,18 @@ describe('ER AC1 - the equipment requirements card', () => {
 
     const card = await screen.findByLabelText('equipment requirements stub')
     expect(within(card).getByText('Shure BLX24 Handheld Microphone')).toBeInTheDocument()
+  })
+
+  it('is given the Organiser’s other equipment notes as context', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'approved',
+      equipment_requirements: 'Stage left, near the fire exit',
+    })
+    renderView()
+
+    const card = await screen.findByLabelText('equipment requirements stub')
+    expect(within(card).getByText('stub notes: Stage left, near the fire exit')).toBeInTheDocument()
   })
 
   it('is present while the event is under review too, where it explains the wait', async () => {
