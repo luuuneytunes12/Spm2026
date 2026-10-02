@@ -36,6 +36,13 @@ export interface VenueBooking {
   accessibility_needs: string | null
   venue_requirements: string | null
   requested_by: { name: string; email: string }
+  /** The outcome, all null while pending. `decision_notes` is the reason
+   *  Venue Staff gave for a rejection; `suggested_alternative` what they
+   *  offer instead. A rejection carries one or both. */
+  decision_notes: string | null
+  suggested_alternative: string | null
+  reviewed_by: { name: string; email: string } | null
+  reviewed_at: string | null
 }
 
 /** Ask for a venue. The timing and requirements come from the event itself,
@@ -57,4 +64,28 @@ export function listEventVenueBookings(eventId: number): Promise<VenueBooking[]>
 /** Pending requests for Venue Staff to review, oldest first. */
 export function listVenueBookingQueue(): Promise<VenueBooking[]> {
   return apiFetch('/venue-bookings/queue') as Promise<VenueBooking[]>
+}
+
+/** Approve a pending request. Refused (409) if it was already decided, or
+ *  if the venue is no longer free for that time. */
+export function approveVenueBooking(id: number): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}/approve`, { method: 'POST' }) as Promise<VenueBooking>
+}
+
+export interface VenueBookingRejection {
+  reason: string
+  suggested_alternative: string
+}
+
+/** Reject a pending request with a reason, an alternative, or both. Blank
+ *  is allowed for either; the server refuses it when both are. */
+export function rejectVenueBooking(
+  id: number,
+  rejection: VenueBookingRejection,
+): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rejection),
+  }) as Promise<VenueBooking>
 }

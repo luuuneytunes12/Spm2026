@@ -437,6 +437,12 @@
   gap: 8px;
 }
 
+/* The Venue Staff rejection form: its text areas take the card's width
+   rather than shrinking to fit, as .status-actions would have them. */
+.decision-form .field {
+  align-self: stretch;
+}
+
 .chip-list {
   display: flex;
   flex-wrap: wrap;

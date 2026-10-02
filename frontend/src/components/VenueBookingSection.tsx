@@ -21,7 +21,12 @@ interface Props {
  *  them from the event, so the request always matches what the Organiser
  *  asked for. Choosing the venue is the only input. With none chosen the
  *  submit is refused -- by the server, whose message is shown -- and
- *  nothing is created. */
+ *  nothing is created.
+ *
+ *  Venue Staff's decision shows here too. An approval ends it. A rejection
+ *  is shown with its reason and/or suggested alternative above the form,
+ *  which comes back so the request can be submitted again -- as many times
+ *  as it takes. */
 export function VenueBookingSection({ eventId, expectedAttendance }: Props) {
   const [bookings, setBookings] = useState<VenueBooking[] | null>(null)
   const [venues, setVenues] = useState<VenueSummary[]>([])
@@ -51,6 +56,9 @@ export function VenueBookingSection({ eventId, expectedAttendance }: Props) {
   }, [eventId])
 
   const live = bookings?.find((b) => b.status === 'pending' || b.status === 'approved')
+  // Newest first, so with nothing live the first one is the latest answer.
+  const lastRejected = !live && bookings?.[0]?.status === 'rejected' ? bookings[0] : undefined
+  const earlier = bookings?.filter((b) => b !== live && b !== lastRejected) ?? []
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -72,12 +80,26 @@ export function VenueBookingSection({ eventId, expectedAttendance }: Props) {
       <h2 id="venue-booking-heading">Venue booking</h2>
 
       {live ? (
-        <p role="status">
-          <strong>{live.venue.name}</strong> requested on {formatTimestamp(live.created_at)} —{' '}
-          {BOOKING_STATUS_LABELS[live.status]}.
-        </p>
+        <div role="status">
+          <p>
+            <strong>{live.venue.name}</strong> requested on {formatTimestamp(live.created_at)} —{' '}
+            {BOOKING_STATUS_LABELS[live.status]}.
+          </p>
+          <Decision booking={live} />
+        </div>
       ) : (
         <form onSubmit={(e) => void submit(e)} noValidate>
+          {lastRejected && (
+            <div className="notice" role="status">
+              <p>
+                <strong>{lastRejected.venue.name}</strong> requested on{' '}
+                {formatTimestamp(lastRejected.created_at)} —{' '}
+                {BOOKING_STATUS_LABELS[lastRejected.status]}. You can submit the request again
+                below, for this venue or another.
+              </p>
+              <Decision booking={lastRejected} />
+            </div>
+          )}
           <p className="page-subtitle">
             The event's date, time, expected attendance, layout and accessibility needs are sent
             with the request.
@@ -110,21 +132,48 @@ export function VenueBookingSection({ eventId, expectedAttendance }: Props) {
         </form>
       )}
 
-      {bookings && bookings.some((b) => b !== live) && (
+      {earlier.length > 0 && (
         <>
           <h3>Earlier requests</h3>
           <ul>
-            {bookings
-              .filter((b) => b !== live)
-              .map((b) => (
-                <li key={b.id}>
-                  {b.venue.name} · {formatRange(b.start_time, b.end_time)} ·{' '}
-                  {BOOKING_STATUS_LABELS[b.status]}
-                </li>
-              ))}
+            {earlier.map((b) => (
+              <li key={b.id}>
+                {b.venue.name} · {formatRange(b.start_time, b.end_time)} ·{' '}
+                {BOOKING_STATUS_LABELS[b.status]}
+                <Decision booking={b} />
+              </li>
+            ))}
           </ul>
         </>
       )}
     </section>
+  )
+}
+
+/** Venue Staff's decision on one request: who decided and when, and for a
+ *  rejection the reason and/or the alternative they suggest. Nothing while
+ *  the request is still pending. */
+function Decision({ booking }: { booking: VenueBooking }) {
+  if (!booking.reviewed_at) return null
+  const rows = [
+    ['Reason', booking.decision_notes],
+    ['Suggested alternative', booking.suggested_alternative],
+    [
+      'Decided',
+      `${formatTimestamp(booking.reviewed_at)}${booking.reviewed_by ? ` by ${booking.reviewed_by.name}` : ''}`,
+    ],
+  ] as const
+  return (
+    <dl className="detail-list">
+      {rows.map(
+        ([label, value]) =>
+          value && (
+            <div key={label} className="detail-row">
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ),
+      )}
+    </dl>
   )
 }

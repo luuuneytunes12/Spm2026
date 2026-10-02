@@ -168,6 +168,8 @@ create table venue_bookings (
     end_time timestamptz not null,
     status booking_status not null default 'pending',
     decision_notes text,
+    -- What Venue Staff offer instead when rejecting; see sql/014.
+    suggested_alternative text,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time)

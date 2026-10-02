@@ -1,9 +1,11 @@
 /**
- * SCRUM-39 -- Submit Venue Booking Request (Coordinator side).
+ * SCRUM-39 -- Submit Venue Booking Request (Coordinator side), and the
+ * Coordinator's side of "Approve or Reject Venue Booking Request": seeing
+ * Venue Staff's decision and resubmitting after a rejection.
  * Whether the API accepts or refuses is backend/tests/test_venue_booking_request.py;
  * these tests cover what the card does with the answer.
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../lib/api'
@@ -36,6 +38,10 @@ const BOOKING: VenueBooking = {
   accessibility_needs: 'Step-free access',
   venue_requirements: 'Main hall',
   requested_by: { name: 'Sam Tan', email: 'sam@connectsphere.test' },
+  decision_notes: null,
+  suggested_alternative: null,
+  reviewed_by: null,
+  reviewed_at: null,
 }
 
 beforeEach(() => {
@@ -97,5 +103,81 @@ describe('SCRUM-39 AC2 - a chosen venue is submitted', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Submit booking request' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('already has'))
     expect(screen.getByRole('button', { name: 'Submit booking request' })).toBeEnabled()
+  })
+})
+
+const DECIDED = { reviewed_by: { name: 'Vera Staff', email: 'vera@connectsphere.test' }, reviewed_at: '2026-10-02T03:00:00Z' }
+const REJECTED: VenueBooking = {
+  ...BOOKING,
+  ...DECIDED,
+  status: 'rejected',
+  decision_notes: 'Closed for repairs.',
+  suggested_alternative: 'Try Hall B.',
+}
+
+describe('AC4 - the outcome is visible to the Event Coordinator', () => {
+  it('shows an approval with who decided, and no form', async () => {
+    mockList.mockResolvedValue([{ ...BOOKING, ...DECIDED, status: 'approved' }])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const outcome = await screen.findByRole('status')
+    expect(outcome).toHaveTextContent('Marina Hall')
+    expect(outcome).toHaveTextContent('Approved')
+    expect(outcome).toHaveTextContent('Vera Staff')
+    expect(screen.queryByRole('button', { name: 'Submit booking request' })).not.toBeInTheDocument()
+  })
+
+  it('shows no decision while the request is still pending', async () => {
+    mockList.mockResolvedValue([BOOKING])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('Pending review')
+    expect(screen.queryByText('Decided')).not.toBeInTheDocument()
+  })
+})
+
+describe('AC3 - the reason and alternative are visible to the Event Coordinator', () => {
+  it('shows a rejection with its reason, its alternative and who decided', async () => {
+    mockList.mockResolvedValue([REJECTED])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const outcome = await screen.findByRole('status')
+    expect(outcome).toHaveTextContent('Rejected')
+    expect(outcome).toHaveTextContent('Closed for repairs.')
+    expect(outcome).toHaveTextContent('Try Hall B.')
+    expect(outcome).toHaveTextContent('Vera Staff')
+  })
+
+  it('leaves out whichever of the two was not given', async () => {
+    mockList.mockResolvedValue([{ ...REJECTED, decision_notes: null }])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const outcome = within(await screen.findByRole('status'))
+    expect(outcome.getByText('Suggested alternative')).toBeInTheDocument()
+    expect(outcome.queryByText('Reason')).not.toBeInTheDocument()
+  })
+})
+
+describe('AC5 - a rejected request can be resubmitted', () => {
+  it('offers the form again after a rejection and submits a new request', async () => {
+    mockList.mockResolvedValue([REJECTED])
+    mockSubmit.mockResolvedValue({ ...BOOKING, id: 2 })
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    await userEvent.selectOptions(await screen.findByLabelText('Venue'), '3')
+    await userEvent.click(screen.getByRole('button', { name: 'Submit booking request' }))
+
+    expect(mockSubmit).toHaveBeenCalledWith(7, 3)
+    expect(await screen.findByText(/Pending review/)).toBeInTheDocument()
+    // The rejection it replaces is kept, with its reason, under Earlier requests.
+    const earlier = screen.getByRole('list')
+    expect(earlier).toHaveTextContent('Rejected')
+    expect(earlier).toHaveTextContent('Closed for repairs.')
+  })
+
+  it('offers the form again however many times the request has been rejected', async () => {
+    mockList.mockResolvedValue([3, 2, 1].map((id) => ({ ...REJECTED, id, decision_notes: `Rejection ${id}` })))
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    expect(await screen.findByRole('button', { name: 'Submit booking request' })).toBeEnabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Rejection 3') // the latest answer
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      expect.stringContaining('Rejection 2'),
+      expect.stringContaining('Rejection 1'),
+    ])
   })
 })
