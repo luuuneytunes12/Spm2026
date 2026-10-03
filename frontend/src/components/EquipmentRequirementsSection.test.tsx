@@ -5,6 +5,8 @@
  *   ER AC1  add equipment: type, quantity needed, technical notes
  *   ER AC1  the Organiser's request is shown read-only as planning context,
  *           and a requirement may, or may not, be based on one of its lines
+ *   UR AC3  the status and quantity Technical Support sets are visible here,
+ *           with how much is reserved; and what is reserved is protected
  *
  * These assert what a Coordinator experiences -- labels, visible text, what
  * is asked of the API -- never CSS class names. The rules themselves (who
@@ -57,6 +59,8 @@ const AUDIO: EquipmentRequirement = {
   quantity_needed: 6,
   technical_notes: 'Handheld wireless, for panel Q&A',
   status: 'requested',
+  reserved_quantity: 0,
+  reservations: [],
   created_at: '2026-10-01T00:00:00Z',
   updated_at: '2026-10-01T00:00:00Z',
 }
@@ -768,5 +772,159 @@ describe('the status window', () => {
     renderSection({ eventStatus: EventStatus.COMPLETED })
 
     expect((await recorded()).getByText('Handheld wireless, for panel Q&A')).toBeInTheDocument()
+  })
+})
+
+describe('once Technical Support has reserved equipment', () => {
+  // The add form also has Quantity and Technical notes, so an open editor is
+  // always looked at on its own.
+  const editor = () => within(screen.getByRole('group', { name: 'Edit Audio requirement' }))
+
+  const PART_RESERVED: EquipmentRequirement = {
+    ...AUDIO,
+    status: 'reviewing',
+    reserved_quantity: 3,
+    reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
+  }
+
+  it('shows how far it has got, keeping what is needed distinct', async () => {
+    mockList.mockResolvedValue([PART_RESERVED])
+    renderSection()
+
+    const row = (await recorded()).getByText('Audio').closest('li')!
+    expect(within(row).getByText('Reviewing')).toBeInTheDocument()
+    expect(within(row).getByText('3 of 6 reserved')).toBeInTheDocument()
+    expect(within(row).getByText(/× 6/)).toBeInTheDocument()
+    expect(row).toHaveTextContent('3 × Shure BLX24')
+  })
+
+  it('reads Reserved when all of it is', async () => {
+    mockList.mockResolvedValue([
+      {
+        ...PART_RESERVED,
+        status: 'reserved',
+        reserved_quantity: 6,
+        reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 6 }],
+      },
+    ])
+    renderSection()
+
+    const row = (await recorded()).getByText('Audio').closest('li')!
+    expect(within(row).getByText('Reserved')).toBeInTheDocument()
+    expect(within(row).getByText('6 of 6 reserved')).toBeInTheDocument()
+  })
+
+  it('shows Unavailable when Technical Support could not provide it', async () => {
+    mockList.mockResolvedValue([{ ...AUDIO, status: 'rejected' }])
+    renderSection()
+
+    const row = (await recorded()).getByText('Audio').closest('li')!
+    expect(within(row).getByText('Unavailable')).toBeInTheDocument()
+  })
+
+  it('takes away Remove from a requirement that has equipment reserved', async () => {
+    mockList.mockResolvedValue([PART_RESERVED, PROJECTION])
+    renderSection()
+    await recorded()
+
+    expect(screen.queryByRole('button', { name: 'Remove Audio requirement' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove Projection requirement' })).toBeInTheDocument()
+  })
+
+  it('still lets it be edited', async () => {
+    mockList.mockResolvedValue([PART_RESERVED])
+    renderSection()
+    await recorded()
+
+    expect(screen.getByRole('button', { name: 'Edit Audio requirement' })).toBeInTheDocument()
+  })
+
+  it('locks the equipment type in the editor, and says why', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([PART_RESERVED])
+    renderSection()
+    await recorded()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Audio requirement' }))
+
+    expect(editor().getByLabelText('Equipment type')).toBeDisabled()
+    expect(editor().getByText(/equipment is reserved for this requirement/i)).toBeInTheDocument()
+  })
+
+  it('keeps the quantity at or above what is reserved', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([PART_RESERVED])
+    renderSection()
+    await recorded()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Audio requirement' }))
+
+    expect(editor().getByLabelText('Quantity needed')).toHaveAttribute('min', '3')
+  })
+
+  it('does not send a quantity below what is reserved', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([PART_RESERVED])
+    renderSection()
+    await recorded()
+    await user.click(screen.getByRole('button', { name: 'Edit Audio requirement' }))
+
+    await user.clear(editor().getByLabelText('Quantity needed'))
+    await user.type(editor().getByLabelText('Quantity needed'), '2')
+    await user.click(editor().getByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByText(/3 already reserved/i)).toBeInTheDocument()
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('lets the notes change', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([PART_RESERVED])
+    mockUpdate.mockResolvedValue({ ...PART_RESERVED, technical_notes: 'Lapel clips too' })
+    renderSection()
+    await recorded()
+    await user.click(screen.getByRole('button', { name: 'Edit Audio requirement' }))
+
+    await user.clear(editor().getByLabelText('Technical notes'))
+    await user.type(editor().getByLabelText('Technical notes'), 'Lapel clips too')
+    await user.click(editor().getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ technical_notes: 'Lapel clips too' }),
+      ),
+    )
+  })
+
+  it('shows the progress the server answers with after a save', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([PART_RESERVED])
+    mockUpdate.mockResolvedValue({ ...PART_RESERVED, quantity_needed: 8 })
+    renderSection()
+    await recorded()
+    await user.click(screen.getByRole('button', { name: 'Edit Audio requirement' }))
+
+    await user.clear(editor().getByLabelText('Quantity needed'))
+    await user.type(editor().getByLabelText('Quantity needed'), '8')
+    await user.click(editor().getByRole('button', { name: 'Save changes' }))
+
+    const row = (await recorded()).getByText('Audio').closest('li')!
+    await waitFor(() => expect(within(row).getByText('3 of 8 reserved')).toBeInTheDocument())
+  })
+
+  it('shows the server’s reason when it refuses to remove one', async () => {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue([AUDIO])
+    mockDelete.mockRejectedValue(
+      new ApiError(409, 'Equipment is already reserved for this requirement, so it cannot be removed.'),
+    )
+    renderSection()
+    await recorded()
+
+    await user.click(screen.getByRole('button', { name: 'Remove Audio requirement' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already reserved/i)
+    expect((await recorded()).getByText('Audio')).toBeInTheDocument()
   })
 })
