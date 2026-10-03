@@ -28,7 +28,7 @@ from app.schemas.event import (
     OrganiserContact,
     RegistrationSettingsIn,
 )
-from app.services.assignment import ACTIVE_ASSIGNMENT_STATUSES, assign_coordinator, reassign_event
+from app.services.assignment import assign_coordinator
 from app.services.notifications import notify
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -74,9 +74,9 @@ def _get_own_event(event_id: int, user: User, db: Session, *, lock: bool = False
 def _get_assigned_event(event_id: int, user: User, db: Session, *, lock: bool = False) -> Event:
     """Fetch an event ASSIGNED to the caller, or raise.
 
-    `lock=True` locks the row -- see `_get_own_event`. A caller that then
-    hands the event on (Decline) needs it: the loser of a race re-reads the
-    row, finds it is no longer theirs, and gets the same 404 as anyone else.
+    `lock=True` locks the row -- see `_get_own_event`. A caller that goes on
+    to check the event's state and then change it needs it, so two overlapping
+    requests cannot both act on the same state.
 
     "Assigned to me" means `coordinator_id == user.id`. Being allowed to
     read events in general is not the same thing: EVENT_READ is held by
@@ -598,45 +598,6 @@ def reject_change_request(
     return _change_request_out(db, change_request)
 
 
-@router.post("/assigned/{event_id}/release", response_model=EventOut)
-def release_assigned_event(
-    event_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_permission(Permission.EVENT_WRITE)),
-) -> EventOut:
-    """Hand ONE event off to another available Coordinator.
-
-    Distinct from PATCH /coordinators/me/availability, which only takes the
-    caller out of the pool for NEW events and moves nothing. This moves
-    `event_id` -- everything else assigned to the caller, and their general
-    eligibility for new work, is untouched. For "I can't do this particular
-    one" rather than "I'm away".
-
-    404s for an event that is not assigned to the caller, exactly like
-    GET /events/assigned/{id} -- same reasoning: "not yours" and "does not
-    exist" should be indistinguishable.
-    """
-    event = _get_assigned_event(event_id, user, db, lock=True)
-    if event.status not in ACTIVE_ASSIGNMENT_STATUSES:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"'{event.status}' is not active, so it cannot be reassigned.",
-        )
-
-    # _get_assigned_event only needed user.id (present on the transient
-    # JWT-claims object get_current_user returns); the real row -- with a
-    # name -- is what reassign_event's log entry and notification need.
-    outgoing = db.get(User, user.id)
-    if outgoing is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
-
-    reassign_event(db, event, outgoing=outgoing)
-
-    db.commit()
-    db.refresh(event)
-    return EventOut.model_validate(event)
-
-
 @router.post("/{event_id}/confirm", response_model=EventOut)
 def confirm_event(
     event_id: int,
@@ -720,11 +681,16 @@ def set_event_registration(
             and body.registration_closes_at is not None
             and _utc(body.registration_closes_at) < _utc(body.registration_opens_at)
         ):
+            # Two sentences, one per field: shown together they read as
+            # "what is wrong. what to do about it."
             problems.append(
                 ("registration_opens_at", "Registration cannot close before it opens."),
             )
             problems.append(
-                ("registration_closes_at", "Registration cannot close before it opens."),
+                (
+                    "registration_closes_at",
+                    "Ensure the registration close date is later than the open date.",
+                ),
             )
         if problems:
             raise HTTPException(

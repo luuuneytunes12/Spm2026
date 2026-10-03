@@ -3,7 +3,7 @@
 approve/reject.
 
 Assignment and reassignment notifications are covered alongside the story
-that creates them, in test_coordinator_availability.py.
+that creates them, in test_coordinator_assignment.py.
 """
 
 from unittest.mock import patch

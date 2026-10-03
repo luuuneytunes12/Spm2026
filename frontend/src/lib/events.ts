@@ -31,6 +31,16 @@ export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   [EventStatus.CANCELLED]: 'Cancelled',
 }
 
+/** Wording for the Coordinator's progress timeline where the plain status
+ *  name is ambiguous there. On a row of stages, "Confirmed" and "Completed"
+ *  read as near-twins; "Event Confirmed" / "Event Completed" say what
+ *  actually happened. Everywhere else (badges, lists) the plain labels above
+ *  stay. */
+export const EVENT_TIMELINE_LABELS: Partial<Record<EventStatus, string>> = {
+  [EventStatus.CONFIRMED]: 'Event Confirmed',
+  [EventStatus.COMPLETED]: 'Event Completed',
+}
+
 /** One line explaining what a status actually means -- shown next to the
  *  badge so "Submitted" reads as a stage in a process, not just a word. */
 export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
@@ -45,20 +55,6 @@ export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
   [EventStatus.COMPLETED]: 'The event has taken place.',
   [EventStatus.CANCELLED]: 'The event has been cancelled and will not proceed.',
 }
-
-/** Statuses under which an event still needs an active Coordinator working
- *  it -- the same set backend/app/services/assignment.py reassigns out of
- *  (ACTIVE_ASSIGNMENT_STATUSES there; keep the two in sync). Used to decide
- *  whether "Mark unavailable for this event" makes sense to offer at all --
- *  an already-finished event has nothing left to hand off. */
-export const ACTIVE_ASSIGNMENT_STATUSES: readonly EventStatus[] = [
-  EventStatus.SUBMITTED,
-  EventStatus.UNDER_REVIEW,
-  EventStatus.CHANGES_REQUESTED,
-  EventStatus.APPROVED,
-  EventStatus.PLANNING,
-  EventStatus.CONFIRMED,
-]
 
 /** The lifecycle a request moves through from a Coordinator's point of view,
  *  used to draw the progress timeline on the assigned-event screen.
@@ -271,17 +267,6 @@ export function listAssignedEvents(): Promise<EventSummary[]> {
  *  an event id that does not exist. */
 export function getAssignedEvent(id: number): Promise<AssignedEventDetail> {
   return apiFetch(`/events/assigned/${id}`) as Promise<AssignedEventDetail>
-}
-
-/** Hand ONE assigned event off to another available Coordinator.
- *
- *  Narrower than declaring yourself unavailable outright: everything else
- *  on your plate, and your general eligibility for new work, is
- *  untouched -- this is "I can't do this particular one", not "I'm away".
- *  Rejects with a 409 ApiError if the event is no longer active (already
- *  approved/rejected/completed/cancelled has no "reassign" to do). */
-export function releaseAssignedEvent(id: number): Promise<EventDetail> {
-  return apiFetch(`/events/assigned/${id}/release`, { method: 'POST' }) as Promise<EventDetail>
 }
 
 /** Approve an event assigned to the signed-in Coordinator. */

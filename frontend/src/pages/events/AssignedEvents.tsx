@@ -2,12 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../../lib/api'
 import {
-  ACTIVE_ASSIGNMENT_STATUSES,
   EVENT_STATUS_LABELS,
   EventStatus,
   formatRange,
   listAssignedEvents,
-  releaseAssignedEvent,
 } from '../../lib/events'
 import type { EventSummary } from '../../lib/events'
 
@@ -22,8 +20,6 @@ export function AssignedEvents() {
   const [events, setEvents] = useState<EventSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [releasingId, setReleasingId] = useState<number | null>(null)
-  const [releaseError, setReleaseError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -48,23 +44,6 @@ export function AssignedEvents() {
     }
   }, [])
 
-  async function release(id: number) {
-    setReleasingId(id)
-    setReleaseError(null)
-    try {
-      await releaseAssignedEvent(id)
-      // It is no longer assigned to me -- drop it from my own list rather
-      // than re-fetching the whole thing for one row.
-      setEvents((rows) => rows.filter((e) => e.id !== id))
-    } catch (err) {
-      setReleaseError(
-        err instanceof ApiError ? err.message : 'Could not release this event.',
-      )
-    } finally {
-      setReleasingId(null)
-    }
-  }
-
   return (
     <div className="stack">
       <header className="page-header">
@@ -77,11 +56,6 @@ export function AssignedEvents() {
       {error && (
         <p className="form-error" role="alert">
           {error}
-        </p>
-      )}
-      {releaseError && (
-        <p className="form-error" role="alert">
-          {releaseError}
         </p>
       )}
 
@@ -119,16 +93,6 @@ export function AssignedEvents() {
                   <span className="badge badge-accent">Change request pending</span>
                 )}
                 <Link to={`/coordinator/events/${event.id}`}>View details →</Link>
-                {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
-                  <button
-                    type="button"
-                    className="btn-link-muted"
-                    onClick={() => void release(event.id)}
-                    disabled={releasingId === event.id}
-                  >
-                    {releasingId === event.id ? 'Declining…' : 'Decline this event'}
-                  </button>
-                )}
               </div>
             </li>
           ))}

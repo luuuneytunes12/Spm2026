@@ -23,8 +23,7 @@ which covers the two Organiser stories this one reads the output of.
 There is no Playwright layer for this story yet.
 
 Assignment itself now happens automatically on submission — see
-[test-cases-coordinator-availability.md](test-cases-coordinator-availability.md),
-which covers the "Mark myself unavailable" story that added it. The tests
+`backend/tests/test_coordinator_assignment.py`. The tests
 below mostly still assign a Coordinator directly (`_assign()` in
 `test_assigned_events.py`) rather than by submitting, so this story's tests
 stay about *viewing* an assignment, not about how one came to exist.
@@ -123,8 +122,7 @@ Organiser stories already rely on.
 
 ## Manual check
 
-Assignment is automatic now (see
-[test-cases-coordinator-availability.md](test-cases-coordinator-availability.md)),
+Assignment is automatic now (see `backend/tests/test_coordinator_assignment.py`),
 so exercising this story just needs one Coordinator to exist before an
 Organiser submits a request — sign up one Coordinator and promote them with
 a direct `update public.users set role = 'coordinator' where email = ...`,

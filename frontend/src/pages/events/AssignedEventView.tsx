@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
 import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
 import { ApiError } from '../../lib/api'
 import {
-  ACTIVE_ASSIGNMENT_STATUSES,
   EVENT_STATUS_BRANCH_TONE,
   EVENT_STATUS_DESCRIPTIONS,
   EVENT_STATUS_LABELS,
   EVENT_STATUS_PIPELINE,
+  EVENT_TIMELINE_LABELS,
   EventStatus,
   approveEvent,
   approveEventChangeRequest,
@@ -20,7 +20,6 @@ import {
   getAssignedEvent,
   rejectEvent,
   rejectEventChangeRequest,
-  releaseAssignedEvent,
   setEventRegistration,
   toDateTimeLocal,
 } from '../../lib/events'
@@ -89,7 +88,9 @@ function StatusTimeline({ event }: { event: AssignedEventDetail }) {
               aria-current={state === 'current' ? 'step' : undefined}
             >
               <span className="status-step-dot" aria-hidden="true" />
-              <span className="status-step-label">{EVENT_STATUS_LABELS[step]}</span>
+              <span className="status-step-label">
+                {EVENT_TIMELINE_LABELS[step] ?? EVENT_STATUS_LABELS[step]}
+              </span>
             </li>
           )
         })}
@@ -175,9 +176,7 @@ function ActivityLine({ entry }: { entry: ActivityEntry }) {
  *
  *  Read-only for the event's own fields, by design, not by omission: this
  *  story is about understanding an event well enough to plan it, and
- *  editing what the Organiser wrote is each its own future story. The one
- *  control this page does offer -- "Decline this event" -- is not an edit
- *  of the event; it hands the whole thing to someone else.
+ *  editing what the Organiser wrote is each its own future story.
  *  Booking a venue, requesting equipment, moving it through review are
  *  each still their own story, each free to add its own control here.
  *
@@ -187,12 +186,9 @@ function ActivityLine({ entry }: { entry: ActivityEntry }) {
  *  event is real. */
 export function AssignedEventView() {
   const { id } = useParams()
-  const navigate = useNavigate()
   const [event, setEvent] = useState<AssignedEventDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [releasing, setReleasing] = useState(false)
-  const [releaseError, setReleaseError] = useState<string | null>(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState<string | null>(null)
@@ -237,21 +233,6 @@ export function AssignedEventView() {
       cancelled = true
     }
   }, [id])
-
-  async function release() {
-    if (!event) return
-    setReleasing(true)
-    setReleaseError(null)
-    try {
-      await releaseAssignedEvent(event.id)
-      // It is no longer assigned to me -- reopening this page would just
-      // 404. Back to the list, where it will no longer appear.
-      navigate('/coordinator/events', { replace: true })
-    } catch (err) {
-      setReleaseError(err instanceof ApiError ? err.message : 'Could not release this event.')
-      setReleasing(false)
-    }
-  }
 
   async function decide(decision: 'approve' | 'reject') {
     if (!event) return
@@ -306,7 +287,9 @@ export function AssignedEventView() {
       setRegistrationSaved(true)
     } catch (err) {
       if (err instanceof ApiError) {
-        setRegistrationError(err.message)
+        // The server's sentences as-is ("Registration cannot close before it
+        // opens. Ensure ..."), not `message`, which prefixes column names.
+        setRegistrationError(err.messages.length > 0 ? err.messages.join(' ') : err.message)
         setRegistrationFields(err.fields)
       } else {
         setRegistrationError('Could not save the registration settings.')
@@ -473,27 +456,6 @@ export function AssignedEventView() {
             {confirmError && (
               <p className="form-error" role="alert">
                 {confirmError}
-              </p>
-            )}
-          </div>
-        )}
-        {ACTIVE_ASSIGNMENT_STATUSES.includes(event.status) && (
-          <div className="status-actions">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => void release()}
-              disabled={releasing}
-            >
-              {releasing ? 'Declining…' : 'Decline this event'}
-            </button>
-            <p className="page-subtitle">
-              Hands this event to another available Coordinator. Everything else
-              assigned to you, and your general availability, is unaffected.
-            </p>
-            {releaseError && (
-              <p className="form-error" role="alert">
-                {releaseError}
               </p>
             )}
           </div>
