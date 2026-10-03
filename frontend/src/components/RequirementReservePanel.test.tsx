@@ -50,7 +50,11 @@ const mockReserve = vi.mocked(reserveForRequirement)
 
 const START = '2026-11-02T09:00:00Z'
 const END = '2026-11-02T17:00:00Z'
-const EVENT = { id: 7, proposed_start: START, proposed_end: END }
+const EVENT: { id: number; proposed_start: string | null; proposed_end: string | null } = {
+  id: 7,
+  proposed_start: START,
+  proposed_end: END,
+}
 
 const REQUIREMENT: SupportRequirement = {
   id: 4,

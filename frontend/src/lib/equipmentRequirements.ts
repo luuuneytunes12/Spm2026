@@ -26,17 +26,44 @@ export function canRecordEquipment(status: EventStatus): boolean {
 }
 
 /** How a requirement's status reads to a person. A status this client does
- *  not know yet is shown as it arrives rather than hiding the row. */
+ *  not know yet is shown as it arrives rather than hiding the row.
+ *
+ *  `rejected` is how an "unavailable" requirement is stored: the status enum
+ *  is shared with the Organiser's equipment requests, and one feature does
+ *  not get a value added to it. It is shown the way the customer says it
+ *  (W1: equipment "found to be unavailable"). */
 export const REQUIREMENT_STATUS_LABELS: Record<string, string> = {
   requested: 'Requested',
-  reviewing: 'In review',
+  reviewing: 'Reviewing',
   reserved: 'Reserved',
-  rejected: 'Rejected',
+  rejected: 'Unavailable',
   cancelled: 'Cancelled',
 }
 
 export function requirementStatusLabel(status: string): string {
   return REQUIREMENT_STATUS_LABELS[status] ?? status
+}
+
+/** The statuses Technical Support may set by hand. Reserved is not one: it is
+ *  worked out from real reservations by the server, never chosen. Mirrors
+ *  TECH_SUPPORT_STATUSES in backend/app/domain/requirement_progress.py. */
+export const TECH_SUPPORT_STATUS_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: 'requested', label: REQUIREMENT_STATUS_LABELS.requested },
+  { value: 'reviewing', label: REQUIREMENT_STATUS_LABELS.reviewing },
+  { value: 'rejected', label: REQUIREMENT_STATUS_LABELS.rejected },
+]
+
+/** "3 of 5 reserved", or null while nothing is. What is needed and what is
+ *  reserved stay two numbers: 5 needed / 3 reserved is a normal state. */
+export function progressText(reserved: number, needed: number): string | null {
+  return reserved > 0 ? `${reserved} of ${needed} reserved` : null
+}
+
+/** One item reserved towards a requirement. */
+export interface ReservedItem {
+  equipment_id: number
+  equipment_name: string
+  quantity: number
 }
 
 /** A requirement as the Coordinator who wrote it sees it. */
@@ -50,7 +77,12 @@ export interface EquipmentRequirement {
   category: string
   quantity_needed: number
   technical_notes: string | null
+  /** The status everyone sees. Reserved is worked out from the reservations,
+   *  not stored; rejected is shown as Unavailable. */
   status: string
+  /** How much of `quantity_needed` is reserved. Never changes it. */
+  reserved_quantity: number
+  reservations: ReservedItem[]
   created_at: string
   updated_at: string
 }
@@ -76,6 +108,14 @@ export interface SupportRequirement {
   quantity_needed: number
   technical_notes: string | null
   status: string
+  reserved_quantity: number
+  reservations: ReservedItem[]
+}
+
+/** What Technical Support may change: only these two. */
+export interface SupportRequirementChanges {
+  status?: string
+  quantity_needed?: number
 }
 
 export interface SupportEventSummary {
@@ -146,4 +186,32 @@ export function listSupportEvents(): Promise<SupportEventSummary[]> {
  *  yet approved -- the two look the same on purpose. */
 export function getSupportEvent(id: number): Promise<SupportEventRecord> {
   return apiFetch(`/equipment-requirements/support/events/${id}`) as Promise<SupportEventRecord>
+}
+
+/** Change the status and/or quantity needed. Only what is sent changes.
+ *  Resolves to the requirement as the server now holds it. */
+export function updateSupportRequirement(
+  id: number,
+  changes: SupportRequirementChanges,
+): Promise<SupportRequirement> {
+  return apiFetch(`/equipment-requirements/support/requirements/${id}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(changes),
+  }) as Promise<SupportRequirement>
+}
+
+/** Reserve an item for a requirement, through the existing Equipment
+ *  Reservations. Leave `quantity` out for an item the Organiser asked for --
+ *  their quantity is reserved whole -- or to take what is still needed. */
+export function reserveForRequirement(
+  id: number,
+  equipmentId: number,
+  quantity?: number,
+): Promise<SupportRequirement> {
+  return apiFetch(`/equipment-requirements/${id}/reservations`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ equipment_id: equipmentId, quantity }),
+  }) as Promise<SupportRequirement>
 }

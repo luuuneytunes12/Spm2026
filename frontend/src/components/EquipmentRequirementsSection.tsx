@@ -182,6 +182,8 @@ export function EquipmentRequirementsSection({
                 quantity={requirement.quantity_needed}
                 notes={requirement.technical_notes}
                 status={requirement.status}
+                reserved={requirement.reserved_quantity}
+                reservations={requirement.reservations}
                 origin={originOf(requirement, organiserLines)}
                 actions={
                   editable && (
@@ -197,14 +199,19 @@ export function EquipmentRequirementsSection({
                       >
                         Edit
                       </button>
-                      <button
-                        type="button"
-                        className="btn-link-muted"
-                        aria-label={`Remove ${requirement.category} requirement`}
-                        onClick={() => void remove(requirement)}
-                      >
-                        Remove
-                      </button>
+                      {/* Nothing can release a reservation, so a requirement
+                          with equipment reserved is not offered for removal.
+                          The server refuses it regardless. */}
+                      {requirement.reserved_quantity === 0 && (
+                        <button
+                          type="button"
+                          className="btn-link-muted"
+                          aria-label={`Remove ${requirement.category} requirement`}
+                          onClick={() => void remove(requirement)}
+                        >
+                          Remove
+                        </button>
+                      )}
                     </>
                   )
                 }
@@ -421,6 +428,9 @@ interface EditorProps {
 
 function RequirementEditor({ requirement, origin, types, onCancel, onSave }: EditorProps) {
   const ids = useId()
+  // Equipment reserved for it cannot be given back, so the type it was
+  // reserved as is fixed and the quantity cannot drop below what is held.
+  const reserved = requirement.reserved_quantity
   const [category, setCategory] = useState(requirement.category)
   const [quantity, setQuantity] = useState(String(requirement.quantity_needed))
   const [notes, setNotes] = useState(requirement.technical_notes ?? '')
@@ -438,6 +448,10 @@ function RequirementEditor({ requirement, origin, types, onCancel, onSave }: Edi
       setProblem('Quantity must be at least 1.')
       return
     }
+    if (needed < reserved) {
+      setProblem(`${reserved} already reserved; the quantity needed cannot be less than that.`)
+      return
+    }
     setProblem(null)
     setBusy(true)
     await onSave({ category, quantity_needed: needed, technical_notes: notes.trim() || null })
@@ -452,25 +466,38 @@ function RequirementEditor({ requirement, origin, types, onCancel, onSave }: Edi
         <div className="form-row">
           <div className="field">
             <label htmlFor={`${ids}-type`}>Equipment type</label>
-            <select id={`${ids}-type`} value={category} onChange={(e) => setCategory(e.target.value)}>
+            <select
+              id={`${ids}-type`}
+              value={category}
+              disabled={reserved > 0}
+              onChange={(e) => setCategory(e.target.value)}
+            >
               {options.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
+            {reserved > 0 && (
+              <p className="field-hint">
+                Equipment is reserved for this requirement, so its type cannot be changed.
+              </p>
+            )}
           </div>
           <div className={problem ? 'field field-invalid' : 'field'}>
             <label htmlFor={`${ids}-qty`}>Quantity needed</label>
             <input
               id={`${ids}-qty`}
               type="number"
-              min={1}
+              min={reserved > 0 ? reserved : 1}
               inputMode="numeric"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               aria-invalid={problem ? true : undefined}
             />
+            {reserved > 0 && (
+              <p className="field-hint">The quantity cannot go below the {reserved} reserved.</p>
+            )}
           </div>
         </div>
         <div className="field">
