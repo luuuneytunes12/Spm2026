@@ -22,23 +22,28 @@ router = APIRouter(prefix="/registrations", tags=["registrations"])
 _attendee = require_role(Role.ATTENDEE)
 
 
+def _utc(value: datetime) -> datetime:
+    # SQLite (the test DB) hands back naive datetimes; Postgres timestamptz
+    # hands back aware ones. Both are stored as UTC.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 def registration_open(event: Event) -> bool:
     """The single definition of "can someone register for this right now".
 
-    Open means: the event is confirmed, its Organiser enabled registration,
-    and it has not started yet. There is no separate closing date on
-    `events`, so the start time is what closes registration.
+    Open means: the event is confirmed and registration is enabled. When the
+    Coordinator has set a registration window, today must fall between its
+    open and close dates. An event with no window (registration switched on
+    before windows existed) falls back to the old rule: open until it starts.
     """
     if event.status != EventStatus.confirmed or not event.registration_enabled:
         return False
+    now = datetime.now(timezone.utc)
+    if event.registration_opens_at is not None and event.registration_closes_at is not None:
+        return _utc(event.registration_opens_at) <= now <= _utc(event.registration_closes_at)
     if event.proposed_start is None:
         return True
-    start = event.proposed_start
-    # SQLite (the test DB) hands back naive datetimes; Postgres timestamptz
-    # hands back aware ones. Both are stored as UTC.
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    return start > datetime.now(timezone.utc)
+    return _utc(event.proposed_start) > now
 
 
 def _out(event: Event, registration: Registration | None) -> RegistrableEvent:
@@ -48,6 +53,8 @@ def _out(event: Event, registration: Registration | None) -> RegistrableEvent:
         proposed_start=event.proposed_start,
         proposed_end=event.proposed_end,
         registration_open=registration_open(event),
+        registration_opens_at=event.registration_opens_at,
+        registration_closes_at=event.registration_closes_at,
         my_status=registration.status if registration else None,
     )
 
@@ -86,6 +93,28 @@ def list_registrable_events(
     return [_out(event, registration) for event, registration in rows]
 
 
+@router.get("/mine", response_model=list[RegistrableEvent])
+def list_my_registrations(
+    db: Session = Depends(get_db),
+    user: User = Depends(_attendee),
+) -> list[RegistrableEvent]:
+    """Every event the caller has registered for -- including ones they have
+    since withdrawn from, which stay listed with that status.
+
+    One row per event: the table is unique on (event_id, attendee_id), and
+    re-registering flips the same row back to `registered` rather than adding
+    a second. Never registered means an empty list. Soonest event first.
+    """
+    rows = (
+        db.query(Event, Registration)
+        .join(Registration, Registration.event_id == Event.id)
+        .filter(Registration.attendee_id == user.id)
+        .order_by(Event.proposed_start, Event.id)
+        .all()
+    )
+    return [_out(event, registration) for event, registration in rows]
+
+
 @router.post("/events/{event_id}", response_model=RegistrableEvent)
 def register(
     event_id: int,
@@ -114,9 +143,15 @@ def register(
             detail="You are already registered for this event.",
         )
     if not registration_open(event):
+        opens = event.registration_opens_at
+        not_yet_open = opens is not None and _utc(opens) > datetime.now(timezone.utc)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Registration for this event has closed.",
+            detail=(
+                "Registration for this event has not opened yet."
+                if not_yet_open
+                else "Registration for this event has closed."
+            ),
         )
 
     if registration is None:

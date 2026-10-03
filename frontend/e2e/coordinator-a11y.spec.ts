@@ -54,21 +54,17 @@ for (const colorScheme of SCHEMES) {
   test.describe(`axe, ${colorScheme} theme`, () => {
     test.use({ colorScheme })
 
-    test('Coordinator page: available, then unavailable, with history', async ({ browser }) => {
+    test('Coordinator landing page', async ({ browser }) => {
       const sam = await openAs(browser, SAM, { colorScheme })
       await sam.goto('/coordinator')
-      await expect(sam.getByRole('button', { name: 'Mark myself unavailable' })).toBeVisible()
-      await expectNoSeriousViolations(sam, `/coordinator available (${colorScheme})`)
-
-      await sam.getByRole('button', { name: 'Mark myself unavailable' }).click()
-      await expect(sam.getByRole('list', { name: 'Availability history' })).toBeVisible()
-      await expectNoSeriousViolations(sam, `/coordinator unavailable + history (${colorScheme})`)
+      await expect(sam.getByRole('heading', { name: /Welcome back/ })).toBeVisible()
+      await expectNoSeriousViolations(sam, `/coordinator (${colorScheme})`)
     })
 
-    test('Coordinator profile: availability card and the form', async ({ browser }) => {
+    test('Coordinator profile: the form', async ({ browser }) => {
       const sam = await openAs(browser, SAM, { colorScheme })
       await sam.goto('/profile')
-      await expect(sam.getByRole('region', { name: 'Availability' })).toBeVisible()
+      await expect(sam.getByLabel('Name')).toBeVisible()
       await expectNoSeriousViolations(sam, `/profile (${colorScheme})`)
     })
 
@@ -143,31 +139,6 @@ async function hasVisibleFocus(locator: import('@playwright/test').Locator): Pro
 }
 
 test.describe('keyboard only', () => {
-  test('a coordinator can reach and operate "Mark myself unavailable" with the keyboard, and sees where focus is', async ({ browser }) => {
-    const sam = await openAs(browser, SAM)
-    await sam.goto('/coordinator')
-    const toggle = sam.getByRole('button', { name: 'Mark myself unavailable' })
-
-    await tabTo(sam, toggle)
-    expect(await hasVisibleFocus(toggle)).toBe(true)
-    await sam.keyboard.press('Enter')
-
-    await expect(sam.getByText('Unavailable', { exact: true })).toBeVisible()
-  })
-
-  test('a coordinator can reach and operate "Decline this event" with the keyboard', async ({ browser, request }) => {
-    await eventFor(request, 'Keyboard decline')
-    const sam = await openAs(browser, SAM)
-    await sam.goto('/coordinator/events')
-    const decline = sam.getByRole('button', { name: 'Decline this event' })
-
-    await tabTo(sam, decline)
-    expect(await hasVisibleFocus(decline)).toBe(true)
-    await sam.keyboard.press('Enter')
-
-    await expect(sam.getByText('Nothing assigned to you yet.')).toBeVisible()
-  })
-
   test('the organiser can reach the coordinator pool dropdown by Tab and open it with the keyboard', async ({ browser }) => {
     const olivia = await openAs(browser, OLIVIA)
     await olivia.goto('/organiser/events')

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../lib/api'
 import { COMMUNICATION_PREFERENCE_LABELS, CommunicationPreference } from '../lib/communication'
@@ -39,32 +38,6 @@ function toFormState(user: {
 function orNull(value: string): string | null {
   const trimmed = value.trim()
   return trimmed === '' ? null : trimmed
-}
-
-/** A Coordinator's availability, shown on their profile as read-only status.
- *
- *  "Unavailable" here means the same thing as on the Coordinator page: they
- *  are left out of NEW event assignments until they mark themselves
- *  available again. The switch itself lives on that page, so this only
- *  reports it and points there -- it never edits it. Shown to Coordinators
- *  only: no other role acts on `is_available`. */
-function AvailabilityStatus({ isAvailable }: { isAvailable: boolean }) {
-  return (
-    <section className="card stack-tight" aria-label="Availability">
-      <h2>Availability</h2>
-      <p className="availability-row">
-        <span className={isAvailable ? 'badge badge-accent' : 'badge badge-muted'}>
-          {isAvailable ? 'Available' : 'Unavailable'}
-        </span>
-        <Link to="/coordinator">Change on your Event Coordinator page</Link>
-      </p>
-      <p className="page-subtitle">
-        {isAvailable
-          ? 'New submitted requests can be assigned to you.'
-          : 'You will not be assigned new events until you mark yourself available again. Events already assigned to you stay with you.'}
-      </p>
-    </section>
-  )
 }
 
 /** Own profile: name, organisation, contact details and communication
@@ -140,8 +113,6 @@ export function Profile() {
           Your profile has been updated.
         </p>
       )}
-
-      {user.role === 'coordinator' && <AvailabilityStatus isAvailable={user.is_available} />}
 
       <form onSubmit={onSubmit} noValidate className="stack">
         <section className="card stack-tight">

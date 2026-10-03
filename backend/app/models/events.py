@@ -44,6 +44,10 @@ class Event(Base):
     equipment_requirements: Mapped[str | None] = mapped_column(Text)
     special_arrangements: Mapped[str | None] = mapped_column(Text)
     registration_enabled: Mapped[bool] = mapped_column(default=False)
+    # The window in which Attendees may register, set by the Coordinator when
+    # they open registration on a confirmed event (sql/015). Null until then.
+    registration_opens_at: Mapped[datetime | None]
+    registration_closes_at: Mapped[datetime | None]
     status: Mapped[EventStatus] = mapped_column(
         Enum(EventStatus, name="event_status", create_type=False), default=EventStatus.draft
     )

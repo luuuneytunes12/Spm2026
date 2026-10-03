@@ -8,8 +8,6 @@ action from several threads at once (released together by a barrier) and
 assert the outcome a user would expect from a single click:
 
     * a double-clicked Submit assigns ONE coordinator, once;
-    * a double-clicked Decline hands the event over ONCE;
-    * a repeated availability toggle records ONE change;
     * events submitted together never go to a coordinator who is out of the pool.
 
 Every test uses one API client per thread and every request its own session
@@ -23,7 +21,6 @@ from concurrent.futures import ThreadPoolExecutor
 from app.core.roles import Role
 from app.models.events import Event, EventStatusHistory
 from app.models.notifications import Notification
-from app.models.user import User
 from tests.integration.conftest import COMPLETE_EVENT
 
 THREADS = 6
@@ -78,98 +75,7 @@ def test_a_submit_fired_many_times_at_once_assigns_the_event_exactly_once(
 
 
 # --------------------------------------------------------------------------
-# Double-clicked Decline (SCRUM-64)
-# --------------------------------------------------------------------------
-
-
-def test_a_decline_fired_many_times_at_once_hands_the_event_over_exactly_once(
-    make_client, client, make_user, db
-):
-    _o, org_h = make_user(Role.ORGANISER, "org@connectsphere.test", "Priya Menon")
-    sam, sam_h = make_user(Role.COORDINATOR, "sam@connectsphere.test", "Sam Tan")
-    make_user(Role.COORDINATOR, "priya@connectsphere.test", "Priya Nair")
-    make_user(Role.COORDINATOR, "lee@connectsphere.test", "Lee Wong")
-    event_id = draft(client, org_h)
-    client.post(f"/events/{event_id}/submit", headers=org_h)
-    assert db.get(Event, event_id).coordinator_id == sam.id
-
-    results = race(
-        make_client, THREADS, lambda c: c.post(f"/events/assigned/{event_id}/release", headers=sam_h)
-    )
-
-    codes = sorted(r.status_code for r in results)
-    assert codes == [200] + [404] * (THREADS - 1), codes  # after the first, it is no longer Sam's
-    db.expire_all()
-    new_owner = db.get(Event, event_id).coordinator_id
-    assert new_owner not in (None, sam.id)
-    declined = db.query(EventStatusHistory).filter(
-        EventStatusHistory.event_id == event_id, EventStatusHistory.note.like("%declined this event%")
-    ).count()
-    assert declined == 1  # SCRUM-64 AC4: one decline, one record
-    assert db.query(Notification).filter(
-        Notification.user_id == sam.id, Notification.type == "event_reassigned_away"
-    ).count() == 1
-    assert db.query(Notification).filter(
-        Notification.type == "event_coordinator_assigned"
-    ).count() == 2  # the first assignment plus exactly one reassignment
-
-
-# --------------------------------------------------------------------------
-# Repeated availability toggle (SCRUM-24)
-# --------------------------------------------------------------------------
-
-
-def test_the_same_availability_change_sent_many_times_at_once_is_recorded_once(
-    make_client, make_user, db
-):
-    sam, sam_h = make_user(Role.COORDINATOR, "sam@connectsphere.test", "Sam Tan")
-    client = make_client()
-
-    results = race(
-        make_client,
-        THREADS,
-        lambda c: c.patch("/coordinators/me/availability", json={"is_available": False}, headers=sam_h),
-    )
-
-    assert all(r.status_code == 200 for r in results)
-    history = client.get("/coordinators/me/availability-history", headers=sam_h).json()
-    assert len(history) == 1  # SCRUM-24 AC4: one change, one entry
-    assert history[0]["is_available"] is False
-    db.expire_all()
-    assert db.get(User, sam.id).is_available is False
-
-
-def test_opposing_availability_changes_at_once_leave_the_history_consistent_with_the_flag(
-    make_client, make_user, db
-):
-    sam, sam_h = make_user(Role.COORDINATOR, "sam@connectsphere.test", "Sam Tan")
-    values = [False, True, False, True, False, True]
-    barrier = threading.Barrier(len(values))
-    clients = [make_client() for _ in values]
-
-    def worker(args):
-        client, value = args
-        barrier.wait()
-        return client.patch(
-            "/coordinators/me/availability", json={"is_available": value}, headers=sam_h
-        )
-
-    with ThreadPoolExecutor(max_workers=len(values)) as pool:
-        results = list(pool.map(worker, zip(clients, values)))
-
-    assert all(r.status_code == 200 for r in results)
-    db.expire_all()
-    final = db.get(User, sam.id).is_available
-    history = make_client().get("/coordinators/me/availability-history", headers=sam_h).json()
-    assert history, "at least the first change must be recorded"
-    assert history[0]["is_available"] is final  # newest entry always agrees with the flag
-    # No two neighbouring entries repeat a value: every entry is a real CHANGE.
-    ordered = [h["is_available"] for h in reversed(history)]
-    assert all(a != b for a, b in zip(ordered, ordered[1:])), ordered
-
-
-# --------------------------------------------------------------------------
-# Submissions racing an unavailable coordinator (SCRUM-24 AC2)
+# Submissions racing an unavailable coordinator
 # --------------------------------------------------------------------------
 
 

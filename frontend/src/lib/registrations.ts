@@ -11,12 +11,20 @@ export interface RegistrableEvent {
   proposed_start: string | null
   proposed_end: string | null
   registration_open: boolean
+  registration_opens_at?: string | null
+  registration_closes_at?: string | null
   /** null when the caller has never registered for this event. */
   my_status: RegistrationStatus | null
 }
 
 export function listRegistrableEvents(): Promise<RegistrableEvent[]> {
   return apiFetch('/registrations/events') as Promise<RegistrableEvent[]>
+}
+
+/** Every event the caller has registered for, withdrawn ones included, one
+ *  row per event. Empty when they have never registered. */
+export function listMyRegistrations(): Promise<RegistrableEvent[]> {
+  return apiFetch('/registrations/mine') as Promise<RegistrableEvent[]>
 }
 
 /** Register, or register again after withdrawing. Rejects with a 409

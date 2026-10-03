@@ -22,8 +22,8 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel('Email').fill(E2E_ORGANISER.email)
   await page.getByLabel('Password').fill(E2E_ORGANISER.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  // Landing on the dashboard is what proves the session was established.
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  // Landing on the role's home page is what proves the session was established.
+  await expect(page.getByRole('heading', { name: /Welcome back/ })).toBeVisible()
 })
 
 test('TC-S1-2g: an incomplete request saves as a draft and reopens intact', async ({ page }) => {

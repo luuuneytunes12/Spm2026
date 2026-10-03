@@ -192,3 +192,108 @@ def test_withdrawn_attendee_cannot_register_again_once_closed(client, db_session
     res = client.post(f"/registrations/events/{event.id}", headers=attendee)
 
     assert res.status_code == 409
+
+
+# --- View registration status (My Registrations) ------------------------------
+#
+# SCRUM-49. Each test is named for the acceptance criterion it covers.
+
+
+def _mine(client, headers):
+    res = client.get("/registrations/mine", headers=headers)
+    assert res.status_code == 200
+    return res.json()
+
+
+def test_ac1_my_registrations_shows_name_date_time_and_status(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    first = _event(db_session, organiser, days=10)
+    second = _event(db_session, organiser, days=20)
+    client.post(f"/registrations/events/{first.id}", headers=attendee)
+    client.post(f"/registrations/events/{second.id}", headers=attendee)
+
+    rows = _mine(client, attendee)
+
+    assert [r["id"] for r in rows] == [first.id, second.id]
+    row = rows[0]
+    assert row["name"] == "Partner Summit"
+    # Date and time are both carried: a full timestamp, plus the end of the event.
+    assert row["proposed_start"] is not None and "T" in row["proposed_start"]
+    assert row["proposed_end"] is not None
+    assert row["my_status"] == "registered"
+
+
+def test_ac2_a_withdrawn_event_still_appears_as_withdrawn(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    event = _event(db_session, organiser)
+    client.post(f"/registrations/events/{event.id}", headers=attendee)
+    client.post(f"/registrations/events/{event.id}/withdraw", headers=attendee)
+
+    rows = _mine(client, attendee)
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == event.id
+    assert rows[0]["my_status"] == "withdrawn"
+
+
+def test_ac3_registering_shows_registered_on_next_open(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    event = _event(db_session, organiser)
+    assert _mine(client, attendee) == []
+
+    client.post(f"/registrations/events/{event.id}", headers=attendee)
+
+    rows = _mine(client, attendee)
+    assert [(r["id"], r["my_status"]) for r in rows] == [(event.id, "registered")]
+
+
+def test_ac4_withdrawing_shows_withdrawn_on_next_open(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    event = _event(db_session, organiser)
+    client.post(f"/registrations/events/{event.id}", headers=attendee)
+    assert _mine(client, attendee)[0]["my_status"] == "registered"
+
+    client.post(f"/registrations/events/{event.id}/withdraw", headers=attendee)
+
+    assert _mine(client, attendee)[0]["my_status"] == "withdrawn"
+
+
+def test_ac5_withdraw_then_register_again_appears_once_as_registered(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    event = _event(db_session, organiser)
+    client.post(f"/registrations/events/{event.id}", headers=attendee)
+    client.post(f"/registrations/events/{event.id}/withdraw", headers=attendee)
+    client.post(f"/registrations/events/{event.id}", headers=attendee)
+
+    rows = _mine(client, attendee)
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == event.id
+    assert rows[0]["my_status"] == "registered"
+    assert db_session.query(Registration).count() == 1
+
+
+def test_ac6_never_registered_gives_an_empty_list(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    # An open event exists, but being offered it is not being registered for it.
+    _event(db_session, organiser)
+
+    assert _mine(client, attendee) == []
+
+
+def test_my_registrations_only_lists_the_callers_own(client, db_session):
+    organiser, attendee = _setup(client, db_session)
+    _, other = _user(client, db_session, Role.ATTENDEE, "other@example.com")
+    event = _event(db_session, organiser)
+    client.post(f"/registrations/events/{event.id}", headers=other)
+
+    assert _mine(client, attendee) == []
+    assert len(_mine(client, other)) == 1
+
+
+def test_my_registrations_is_attendee_only(client, db_session):
+    _setup(client, db_session)
+    _, coordinator = _user(client, db_session, Role.COORDINATOR, "coord@example.com")
+
+    assert client.get("/registrations/mine", headers=coordinator).status_code == 403
+    assert client.get("/registrations/mine").status_code == 401

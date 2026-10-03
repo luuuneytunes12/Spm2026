@@ -6,8 +6,8 @@ export interface AuthUser {
   name: string
   email: string
   role: Role
-  /** Meaningful for a Coordinator; every other role carries it too but
-   *  never acts on it. See the "Mark myself unavailable" story. */
+  /** Whether this user is in the assignment pool. Only the backend's
+   *  assignment picks on it; nothing in the app changes it. */
   is_available: boolean
   organisation: string | null
   phone_country_code: string | null
@@ -24,7 +24,7 @@ export interface AuthContextValue {
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   /** Re-fetch /auth/me. Used after an action that changes something on the
-   *  user's own row outside the login flow -- e.g. toggling availability --
+   *  user's own row outside the login flow -- e.g. editing the profile --
    *  so the rest of the app sees the update without a full page reload. */
   refreshUser: () => Promise<void>
 }

@@ -103,11 +103,14 @@ create table events (
     equipment_requirements text,
     special_arrangements text,
     registration_enabled boolean not null default false,
+    registration_opens_at timestamptz,
+    registration_closes_at timestamptz,
     status event_status not null default 'draft',
     submitted_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    check (proposed_end > proposed_start)
+    check (proposed_end > proposed_start),
+    check (registration_closes_at >= registration_opens_at)
 );
 
 create index idx_events_organiser on events (organiser_id);

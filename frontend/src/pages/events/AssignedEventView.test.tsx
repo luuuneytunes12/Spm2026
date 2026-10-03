@@ -19,7 +19,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { AssignedEventView } from './AssignedEventView'
 
-vi.mock('../../lib/coordinators', () => ({ setMyAvailability: vi.fn() }))
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
@@ -33,7 +32,6 @@ vi.mock('../../lib/events', async () => {
     getAssignedEvent: vi.fn(),
     rejectEvent: vi.fn(),
     rejectEventChangeRequest: vi.fn(),
-    releaseAssignedEvent: vi.fn(),
   }
 })
 
@@ -43,15 +41,12 @@ import {
   getAssignedEvent,
   rejectEvent,
   rejectEventChangeRequest,
-  releaseAssignedEvent,
 } from '../../lib/events'
 import type { AssignedEventDetail } from '../../lib/events'
-import { setMyAvailability } from '../../lib/coordinators'
 
 const mockGet = vi.mocked(getAssignedEvent)
 const mockApprove = vi.mocked(approveEvent)
 const mockReject = vi.mocked(rejectEvent)
-const mockRelease = vi.mocked(releaseAssignedEvent)
 const mockApproveChangeRequest = vi.mocked(approveEventChangeRequest)
 const mockRejectChangeRequest = vi.mocked(rejectEventChangeRequest)
 
@@ -380,7 +375,14 @@ describe('AC3 - the current status', () => {
 
     // Scoped to the timeline's own label class: "Submitted" also appears in
     // the header badge, so an unscoped match would be ambiguous.
-    const steps = ['Submitted', 'Under review', 'Approved', 'Planning', 'Confirmed', 'Completed']
+    const steps = [
+      'Submitted',
+      'Under review',
+      'Approved',
+      'Planning',
+      'Event Confirmed',
+      'Event Completed',
+    ]
     for (const label of steps) {
       expect(await screen.findByText(label, { selector: '.status-step-label' })).toBeInTheDocument()
     }
@@ -653,102 +655,6 @@ describe('Coordinator decisions', () => {
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
     expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reject request' })).not.toBeInTheDocument()
-  })
-})
-
-describe('marking unavailable for this one event', () => {
-  it('offers the action while the event is still active', async () => {
-    renderView()
-
-    expect(
-      await screen.findByRole('button', { name: 'Decline this event' }),
-    ).toBeInTheDocument()
-  })
-
-  it('does not offer it once the event has finished', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'completed' })
-    renderView()
-
-    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
-    expect(
-      screen.queryByRole('button', { name: 'Decline this event' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('releases the event and leaves the assigned-events list', async () => {
-    mockRelease.mockResolvedValue({} as never)
-    render(
-      <MemoryRouter initialEntries={['/coordinator/events/7']}>
-        <Routes>
-          <Route path="/coordinator/events/:id" element={<AssignedEventView />} />
-          <Route path="/coordinator/events" element={<p>My Assigned Events</p>} />
-        </Routes>
-      </MemoryRouter>,
-    )
-
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Decline this event' }),
-    )
-
-    await waitFor(() => expect(mockRelease).toHaveBeenCalledWith(7))
-    expect(await screen.findByText('My Assigned Events')).toBeInTheDocument()
-  })
-
-  it('shows an error and stays on the page when releasing fails', async () => {
-    mockRelease.mockRejectedValue(new ApiError(409, "'completed' is not active, so it cannot be reassigned."))
-    renderView()
-
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Decline this event' }),
-    )
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      "'completed' is not active, so it cannot be reassigned.",
-    )
-    expect(screen.getByRole('heading', { name: 'Regional Partner Conference' })).toBeInTheDocument()
-  })
-})
-
-describe('SCRUM-64 AC4 - a decline is recorded with who declined and when', () => {
-  it('shows the decliner\'s name, the note and a timestamp on the log entry', async () => {
-    mockGet.mockResolvedValue({
-      ...EVENT,
-      status: 'under_review',
-      activity: [
-        {
-          from_status: 'under_review',
-          to_status: 'under_review',
-          note: 'Reassigned from Sam Tan to Priya Nair: Sam Tan declined this event.',
-          changed_by_name: 'Sam Tan',
-          created_at: '2026-09-12T09:30:00Z',
-        },
-        ...EVENT.activity,
-      ],
-    })
-    renderView()
-
-    const log = await screen.findByRole('list', { name: 'Activity log' })
-    const [entry] = within(log).getAllByRole('listitem')
-    expect(entry).toHaveTextContent('Assignment') // a same-status entry, not a status arrow
-    expect(entry).toHaveTextContent('Sam Tan declined this event.')
-    expect(entry.querySelector('.activity-meta')).toHaveTextContent('Sam Tan')
-    expect(entry.querySelector('.activity-meta')).toHaveTextContent(/2026|Sep/)
-  })
-})
-
-describe('SCRUM-64 AC2/AC3 - declining touches only this event, not my availability', () => {
-  it('says the decline leaves general availability and other events unaffected', async () => {
-    renderView()
-    expect(await screen.findByText(/your general availability, is unaffected/)).toBeInTheDocument()
-  })
-
-  it('releases only this event id, and never calls the availability API', async () => {
-    mockRelease.mockResolvedValue({} as never)
-    renderView()
-    await userEvent.click(await screen.findByRole('button', { name: 'Decline this event' }))
-    await waitFor(() => expect(mockRelease).toHaveBeenCalledTimes(1))
-    expect(mockRelease).toHaveBeenCalledWith(7)
-    expect(setMyAvailability).not.toHaveBeenCalled()
   })
 })
 
