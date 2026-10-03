@@ -134,7 +134,7 @@ That is the reason for refusing it, and for the protections below.
 - Technical Support can set only **Requested / In review / Unavailable**.
   `reserved` is refused with a reason; `cancelled` belongs to the event.
 - **Unavailable** cannot be set while anything is reserved, and reserving
-  against an Unavailable requirement moves it to Reviewing.
+  against an Unavailable requirement moves it to In review.
 
 Tested by `…reserved_and_cancelled_cannot_be_set_by_hand` ·
 `…unavailable_is_the_stored_rejected_value` · `…unavailable_cannot_be_set_once_something_is_reserved` ·
@@ -251,9 +251,9 @@ blocked, …) were each caught by a failing test.
 
 | Test | Level |
 |---|---|
-| Reserving fulfils a requirement through his reservation · his endpoints see it · it reduces overlapping availability · part reserved reads Reviewing with progress · the rest from another item · quantity left out · the Organiser's item at their quantity | pytest (API) |
+| Reserving fulfils a requirement through his reservation · his endpoints see it · it reduces overlapping availability · part reserved is `reviewing` (shown as In progress) with its progress · the rest from another item · quantity left out · the Organiser's item at their quantity | pytest (API) |
 | Over-fill refused · more than needed refused · other type refused · unknown item refused · his stock check refuses, in his words · overlap protection · one item, one requirement · no date · lost reservation can be reserved again · clears Unavailable | pytest (API) |
-| Technical Support sets Requested / Reviewing / Unavailable (`rejected`) · `reserved` and `cancelled` refused · unknown status refused · Unavailable refused while reserved · a hand-set status does not hide what is reserved | pytest (API) |
+| Technical Support sets Requested / In review / Unavailable (`rejected`) · `reserved` and `cancelled` refused · unknown status refused · Unavailable refused while reserved · a hand-set status does not hide what is reserved | pytest (API) |
 | Only Technical Support (4 other roles) · anonymous · outside the window (7 statuses) · unknown requirement — for **both** endpoints | pytest (API) |
 | Effective status (9 cases) · reserved never believed from storage · statuses Technical Support may set · reserve rules (delegation, default quantity, type, over-fill ×3, refusal leaves nothing, clears Unavailable, window, unknown) | pytest (unit) |
 | The link commits with the reservation · a refusal leaves no link · a failed link stops the reservation · his function's signature | pytest (unit) |
