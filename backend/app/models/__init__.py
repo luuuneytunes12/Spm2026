@@ -1,5 +1,10 @@
 from app.models.coordinator_availability import CoordinatorAvailabilityHistory
-from app.models.equipment import CoordinatorEquipmentRequirement, Equipment, EquipmentRequest
+from app.models.equipment import (
+    CoordinatorEquipmentRequirement,
+    Equipment,
+    EquipmentRequest,
+    RequirementReservationLink,
+)
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.registrations import Registration
@@ -16,6 +21,7 @@ __all__ = [
     "EventStatusHistory",
     "Notification",
     "Registration",
+    "RequirementReservationLink",
     "User",
     "Venue",
     "VenueBooking",
