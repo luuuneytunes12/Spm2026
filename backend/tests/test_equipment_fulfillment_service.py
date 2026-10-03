@@ -33,7 +33,6 @@ from app.core.roles import Role
 from app.domain.equipment_fulfillment import (
     TECH_SUPPORT_STATUSES,
     EquipmentRequirementFulfillmentService,
-    ErcongReservationGateway,
     RequirementProgress,
     RequirementReservationLinks,
     ReservationGateway,
@@ -51,6 +50,7 @@ from app.models.equipment import (
 )
 from app.models.events import Event
 from app.models.user import User
+from app.services.reservation_gateway import ErcongReservationGateway
 from datetime import datetime, timezone
 
 START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
@@ -485,6 +485,9 @@ def test_a_refusal_from_the_gateway_leaves_nothing_linked(db_session, world):
         service.reserve(world.requirement.id, world.mic.id, None, world.tech)
 
     assert refused.value is refusal  # his words, untouched
+    # The session does not autoflush, so a link left pending would not show in
+    # a query: look at what is pending, not only at what is stored.
+    assert not db_session.new
     assert _links(db_session) == []
     assert db_session.query(EquipmentRequest).count() == 0
 
@@ -545,6 +548,9 @@ def test_reserved_and_cancelled_cannot_be_set_by_hand(db_session, world, status)
         service.update(world.requirement.id, status=status)
 
     assert refused.value.field == "status"
+    if status is RESERVED:
+        # Not just refused: told why, so nobody hunts for a way round it.
+        assert "reservations" in refused.value.message
     assert db_session.get(CoordinatorEquipmentRequirement, world.requirement.id).status is REQUESTED
 
 

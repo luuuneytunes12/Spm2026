@@ -265,6 +265,26 @@ create index idx_coordinator_equipment_requirements_pick
     on coordinator_equipment_requirements (organiser_equipment_request_id)
     where organiser_equipment_request_id is not null;
 
+-- Which reserved item is fulfilling which requirement. The reservation itself
+-- is the existing one (an equipment_requests row moved to 'reserved'); this
+-- adds nothing to it. Keyed by (event, item) rather than the row's id so the
+-- link is written in the same commit as the reservation, and survives an
+-- approved Organiser change that rebuilds those rows. How much a requirement
+-- has reserved is read from the reserved rows, never stored here.
+create table coordinator_requirement_reservations (
+    id bigint generated always as identity primary key,
+    requirement_id bigint not null
+        references coordinator_equipment_requirements (id) on delete cascade,
+    event_id bigint not null references events (id) on delete cascade,
+    equipment_id bigint not null references equipment (id) on delete restrict,
+    created_at timestamptz not null default now(),
+    constraint coordinator_requirement_reservations_event_item_key
+        unique (event_id, equipment_id)
+);
+
+create index idx_coordinator_requirement_reservations_requirement
+    on coordinator_requirement_reservations (requirement_id);
+
 -- ===== Attendance & comms =====
 
 create table registrations (

@@ -31,12 +31,14 @@ confirm what it did. Nothing here re-tests his rules.
 what the reservations add up to.
 """
 
+import itertools
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
 from app.core.roles import Role
+from app.core.security import create_access_token
 from app.models.enums import EquipmentStatus, EventStatus
 from app.models.equipment import (
     CoordinatorEquipmentRequirement,
@@ -44,6 +46,7 @@ from app.models.equipment import (
     RequirementReservationLink,
 )
 from app.models.events import Event
+from app.models.user import User
 from app.services.equipment_lines import replace_equipment_lines
 from tests.test_equipment_requirements import (
     INACTIVE,
@@ -51,7 +54,6 @@ from tests.test_equipment_requirements import (
     _equipment,
     _event,
     _organiser_line,
-    _user,
 )
 
 START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
@@ -61,6 +63,22 @@ END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_emails = itertools.count()
+
+
+def _user(client, db_session, role, name="Test User"):
+    """A user of `role`, and their headers -- made directly, not by
+    registering and logging in. Those hash a password with bcrypt each time,
+    and a test that needs four people would spend its whole time on it. The
+    token is the one /auth/login would have issued."""
+    user = User(
+        name=name, email=f"user{next(_emails)}@example.com", password_hash="x", role=role.value
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user, {"Authorization": f"Bearer {create_access_token(user.id, user.role)}"}
 
 
 def _world(client, db_session, needed=5, status=EventStatus.approved, **event_overrides):
@@ -280,6 +298,9 @@ def test_ur_ac1_his_stock_check_is_what_refuses_an_unavailable_quantity(client, 
         "Only 3 Scarce mic available for this event's date and time; 4 requested."
     )
     assert _lines(db_session, w.event) == [] and _links(db_session) == []
+    # The link was added before his function ran; it must not be left pending
+    # for the next request's commit to write.
+    assert not db_session.new
 
 
 def test_ur_ac1_stock_held_by_an_overlapping_event_is_not_reserved_again(client, db_session):

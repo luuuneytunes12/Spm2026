@@ -10,6 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.requirement_progress import RequirementProgress
 from app.models.enums import EquipmentStatus, EventStatus
 from app.schemas.event import OrganiserContact
 
@@ -42,8 +43,28 @@ class EquipmentRequirementUpdate(BaseModel):
     technical_notes: str | None = None
 
 
+class ReservedItemOut(BaseModel):
+    """One item reserved towards a requirement."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    equipment_id: int
+    equipment_name: str
+    quantity: int
+
+
+def _progress_fields(progress: RequirementProgress) -> dict:
+    """What a requirement's progress adds to either audience's response.
+    `status` is the effective one: Reserved is worked out, never stored."""
+    return {
+        "status": progress.status,
+        "reserved_quantity": progress.reserved,
+        "reservations": [ReservedItemOut.model_validate(item) for item in progress.reservations],
+    }
+
+
 class EquipmentRequirementOut(BaseModel):
-    """A requirement as its Coordinator sees it."""
+    """A requirement as its Coordinator sees it, with how far it has got."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,15 +75,22 @@ class EquipmentRequirementOut(BaseModel):
     quantity_needed: int
     technical_notes: str | None
     status: EquipmentStatus
+    reserved_quantity: int = 0
+    reservations: list[ReservedItemOut] = []
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def of(cls, requirement, progress: RequirementProgress) -> "EquipmentRequirementOut":
+        return cls.model_validate(requirement).model_copy(update=_progress_fields(progress))
 
 
 class SupportRequirementOut(BaseModel):
     """A requirement as Technical Support sees it.
 
     No author and no link to the Organiser's pick: that is the Coordinator's
-    own bookkeeping.
+    own bookkeeping. Progress is shared with the Coordinator, so the two
+    never read different figures.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -72,6 +100,36 @@ class SupportRequirementOut(BaseModel):
     quantity_needed: int
     technical_notes: str | None
     status: EquipmentStatus
+    reserved_quantity: int = 0
+    reservations: list[ReservedItemOut] = []
+
+    @classmethod
+    def of(cls, requirement, progress: RequirementProgress) -> "SupportRequirementOut":
+        return cls.model_validate(requirement).model_copy(update=_progress_fields(progress))
+
+
+class SupportRequirementUpdate(BaseModel):
+    """What Technical Support may change on a requirement.
+
+    Only these two. The type and the notes are the Coordinator's, and a field
+    sent for them is ignored. `status` is checked by the domain: reserved
+    cannot be chosen, because it has to be backed by a real reservation.
+    """
+
+    status: EquipmentStatus | None = None
+    quantity_needed: int | None = Field(default=None, gt=0)
+
+
+class ReservationRequest(BaseModel):
+    """Reserve `equipment_id` for a requirement.
+
+    `quantity` may be left out: it defaults to what the requirement still
+    needs, or -- for an item the Organiser asked for -- to their quantity,
+    which the existing reservation takes whole.
+    """
+
+    equipment_id: int
+    quantity: int | None = Field(default=None, ge=1)
 
 
 class SupportEventSummary(BaseModel):
