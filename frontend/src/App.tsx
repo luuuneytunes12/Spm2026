@@ -10,6 +10,7 @@ import { Notifications } from './pages/Notifications'
 import { Profile } from './pages/Profile'
 import { Register } from './pages/Register'
 import { EquipmentCatalogue } from './pages/equipment/EquipmentCatalogue'
+import { EquipmentReservations } from './pages/equipment/EquipmentReservations'
 import { AssignedEvents } from './pages/events/AssignedEvents'
 import { AssignedEventView } from './pages/events/AssignedEventView'
 import { EventForm } from './pages/events/EventForm'
@@ -75,6 +76,7 @@ function App() {
                 page. When it does, this guard takes a second role and the
                 URL stays correct. */}
             <Route path="/equipment" element={<EquipmentCatalogue />} />
+            <Route path="/equipment/reservations" element={<EquipmentReservations />} />
           </Route>
           <Route element={<RequireRole roles={[Role.ATTENDEE]} />}>
             <Route path="/attendee" element={<Attendee />} />

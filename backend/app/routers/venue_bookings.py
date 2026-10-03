@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
-from app.models.enums import BookingStatus, EventStatus
+from app.models.enums import PLANNED_EVENT_STATUSES, BookingStatus
 from app.models.events import Event
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
@@ -16,13 +16,8 @@ from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut, Venue
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
 # A venue is requested once the event has been approved: the story sits
-# between approval and event day. Anything earlier is not yet a plan, and a
-# rejected, completed or cancelled event has nothing left to book.
-BOOKABLE_EVENT_STATUSES = (
-    EventStatus.approved,
-    EventStatus.planning,
-    EventStatus.confirmed,
-)
+# between approval and event day.
+BOOKABLE_EVENT_STATUSES = PLANNED_EVENT_STATUSES
 
 # A request that is still live: a second one for the same event would be a
 # double-click or a misunderstanding. A rejected or cancelled one is history,

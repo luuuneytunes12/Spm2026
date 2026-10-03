@@ -9,6 +9,8 @@ be traced to the test that proves it (see the S4 AC markers in the
 docstrings, and docs/test-cases-tech-support-equipment-catalogue.md).
 """
 
+from datetime import datetime, timedelta, timezone
+
 from app.core.roles import Role
 from app.models.enums import EquipmentOperationalStatus, EquipmentStatus
 from app.models.equipment import Equipment, EquipmentRequest
@@ -67,11 +69,12 @@ def _equipment(db_session, name, **overrides) -> Equipment:
     return item
 
 
-def _reserve(db_session, item, quantity, status=EquipmentStatus.reserved):
+def _reserve(db_session, item, quantity, status=EquipmentStatus.reserved, ends=None):
     """Attach an equipment request to a throwaway event.
 
     equipment_requests.event_id is NOT NULL, so a request needs an event to
-    hang off; nothing here reads the event back.
+    hang off. The event ends in the future unless `ends` says otherwise --
+    reserved stock is freed at its event's end time.
     """
     organiser = User(
         name="Organiser",
@@ -82,7 +85,11 @@ def _reserve(db_session, item, quantity, status=EquipmentStatus.reserved):
     db_session.add(organiser)
     db_session.flush()
 
-    event = Event(name="Some event", organiser_id=organiser.id)
+    event = Event(
+        name="Some event",
+        organiser_id=organiser.id,
+        proposed_end=ends or datetime.now(timezone.utc) + timedelta(days=1),
+    )
     db_session.add(event)
     db_session.flush()
 
@@ -210,6 +217,18 @@ def test_only_reserved_requests_reduce_availability(client, db_session):
     row = client.get("/equipment", headers=headers).json()["items"][0]
 
     assert row["available_quantity"] == 6
+
+
+def test_stock_reserved_for_an_event_that_has_ended_is_available_again(client, db_session):
+    """S4 AC2: reserved stock is freed at its event's end time."""
+    headers = _tech_support(client, db_session)
+    item = _equipment(db_session, "Projector", total_quantity=6)
+    _reserve(db_session, item, 2)
+    _reserve(db_session, item, 3, ends=datetime.now(timezone.utc) - timedelta(hours=1))
+
+    row = client.get("/equipment", headers=headers).json()["items"][0]
+
+    assert row["available_quantity"] == 4
 
 
 def test_a_non_operational_item_reports_nothing_available(client, db_session):

@@ -65,9 +65,14 @@ export function Sidebar({ id, open }: SidebarProps) {
             </Item>
           )}
           {user.role === Role.TECH_SUPPORT && (
-            <Item to="/equipment" icon="equipment">
-              Equipment Catalogue
-            </Item>
+            <>
+              <Item to="/equipment" icon="equipment" end>
+                Equipment Catalogue
+              </Item>
+              <Item to="/equipment/reservations" icon="list">
+                Equipment Reservations
+              </Item>
+            </>
           )}
           {user.role === Role.ATTENDEE && (
             <>

@@ -116,6 +116,12 @@ export const ROLE_LANDING: Record<Role, RoleLandingConfig> = {
         to: '/equipment',
         icon: 'equipment',
       },
+      {
+        title: 'Equipment Reservations',
+        description: 'See which equipment is reserved for events.',
+        to: '/equipment/reservations',
+        icon: 'list',
+      },
       NOTIFICATIONS,
       PROFILE,
     ],
