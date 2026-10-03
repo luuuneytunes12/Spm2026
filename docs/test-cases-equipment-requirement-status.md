@@ -23,7 +23,7 @@ Suggested wording for Jira, so the criteria say what is built:
 
 - **AC1:** *"…update the status of each requirement. **Reserved** is set by
   reserving real equipment for it (through Equipment Reservations); I can also
-  mark it **Reviewing** or **Unavailable**."* A requirement is never *marked*
+  mark it **In review** or **Unavailable**."* A requirement is never *marked*
   reserved by hand.
 - **AC2:** *"…update the **quantity needed**, not below what is already
   reserved."*
@@ -48,13 +48,13 @@ cd backend  && uv run pytest tests/test_requirement_reservation_atomicity.py \
                              tests/test_equipment_requirement_fulfillment.py
 cd frontend && npx vitest run src/lib/equipmentRequirements.test.ts \
                               src/components/EquipmentRequirementItem.test.tsx \
-                              src/components/RequirementStatusEditor.test.tsx \
-                              src/components/RequirementReservePanel.test.tsx \
+                              src/components/RequirementManagePanel.test.tsx \
                               src/pages/equipment/EquipmentRequirementsRecord.test.tsx \
                               src/components/EquipmentRequirementsSection.test.tsx
 ```
 
-**147 pytest · 77 Vitest added (and the Story A card/record tests extended) · 1 manual script.**
+**147 pytest · 477 Vitest in the frontend suite (364 before this story; the Story A card and
+record tests are extended) · 1 manual script.**
 No Playwright. Ercong's reservation tests
 (`test_equipment_reservations.py`) run **unchanged** as the regression guard.
 
@@ -122,16 +122,16 @@ That is the reason for refusing it, and for the protections below.
 
 ### Status: reserved is worked out, Unavailable is `rejected`
 
-| Reserved vs needed | Status everyone sees |
+| Reserved vs needed | What the screen says (one wording, on both sides) |
 |---|---|
-| all of it | **Reserved** (worked out — never stored, never selectable) |
-| some of it | **Reviewing**, with "3 of 5 reserved" |
-| none | what Technical Support set: **Requested**, **Reviewing** or **Unavailable** |
+| all of it | **Reserved — 5 of 5** (worked out — never stored, never selectable) |
+| some of it | **In progress — 3 of 5 reserved** (stored and sent as `reviewing`) |
+| none | what Technical Support set: **Requested**, **In review** or **Unavailable** |
 
 - **Unavailable** is the stored `rejected`. The status enum is shared with the
   Organiser's equipment requests, so no value is added for one feature; it is
   *shown* as Unavailable (W1 p11's word).
-- Technical Support can set only **Requested / Reviewing / Unavailable**.
+- Technical Support can set only **Requested / In review / Unavailable**.
   `reserved` is refused with a reason; `cancelled` belongs to the event.
 - **Unavailable** cannot be set while anything is reserved, and reserving
   against an Unavailable requirement moves it to Reviewing.
@@ -140,7 +140,14 @@ Tested by `…reserved_and_cancelled_cannot_be_set_by_hand` ·
 `…unavailable_is_the_stored_rejected_value` · `…unavailable_cannot_be_set_once_something_is_reserved` ·
 `…reserving_clears_an_unavailable_outcome` · `…a_status_set_by_hand_does_not_hide_what_is_reserved` ·
 `test_the_effective_status_follows_the_reservations` (nine cases) ·
-`test_reserved_is_never_taken_from_what_was_stored`; on screen, *shows rejected as Unavailable*.
+`test_reserved_is_never_taken_from_what_was_stored`; on screen, *shows rejected as Unavailable* and
+`requirementStatusText` (the wording above).
+
+**An item with nothing free does not make the requirement Unavailable.** One
+catalogue item being fully booked says nothing about another item of the same
+type, so the panel shows "0 of 10 … available" and suggests choosing another
+item; marking a requirement Unavailable is always Technical Support's own
+choice (*does not mark the requirement Unavailable by itself*).
 
 ### What the Coordinator may still do once equipment is reserved
 
@@ -153,6 +160,32 @@ Tested by `…reserved_and_cancelled_cannot_be_set_by_hand` ·
 
 This replaces Story A's *"no post-reservation rules"*. The card does not offer
 Remove, and locks the type, where the server would refuse.
+
+### One panel on the screen, two responsibilities underneath
+
+Technical Support sees **one action per requirement — Manage requirement**. It
+opens a single panel with the whole task, in the order it is done:
+
+1. **What the requirement is** — type, `5 needed · 3 reserved · 2 remaining`
+   (three separate figures), its status, the Coordinator's technical notes, the
+   event's date and time.
+2. **Requirement** — the status (Requested / In review / Unavailable) and the
+   quantity needed, where allowed; **Save changes**.
+3. **Reserve equipment** — the exact catalogue item (of the requirement's type
+   only), its **availability, checked as soon as it is chosen** through Ercong's
+   existing endpoint and shown inline, the quantity, and **Reserve**.
+
+The event, the type and the date and time are known from the requirement, so
+none is asked for again; the item is Technical Support's choice. **Reserve
+stays disabled** while the reservation would be refused: no item yet, the check
+still running, fewer free than would be reserved, more than the requirement
+still needs, a quantity below one, or the Organiser's whole quantity exceeding
+what is needed. If the availability *check itself* fails, only what is known is
+held back and the server decides.
+
+In the backend the two are still separate — managing the request and reserving
+are different responsibilities, and the reservation is Ercong's. Only the
+screen joins them. Ercong's **Equipment Reservations** page is unchanged.
 
 ### Other rules
 
@@ -224,9 +257,15 @@ blocked, …) were each caught by a failing test.
 | Only Technical Support (4 other roles) · anonymous · outside the window (7 statuses) · unknown requirement — for **both** endpoints | pytest (API) |
 | Effective status (9 cases) · reserved never believed from storage · statuses Technical Support may set · reserve rules (delegation, default quantity, type, over-fill ×3, refusal leaves nothing, clears Unavailable, window, unknown) | pytest (unit) |
 | The link commits with the reservation · a refusal leaves no link · a failed link stops the reservation · his function's signature | pytest (unit) |
-| Editor: offers the three statuses, never Reserved · Unavailable shown · replaced by an explanation once reserved · sends only what changed · hands the server's answer back · nothing to save until changed · server reason and stays open · cancel | Vitest |
-| Panel: type-filtered items · needs, window, still-to-reserve · no event/type/date fields · quantity defaults to what is needed · Organiser's quantity shown and not asked · check availability (his endpoint, the event's window; enough / only N) · reserve (quantity, none for the Organiser's item) · confirmation and reset · his refusal in his words · no date · fully reserved · no undo · close | Vitest |
-| Record page: Reserve equipment and Update on each requirement, none without one · panel given this requirement and event, under its row · the row shows the new progress at once · one panel at a time · no release control · Unavailable shown | Vitest |
+| Manage panel, one workflow: a single region · requirement and reservation together · no separate Update / Reserve equipment buttons | Vitest |
+| Manage panel, context: type · needed / reserved / remaining as three figures (also `0 reserved`) · status from the reservations · technical notes (or None) · event date and time · does not ask for the event, type or dates | Vitest |
+| Manage panel, status and quantity: Requested / In review / Unavailable with the current one chosen · never Reserved · not a choice once reserved · quantity starts at needed, minimum is what is reserved · nothing to save until changed · sends only what changed · In review · Unavailable · hands the answer back, stays open, "Changes saved." · refuses below one and below reserved without calling · server's reason · unreachable server | Vitest |
+| Manage panel, equipment: only the requirement's type · the Organiser's item marked · availability **checked as soon as an item is chosen**, with that event's window · **no Check availability button** · not before anything is chosen · result inline · enough / only N, with "another item" · re-checks for the next item · "checking" while it waits · server's reason when the check fails | Vitest |
+| Manage panel, an item with nothing free: says none free and suggests another · **does not mark Unavailable by itself** · other items stay choosable | Vitest |
+| Manage panel, quantity and Reserve: starts at what is needed · the Organiser's quantity whole and not asked · compared with what is free · Reserve **disabled** before an item, while checking, short of stock, none free, over what is needed (and says so), below one, the Organiser's whole quantity over what is needed · enabled when enough is free, for a smaller quantity that fits, and when the check itself failed | Vitest |
+| Manage panel, reserving: item and quantity sent · none for the Organiser's item · confirmation and reset · his refusal in his words · unreachable server · no release or undo | Vitest |
+| Manage panel, cannot reserve yet: no date and time (status and quantity still manageable) · fully reserved (quantity can still be raised) · close | Vitest |
+| Record page: one **Manage requirement** action per requirement and nothing else to press · no separate Reserve equipment / Update · none without a requirement · panel given this requirement and event, under its row · In progress / Reserved shown at once · saved status and quantity shown at once · stays open after a change · closes · Manage again closes it (`aria-expanded`) · one panel at a time · no release control · Unavailable shown · progress and reserved items shown | Vitest |
 
 ### UR AC2 — update the quantity
 
@@ -243,9 +282,9 @@ blocked, …) were each caught by a failing test.
 | Test | Level |
 |---|---|
 | A status set by Technical Support is visible · a changed quantity is visible · the Coordinator sees what is reserved and how far · fully reserved reads Reserved · Technical Support and the Coordinator read **the same** progress · a new requirement reads Requested with nothing reserved · add and edit answer with the progress | pytest (API) |
-| Card: progress and what is reserved ("3 of 6 reserved", "3 × Shure BLX24") · Reserved when all of it is · Unavailable shown · Remove withdrawn once reserved, kept otherwise · still editable · type locked and says why · server's reason when it refuses a removal | Vitest |
-| Shared row: needed and status · rejected as Unavailable · progress and items · fully reserved · an older response still renders | Vitest |
-| Labels and helpers: *Reviewing*, *Unavailable*, `progressText`, the options Technical Support may set (never Reserved), the two client calls | Vitest |
+| Card: **In progress — 3 of 6 reserved** and what is reserved ("3 × Shure BLX24") · **Reserved — 6 of 6** when all of it is · Unavailable shown · Remove withdrawn once reserved, kept otherwise · still editable · type locked and says why · server's reason when it refuses a removal | Vitest |
+| Shared row: needed and status · In review · Unavailable · **In progress — 3 of 5 reserved** · progress said once, in the status · items named · **Reserved — 5 of 5** · an older response still renders · a panel beneath | Vitest |
+| Labels and helpers: *In review*, *Unavailable*, `requirementStatusText` (stored status at 0, In progress, Reserved, follows the figures, over-reserved), the options Technical Support may set (never Reserved), the two client calls | Vitest |
 
 ## Manual test — TC-UR-M1
 
@@ -256,26 +295,34 @@ with at least two items of one type.
 | # | Step | Expected |
 |---|---|---|
 | 1 | As the Coordinator, open the approved event → **Equipment Requirements** → add **Audio**, quantity `5` | The row reads **Requested**, with no progress line |
-| 2 | As Technical Support → **Equipment Requirements** → open the event | The Audio row shows **× 5**, **Requested**, and **Reserve equipment** and **Update** |
-| 3 | **Update** → Status **Reviewing** → **Save changes** | The row reads **Reviewing** |
-| 4 | **Update** → Status **Unavailable** → **Save changes** | The row reads **Unavailable** |
-| 5 | As the Coordinator, reload the event | The Audio row reads **Unavailable** (UR AC3) |
-| 6 | As Technical Support, **Reserve equipment** | The panel names the event's date and time, offers only **Audio** items, and asks only for the item and a quantity |
-| 7 | Choose an item the Organiser did not ask for | **Quantity to reserve** starts at `5` |
-| 8 | **Check availability** | "*x* of *y* … available for …" and "Enough for the 5 to reserve" (or "Only *n* available") |
-| 9 | Set the quantity to `3` → **Reserve** | "Reserved 3 × …". The row reads **Reviewing**, **3 of 5 reserved**, with the item named; Unavailable is gone |
-| 10 | Open **Equipment Reservations** (the global page) → choose the event | The **same** 3 × item is listed under *Reserved for …* — one reservation, not two |
-| 11 | **Reserve equipment** → another Audio item, quantity left at `2` → **Reserve** | The row reads **Reserved**, **5 of 5 reserved**, both items named |
-| 12 | **Update** → quantity `4` → **Save changes** | Refused: "5 already reserved; the quantity needed cannot be less than that." |
-| 13 | **Update** → quantity `6` | The row reads **Reviewing**, **5 of 6 reserved** |
-| 14 | As the Coordinator, reload | The same row. No **Remove**. **Edit**: the type is locked and says why, the minimum quantity is 5, the notes can be changed |
-| 15 | Add a second **Audio** requirement of `2`, with the Organiser having asked for a microphone × 4 → **Reserve equipment** → that microphone | Refused: "This event asked for 4 …, and a reservation takes that whole quantity; this requirement needs only 2 more." Nothing is reserved |
-| 16 | Open an event with **no date** | Reserve equipment says it has no date and time, and offers nothing to press |
+| 2 | As Technical Support → **Equipment Requirements** → open the event | The Audio row shows **× 5**, **Requested**, and one action: **Manage requirement** |
+| 3 | **Manage requirement** | One panel opens under the row: **Audio**, *5 needed · 0 reserved · 5 remaining*, the status, the Coordinator's notes and the event's date and time. It does **not** ask for the event, the type or the dates |
+| 4 | **Requirement** → Status **In review** → **Save changes** | "Changes saved."; the row reads **In review** and the panel stays open |
+| 5 | Status **Unavailable** → **Save changes** | The row reads **Unavailable**. As the Coordinator, reload the event: the Audio row reads **Unavailable** (UR AC3) |
+| 6 | Back in the panel → **Equipment** | Only **Audio** items are listed, the Organiser's own marked. There is no Check availability button |
+| 7 | Choose an item the Organiser did not ask for | Availability appears **by itself**: "*x* of *y* … available for …" and "Enough for the 5 to reserve" (or "Only *n* available … You can choose another Audio item"). **Quantity to reserve** starts at `5` |
+| 8 | Choose an item with **nothing free** (if there is one) | "0 of *y* … available". **Reserve** is disabled, and the requirement is **not** marked Unavailable — another item can still be chosen |
+| 9 | Choose an item with enough free, set the quantity to `3` → **Reserve** | "Reserved 3 × …". The row reads **In progress — 3 of 5 reserved** with the item named; the panel reads *5 needed · 3 reserved · 2 remaining*; Unavailable is gone; the Status choice has been replaced by "The status follows the reservations" |
+| 10 | Open **Equipment Reservations** (the global page) → choose the event | The **same** 3 × item is listed under *Reserved for …* — one reservation, not two. That page looks and behaves exactly as before |
+| 11 | Choose another Audio item, quantity left at `2` → **Reserve** | The row reads **Reserved — 5 of 5**, both items named. The panel says it is fully reserved |
+| 12 | Set **Quantity needed** to `4` → **Save changes** | Refused: "5 already reserved; the quantity needed cannot be less than that." |
+| 13 | Set it to `6` → **Save changes** | The row reads **In progress — 5 of 6 reserved**, and **Reserve equipment** is available again for the 1 remaining |
+| 14 | As the Coordinator, reload | The same row and wording. No **Remove**. **Edit**: the type is locked and says why, the minimum quantity is 5, the notes can be changed |
+| 15 | Add a second **Audio** requirement of `2`, with the Organiser having asked for a microphone × 4 → **Manage requirement** → choose that microphone | **Reserve** is disabled, with "The Organiser asked for 4, and a reservation takes that whole quantity; this requirement needs only 2 more." Nothing can be reserved |
+| 16 | Open an event with **no date** → **Manage requirement** | **Reserve equipment** says it has no date and time and offers no equipment; the status and quantity can still be changed |
 | 17 | As the Organiser, open the event | No requirements, no progress, no reservation detail anywhere |
 | 18 | Toggle dark mode | Panel, editor and progress stay legible |
 
 ## Note for the Week 13 Q&A
 
+- **Why one Manage panel, and not separate Update and Reserve buttons?** The
+  backend keeps *managing a request* and *reserving* as separate
+  responsibilities, but to the person at the screen it is one job: look at what
+  is needed, choose the item, see whether it is free, reserve it. One panel
+  follows that job; the two responsibilities stay separate underneath.
+- **Why does an item with nothing free not mark the requirement Unavailable?**
+  Another item of the same type may do. Unavailable is Technical Support's
+  call, not a side effect of one item being booked.
 - **Why does Technical Support reserve from the requirement and not only from
   the Equipment Reservations page?** Because the three responsibilities —
   *recording* what an event needs, *checking* availability, and *reserving* —
