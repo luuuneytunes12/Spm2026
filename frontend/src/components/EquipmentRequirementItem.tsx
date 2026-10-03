@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { progressText, requirementStatusLabel } from '../lib/equipmentRequirements'
+import { requirementStatusText } from '../lib/equipmentRequirements'
 import type { ReservedItem } from '../lib/equipmentRequirements'
 
 interface Props {
@@ -39,13 +39,11 @@ export function EquipmentRequirementItem({
   actions,
   panel,
 }: Props) {
-  const progress = progressText(reserved, quantity)
   return (
     <li className="requirement">
       <div className="requirement-main">
         <span className="requirement-title">{category}</span>
         {notes && <span className="request-meta">{notes}</span>}
-        {progress && <span className="requirement-progress">{progress}</span>}
         {reservations.length > 0 && (
           <span className="request-meta">
             {reservations.map((item) => `${item.quantity} \u00d7 ${item.equipment_name}`).join(', ')}
@@ -57,7 +55,7 @@ export function EquipmentRequirementItem({
         {/* Quantity as a chip so it reads as a number against the type
             rather than running into it as prose. */}
         <span className="chip">&times; {quantity}</span>
-        <span className="badge badge-muted">{requirementStatusLabel(status)}</span>
+        <span className="badge badge-muted">{requirementStatusText(status, reserved, quantity)}</span>
         {actions}
       </div>
       {panel}

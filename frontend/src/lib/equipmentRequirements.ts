@@ -34,7 +34,7 @@ export function canRecordEquipment(status: EventStatus): boolean {
  *  (W1: equipment "found to be unavailable"). */
 export const REQUIREMENT_STATUS_LABELS: Record<string, string> = {
   requested: 'Requested',
-  reviewing: 'Reviewing',
+  reviewing: 'In review',
   reserved: 'Reserved',
   rejected: 'Unavailable',
   cancelled: 'Cancelled',
@@ -53,10 +53,20 @@ export const TECH_SUPPORT_STATUS_OPTIONS: readonly { value: string; label: strin
   { value: 'rejected', label: REQUIREMENT_STATUS_LABELS.rejected },
 ]
 
-/** "3 of 5 reserved", or null while nothing is. What is needed and what is
- *  reserved stay two numbers: 5 needed / 3 reserved is a normal state. */
-export function progressText(reserved: number, needed: number): string | null {
-  return reserved > 0 ? `${reserved} of ${needed} reserved` : null
+/** What a requirement's status reads as, on every screen that shows one.
+ *
+ *  With nothing reserved it is the status Technical Support set (Requested,
+ *  In review, Unavailable). Once something is reserved it follows the
+ *  reservations, and says how far: "In progress \u2014 3 of 5 reserved", then
+ *  "Reserved \u2014 5 of 5". What is needed and what is reserved stay two
+ *  numbers: 5 needed / 3 reserved is a normal state.
+ *
+ *  The figures decide, not the label sent with them. The server already works
+ *  Reserved out from the reservations; this only gives it its wording. */
+export function requirementStatusText(status: string, reserved: number, needed: number): string {
+  if (reserved > 0 && reserved >= needed) return `Reserved \u2014 ${reserved} of ${needed}`
+  if (reserved > 0) return `In progress \u2014 ${reserved} of ${needed} reserved`
+  return requirementStatusLabel(status)
 }
 
 /** One item reserved towards a requirement. */

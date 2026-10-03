@@ -339,6 +339,20 @@ describe('managing a requirement from the record', () => {
     expect(screen.getAllByText('Requested')).toHaveLength(2)
   })
 
+  it('closes the panel when Manage is pressed again, and says whether it is open', async () => {
+    const user = userEvent.setup()
+    await openRecord()
+    const manage = screen.getByRole('button', { name: 'Manage Audio requirement' })
+    expect(manage).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(manage)
+    expect(manage).toHaveAttribute('aria-expanded', 'true')
+    await user.click(manage)
+
+    expect(screen.queryByRole('region', { name: 'Manage panel' })).not.toBeInTheDocument()
+    expect(manage).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('has one panel open at a time', async () => {
     const user = userEvent.setup()
     await openRecord()
@@ -368,5 +382,33 @@ describe('managing a requirement from the record', () => {
     expect(
       screen.queryByRole('button', { name: /release|unreserve|cancel reservation|undo/i }),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('an event that cannot be shown', () => {
+  it('says so for an event that does not exist or is not yet approved', async () => {
+    mockGet.mockRejectedValue(new ApiError(404, 'Event not found'))
+    renderPage('999')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Event not found')
+    expect(screen.queryByRole('list', { name: 'Equipment requirements' })).not.toBeInTheDocument()
+  })
+
+  it('still offers a way back from an event that is not found', async () => {
+    mockGet.mockRejectedValue(new ApiError(404, 'Event not found'))
+    renderPage('999')
+
+    await screen.findByRole('alert')
+    expect(screen.getByRole('link', { name: /equipment requirements/i })).toHaveAttribute(
+      'href',
+      '/equipment-requirements',
+    )
+  })
+
+  it('says something useful when the server cannot be reached', async () => {
+    mockGet.mockRejectedValue(new Error('network down'))
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not/i)
   })
 })

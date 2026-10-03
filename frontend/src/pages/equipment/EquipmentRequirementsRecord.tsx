@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentRequirementItem } from '../../components/EquipmentRequirementItem'
-import { RequirementReservePanel } from '../../components/RequirementReservePanel'
-import { RequirementStatusEditor } from '../../components/RequirementStatusEditor'
+import { RequirementManagePanel } from '../../components/RequirementManagePanel'
 import { ApiError } from '../../lib/api'
 import { EVENT_STATUS_LABELS, formatRange } from '../../lib/events'
 import { getSupportEvent } from '../../lib/equipmentRequirements'
@@ -22,13 +21,11 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 // Plain link, worded like the other "back" links in the app.
 const BACK = <Link to="/equipment-requirements">← Back to equipment requirements</Link>
 
-/** A panel opened on one requirement. Only one is open at a time. */
-type OpenPanel = { id: number; kind: 'reserve' | 'update' }
-
 /** An event as Technical Support sees it: enough to judge what the equipment
  *  is for, and every requirement its Coordinator has recorded -- each with
- *  how far it has got, and the two things Technical Support can do to it:
- *  reserve equipment for it, and update its status or quantity.
+ *  how far it has got, and one action: Manage requirement. That opens a single
+ *  panel for the whole task -- its status and quantity, the exact equipment,
+ *  its availability and the reservation.
  *
  *  This is the work queue. Reserving from here uses the existing Equipment
  *  Reservations, with the event, the type and the date and time already
@@ -41,7 +38,8 @@ export function EquipmentRequirementsRecord() {
   const id = Number(eventId)
   const [record, setRecord] = useState<SupportEventRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [open, setOpen] = useState<OpenPanel | null>(null)
+  // The requirement whose panel is open. Only one is open at a time.
+  const [openId, setOpenId] = useState<number | null>(null)
 
   /** A requirement as the server now holds it, in place of the one shown. */
   function replace(updated: SupportRequirement) {
@@ -129,44 +127,25 @@ export function EquipmentRequirementsRecord() {
                 reserved={requirement.reserved_quantity}
                 reservations={requirement.reservations}
                 actions={
-                  <>
-                    <button
-                      type="button"
-                      className="btn-link-muted"
-                      aria-label={`Reserve equipment for ${requirement.category} requirement`}
-                      onClick={() => setOpen({ id: requirement.id, kind: 'reserve' })}
-                    >
-                      Reserve equipment
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-link-muted"
-                      aria-label={`Update ${requirement.category} requirement`}
-                      onClick={() => setOpen({ id: requirement.id, kind: 'update' })}
-                    >
-                      Update
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    aria-label={`Manage ${requirement.category} requirement`}
+                    aria-expanded={openId === requirement.id}
+                    onClick={() => setOpenId(openId === requirement.id ? null : requirement.id)}
+                  >
+                    Manage requirement
+                  </button>
                 }
                 panel={
-                  open?.id === requirement.id &&
-                  (open.kind === 'reserve' ? (
-                    <RequirementReservePanel
+                  openId === requirement.id && (
+                    <RequirementManagePanel
                       requirement={requirement}
                       event={record}
-                      onReserved={replace}
-                      onClose={() => setOpen(null)}
+                      onChanged={replace}
+                      onClose={() => setOpenId(null)}
                     />
-                  ) : (
-                    <RequirementStatusEditor
-                      requirement={requirement}
-                      onSaved={(updated) => {
-                        replace(updated)
-                        setOpen(null)
-                      }}
-                      onCancel={() => setOpen(null)}
-                    />
-                  ))
+                  )
                 }
               />
             ))}
