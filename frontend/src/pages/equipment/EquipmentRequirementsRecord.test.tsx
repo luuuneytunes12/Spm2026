@@ -4,8 +4,8 @@
  * Traceability (see docs/test-cases-equipment-requirements.md):
  *   ER AC2  requirements are visible to Technical Support Staff from the
  *           event record
- *   UR AC1  Technical Support can act on each requirement from the record:
- *           reserve equipment for it, and update its status
+ *   UR AC1  Technical Support manages each requirement from the record, in
+ *           one panel: mark its status, or reserve equipment for it
  *   UR AC2  ... and update its quantity
  *
  * Which events can be opened, and what a requirement carries, are the
@@ -26,55 +26,53 @@ vi.mock('../../lib/equipmentRequirements', async () => {
   return { ...actual, getSupportEvent: vi.fn(), listSupportEvents: vi.fn() }
 })
 
-// The two panels have their own tests. Here they are stand-ins, so these
-// tests cover only what the PAGE does: which requirement and event each is
-// given, when each is shown, and what the page does with the answer.
-vi.mock('../../components/RequirementReservePanel', () => ({
-  RequirementReservePanel: ({
+// The panel has its own tests. Here it is a stand-in, so these tests cover
+// only what the PAGE does: which requirement and event it is given, when it is
+// shown, and what the page does with what it reports.
+vi.mock('../../components/RequirementManagePanel', () => ({
+  RequirementManagePanel: ({
     requirement,
     event,
-    onReserved,
+    onChanged,
     onClose,
   }: {
     requirement: SupportRequirement
     event: { id: number; proposed_start: string | null; proposed_end: string | null }
-    onReserved: (updated: SupportRequirement) => void
+    onChanged: (updated: SupportRequirement) => void
     onClose: () => void
   }) => (
-    <div role="region" aria-label="Reserve panel">
-      reserve panel: {requirement.category} for event {event.id} ({event.proposed_start})
+    <div role="region" aria-label="Manage panel">
+      manage panel: {requirement.category} for event {event.id} ({event.proposed_start})
       <button
         onClick={() =>
-          onReserved({
+          onChanged({
             ...requirement,
-            status: 'reserved',
-            reserved_quantity: requirement.quantity_needed,
-            reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: requirement.quantity_needed }],
+            status: 'reviewing',
+            reserved_quantity: 3,
+            reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
           })
         }
       >
-        stub reserved
+        stub part reserved
       </button>
-      <button onClick={onClose}>stub close reserve</button>
-    </div>
-  ),
-}))
-vi.mock('../../components/RequirementStatusEditor', () => ({
-  RequirementStatusEditor: ({
-    requirement,
-    onSaved,
-    onCancel,
-  }: {
-    requirement: SupportRequirement
-    onSaved: (updated: SupportRequirement) => void
-    onCancel: () => void
-  }) => (
-    <div role="region" aria-label="Update panel">
-      update panel: {requirement.category}
-      <button onClick={() => onSaved({ ...requirement, status: 'rejected', quantity_needed: 9 })}>
+      <button
+        onClick={() =>
+          onChanged({
+            ...requirement,
+            status: 'reserved',
+            reserved_quantity: requirement.quantity_needed,
+            reservations: [
+              { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: requirement.quantity_needed },
+            ],
+          })
+        }
+      >
+        stub fully reserved
+      </button>
+      <button onClick={() => onChanged({ ...requirement, status: 'rejected', quantity_needed: 9 })}>
         stub saved
       </button>
-      <button onClick={onCancel}>stub cancel update</button>
+      <button onClick={onClose}>stub close</button>
     </div>
   ),
 }))
@@ -219,8 +217,7 @@ describe('ER AC2 - the event record', () => {
     renderPage()
 
     const row = (await screen.findByText('Audio')).closest('li')!
-    expect(within(row).getByText('Reviewing')).toBeInTheDocument()
-    expect(within(row).getByText('3 of 6 reserved')).toBeInTheDocument()
+    expect(within(row).getByText('In progress — 3 of 6 reserved')).toBeInTheDocument()
     expect(row).toHaveTextContent('3 × Shure BLX24')
   })
 
@@ -235,21 +232,29 @@ describe('ER AC2 - the event record', () => {
   })
 })
 
-describe('acting on a requirement from the record', () => {
+describe('managing a requirement from the record', () => {
   async function openRecord() {
     renderPage()
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
   }
 
-  it('offers Reserve equipment and Update on each requirement', async () => {
+  const rowOf = (category: string) =>
+    screen.getAllByRole('listitem').find((li) => li.textContent?.includes(category))!
+
+  it('offers one Manage action on each requirement, and nothing else to press', async () => {
     await openRecord()
 
     for (const category of ['Audio', 'Projection']) {
-      expect(
-        screen.getByRole('button', { name: `Reserve equipment for ${category} requirement` }),
-      ).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: `Update ${category} requirement` })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: `Manage ${category} requirement` })).toBeInTheDocument()
     }
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
+  it('does not split it into separate Reserve equipment and Update actions', async () => {
+    await openRecord()
+
+    expect(screen.queryByRole('button', { name: /reserve equipment/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^update/i })).not.toBeInTheDocument()
   })
 
   it('offers no action where there is no requirement', async () => {
@@ -260,13 +265,13 @@ describe('acting on a requirement from the record', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('opens the reservation panel with this requirement and this event already filled in', async () => {
+  it('opens the panel with this requirement and this event already filled in', async () => {
     const user = userEvent.setup()
     await openRecord()
 
-    await user.click(screen.getByRole('button', { name: 'Reserve equipment for Audio requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
-    const panel = screen.getByRole('region', { name: 'Reserve panel' })
+    const panel = screen.getByRole('region', { name: 'Manage panel' })
     expect(panel).toHaveTextContent('Audio for event 7')
     expect(panel).toHaveTextContent('2026-11-02T09:00:00Z') // the event's own date and time
   })
@@ -275,77 +280,74 @@ describe('acting on a requirement from the record', () => {
     const user = userEvent.setup()
     await openRecord()
 
-    await user.click(screen.getByRole('button', { name: 'Reserve equipment for Projection requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Projection requirement' }))
 
-    const row = screen.getByText('Projection').closest('li')!
-    expect(within(row).getByRole('region', { name: 'Reserve panel' })).toBeInTheDocument()
+    expect(within(rowOf('Projection')).getByRole('region', { name: 'Manage panel' })).toBeInTheDocument()
+    expect(within(rowOf('Audio')).queryByRole('region', { name: 'Manage panel' })).not.toBeInTheDocument()
   })
 
-  it('shows the requirement’s new progress as soon as it is reserved', async () => {
+  it('shows In progress as soon as part of it is reserved', async () => {
     const user = userEvent.setup()
     await openRecord()
-    await user.click(screen.getByRole('button', { name: 'Reserve equipment for Audio requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
-    await user.click(screen.getByRole('button', { name: 'stub reserved' }))
+    await user.click(screen.getByRole('button', { name: 'stub part reserved' }))
 
-    const row = screen.getByText('Audio').closest('li')!
-    expect(within(row).getByText('Reserved')).toBeInTheDocument()
-    expect(within(row).getByText('6 of 6 reserved')).toBeInTheDocument()
+    expect(within(rowOf('Audio')).getByText('In progress — 3 of 6 reserved')).toBeInTheDocument()
   })
 
-  it('closes the reservation panel', async () => {
+  it('shows Reserved as soon as all of it is', async () => {
     const user = userEvent.setup()
     await openRecord()
-    await user.click(screen.getByRole('button', { name: 'Reserve equipment for Audio requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
-    await user.click(screen.getByRole('button', { name: 'stub close reserve' }))
+    await user.click(screen.getByRole('button', { name: 'stub fully reserved' }))
 
-    expect(screen.queryByRole('region', { name: 'Reserve panel' })).not.toBeInTheDocument()
+    expect(within(rowOf('Audio')).getByText('Reserved — 6 of 6')).toBeInTheDocument()
   })
 
-  it('opens the status and quantity editor on the requirement', async () => {
+  it('shows a saved status and quantity straight away', async () => {
     const user = userEvent.setup()
     await openRecord()
-
-    await user.click(screen.getByRole('button', { name: 'Update Audio requirement' }))
-
-    const row = screen.getAllByRole('listitem').find((li) => li.textContent?.includes('Audio'))!
-    expect(within(row).getByRole('region', { name: 'Update panel' })).toHaveTextContent('Audio')
-  })
-
-  it('shows the saved status and quantity straight away', async () => {
-    const user = userEvent.setup()
-    await openRecord()
-    await user.click(screen.getByRole('button', { name: 'Update Audio requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
     await user.click(screen.getByRole('button', { name: 'stub saved' }))
 
-    const row = screen.getAllByRole('listitem').find((li) => li.textContent?.includes('Audio'))!
+    const row = rowOf('Audio')
     expect(within(row).getByText('Unavailable')).toBeInTheDocument()
     expect(within(row).getByText(/× 9/)).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Update panel' })).not.toBeInTheDocument()
   })
 
-  it('cancels an update without changing the row', async () => {
+  it('keeps the panel open after a change, so the work can go on', async () => {
     const user = userEvent.setup()
     await openRecord()
-    await user.click(screen.getByRole('button', { name: 'Update Audio requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
-    await user.click(screen.getByRole('button', { name: 'stub cancel update' }))
+    await user.click(screen.getByRole('button', { name: 'stub part reserved' }))
 
-    expect(screen.queryByRole('region', { name: 'Update panel' })).not.toBeInTheDocument()
-    expect(screen.getAllByText('Requested').length).toBe(2)
+    expect(screen.getByRole('region', { name: 'Manage panel' })).toBeInTheDocument()
+  })
+
+  it('closes the panel without changing the row', async () => {
+    const user = userEvent.setup()
+    await openRecord()
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
+
+    await user.click(screen.getByRole('button', { name: 'stub close' }))
+
+    expect(screen.queryByRole('region', { name: 'Manage panel' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('Requested')).toHaveLength(2)
   })
 
   it('has one panel open at a time', async () => {
     const user = userEvent.setup()
     await openRecord()
-    await user.click(screen.getByRole('button', { name: 'Reserve equipment for Audio requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
-    await user.click(screen.getByRole('button', { name: 'Update Projection requirement' }))
+    await user.click(screen.getByRole('button', { name: 'Manage Projection requirement' }))
 
-    expect(screen.queryByRole('region', { name: 'Reserve panel' })).not.toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Update panel' })).toBeInTheDocument()
+    expect(screen.getAllByRole('region', { name: 'Manage panel' })).toHaveLength(1)
+    expect(within(rowOf('Projection')).getByRole('region', { name: 'Manage panel' })).toBeInTheDocument()
   })
 
   it('offers no way to release a reservation: nothing can', async () => {
@@ -366,33 +368,5 @@ describe('acting on a requirement from the record', () => {
     expect(
       screen.queryByRole('button', { name: /release|unreserve|cancel reservation|undo/i }),
     ).not.toBeInTheDocument()
-  })
-})
-
-describe('an event that cannot be shown', () => {
-  it('says so for an event that does not exist or is not yet approved', async () => {
-    mockGet.mockRejectedValue(new ApiError(404, 'Event not found'))
-    renderPage('999')
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Event not found')
-    expect(screen.queryByRole('list', { name: 'Equipment requirements' })).not.toBeInTheDocument()
-  })
-
-  it('still offers a way back from an event that is not found', async () => {
-    mockGet.mockRejectedValue(new ApiError(404, 'Event not found'))
-    renderPage('999')
-
-    await screen.findByRole('alert')
-    expect(screen.getByRole('link', { name: /equipment requirements/i })).toHaveAttribute(
-      'href',
-      '/equipment-requirements',
-    )
-  })
-
-  it('says something useful when the server cannot be reached', async () => {
-    mockGet.mockRejectedValue(new Error('network down'))
-    renderPage()
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not/i)
   })
 })

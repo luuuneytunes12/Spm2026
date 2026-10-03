@@ -792,8 +792,7 @@ describe('once Technical Support has reserved equipment', () => {
     renderSection()
 
     const row = (await recorded()).getByText('Audio').closest('li')!
-    expect(within(row).getByText('Reviewing')).toBeInTheDocument()
-    expect(within(row).getByText('3 of 6 reserved')).toBeInTheDocument()
+    expect(within(row).getByText('In progress — 3 of 6 reserved')).toBeInTheDocument()
     expect(within(row).getByText(/× 6/)).toBeInTheDocument()
     expect(row).toHaveTextContent('3 × Shure BLX24')
   })
@@ -810,8 +809,7 @@ describe('once Technical Support has reserved equipment', () => {
     renderSection()
 
     const row = (await recorded()).getByText('Audio').closest('li')!
-    expect(within(row).getByText('Reserved')).toBeInTheDocument()
-    expect(within(row).getByText('6 of 6 reserved')).toBeInTheDocument()
+    expect(within(row).getByText('Reserved — 6 of 6')).toBeInTheDocument()
   })
 
   it('shows Unavailable when Technical Support could not provide it', async () => {
@@ -910,7 +908,9 @@ describe('once Technical Support has reserved equipment', () => {
     await user.click(editor().getByRole('button', { name: 'Save changes' }))
 
     const row = (await recorded()).getByText('Audio').closest('li')!
-    await waitFor(() => expect(within(row).getByText('3 of 8 reserved')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(row).getByText('In progress — 3 of 8 reserved')).toBeInTheDocument(),
+    )
   })
 
   it('shows the server’s reason when it refuses to remove one', async () => {

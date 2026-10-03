@@ -13,8 +13,8 @@ import {
   EQUIPMENT_ACTIVE_STATUSES,
   TECH_SUPPORT_STATUS_OPTIONS,
   canRecordEquipment,
-  progressText,
   requirementStatusLabel,
+  requirementStatusText,
   reserveForRequirement,
   updateSupportRequirement,
 } from './equipmentRequirements'
@@ -57,7 +57,7 @@ describe('the status window', () => {
 describe('requirementStatusLabel', () => {
   it('reads a status the way a person would say it', () => {
     expect(requirementStatusLabel('requested')).toBe('Requested')
-    expect(requirementStatusLabel('reviewing')).toBe('Reviewing')
+    expect(requirementStatusLabel('reviewing')).toBe('In review')
     expect(requirementStatusLabel('reserved')).toBe('Reserved')
   })
 
@@ -72,26 +72,39 @@ describe('requirementStatusLabel', () => {
   })
 })
 
-describe('progressText', () => {
-  it('says how much of what is needed has been reserved', () => {
-    expect(progressText(3, 5)).toBe('3 of 5 reserved')
-    expect(progressText(5, 5)).toBe('5 of 5 reserved')
+describe('requirementStatusText', () => {
+  // One wording, used by every row on both sides, so a Coordinator and
+  // Technical Support never read the same requirement two ways.
+  it('is the stored status while nothing is reserved', () => {
+    expect(requirementStatusText('requested', 0, 5)).toBe('Requested')
+    expect(requirementStatusText('reviewing', 0, 5)).toBe('In review')
+    expect(requirementStatusText('rejected', 0, 5)).toBe('Unavailable')
   })
 
-  it('says nothing while nothing is reserved, rather than "0 of 5 reserved"', () => {
-    expect(progressText(0, 5)).toBeNull()
+  it('is In progress, with how much is reserved, once some of it is', () => {
+    expect(requirementStatusText('reviewing', 3, 5)).toBe('In progress \u2014 3 of 5 reserved')
+  })
+
+  it('is Reserved once all of it is', () => {
+    expect(requirementStatusText('reserved', 5, 5)).toBe('Reserved \u2014 5 of 5')
+  })
+
+  it('follows the reservations, not the label it was sent with', () => {
+    // The server already works Reserved out; the wording follows the figures.
+    expect(requirementStatusText('requested', 2, 5)).toBe('In progress \u2014 2 of 5 reserved')
+    expect(requirementStatusText('requested', 5, 5)).toBe('Reserved \u2014 5 of 5')
   })
 
   it('still reads honestly if more is reserved than is needed', () => {
-    expect(progressText(4, 2)).toBe('4 of 2 reserved')
+    expect(requirementStatusText('reserved', 4, 2)).toBe('Reserved \u2014 4 of 2')
   })
 })
 
 describe('TECH_SUPPORT_STATUS_OPTIONS', () => {
-  it('offers requested, reviewing and unavailable, in the words used on screen', () => {
+  it('offers Requested, In review and Unavailable, in the words used on screen', () => {
     expect(TECH_SUPPORT_STATUS_OPTIONS).toEqual([
       { value: 'requested', label: 'Requested' },
-      { value: 'reviewing', label: 'Reviewing' },
+      { value: 'reviewing', label: 'In review' },
       { value: 'rejected', label: 'Unavailable' },
     ])
   })
