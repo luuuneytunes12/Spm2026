@@ -163,6 +163,10 @@ line and the matching test cases flip.
 requirement past `requested`, reserving, the stock check, notifications, the
 reserved quantity, and what editing or removing a *reviewed* line does. Until
 then every requirement is `requested`, so add, edit and delete are plain.
+*(That story is now built: see
+[test-cases-equipment-requirement-status.md](test-cases-equipment-requirement-status.md),
+which also adds the rules for editing and removing a requirement once
+equipment is reserved for it.)*
 
 ### Object-oriented structure, and how it is tested
 

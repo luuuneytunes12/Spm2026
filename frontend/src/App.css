@@ -1805,3 +1805,21 @@
   color: var(--text);
 }
 
+/* How far a requirement has got: the one line of its detail that changes as
+   work is done, so it is set a little apart from the notes. */
+.requirement-progress {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* A panel opened on a row takes the whole row beneath it, tinted like the
+   editor so it reads as the one thing being worked on. */
+.requirement-panel {
+  flex: 1 1 100%;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+

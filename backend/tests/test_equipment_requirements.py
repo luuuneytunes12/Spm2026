@@ -800,7 +800,9 @@ def test_er_ac2_technical_support_receives_only_what_it_needs_of_a_requirement(
     client, db_session
 ):
     """The requirement as Technical Support sees it. No author, no link to
-    the Organiser's pick -- that is the Coordinator's bookkeeping."""
+    the Organiser's pick -- that is the Coordinator's bookkeeping. Progress
+    (reserved_quantity, reservations) was added by Update Equipment
+    Requirement Status; nothing of the Coordinator's own was."""
     w = _world(client, db_session)
     tech = _tech_support(client, db_session)
     _added(client, w.headers, w.event.id)
@@ -809,7 +811,10 @@ def test_er_ac2_technical_support_receives_only_what_it_needs_of_a_requirement(
         f"/equipment-requirements/support/events/{w.event.id}", headers=tech
     ).json()["requirements"][0]
 
-    assert set(requirement) == {"id", "category", "quantity_needed", "technical_notes", "status"}
+    assert set(requirement) == {
+        "id", "category", "quantity_needed", "technical_notes", "status",
+        "reserved_quantity", "reservations",
+    }
 
 
 def test_er_ac2_the_event_record_does_not_leak_the_coordinators_password_hash(

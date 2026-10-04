@@ -25,6 +25,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, InvalidInput, NotFound
+from app.domain.requirement_progress import RequirementReservationLinks, checked_quantity
 from app.models.enums import EventStatus
 from app.models.equipment import CoordinatorEquipmentRequirement, Equipment, EquipmentRequest
 from app.models.events import Event
@@ -100,9 +101,17 @@ class EquipmentRequirementService:
     stricter resolver later -- without touching this class.
     """
 
-    def __init__(self, db: Session, categories: CategoryResolver | None = None) -> None:
+    def __init__(
+        self,
+        db: Session,
+        categories: CategoryResolver | None = None,
+        links: RequirementReservationLinks | None = None,
+    ) -> None:
         self._db = db
         self._categories = categories if categories is not None else CatalogueCategories(db)
+        # How much of a requirement is reserved, for the rules that protect it
+        # once Technical Support has reserved equipment against it.
+        self._links = links if links is not None else RequirementReservationLinks(db)
 
     # --- commands -----------------------------------------------------------
 
@@ -142,11 +151,25 @@ class EquipmentRequirementService:
 
         requirement, event = self._own_requirement(requirement_id, coordinator_id)
         self._ensure_recordable(event)
+        progress = self._links.progress_for(requirement)
 
         if "category" in changes:
-            requirement.category = self._checked_category(changes["category"])
+            category = self._checked_category(changes["category"])
+            # There is no way to give a reservation back, so once equipment is
+            # reserved the type it was reserved as cannot be changed under it.
+            # Sending the same type again (the edit form always does) is not
+            # a change.
+            if progress.reserved and category != requirement.category:
+                raise Conflict(
+                    "Equipment is already reserved for this requirement, "
+                    "so its type cannot be changed.",
+                    field="category",
+                )
+            requirement.category = category
         if "quantity_needed" in changes:
-            requirement.quantity_needed = self._checked_quantity(changes["quantity_needed"])
+            # Not below what is reserved: it would leave stock committed to
+            # a need that is no longer there.
+            requirement.quantity_needed = progress.check_new_quantity(changes["quantity_needed"])
         if "technical_notes" in changes:
             requirement.technical_notes = self._checked_notes(changes["technical_notes"])
 
@@ -156,6 +179,12 @@ class EquipmentRequirementService:
     def remove(self, requirement_id: int, coordinator_id: int) -> None:
         requirement, event = self._own_requirement(requirement_id, coordinator_id)
         self._ensure_recordable(event)
+        if self._links.progress_for(requirement).reserved:
+            # Nothing can release a reservation, so deleting the requirement
+            # would leave equipment held for a need that no longer exists.
+            raise Conflict(
+                "Equipment is already reserved for this requirement, so it cannot be removed."
+            )
         self._db.delete(requirement)
         self._db.flush()
 
@@ -218,10 +247,7 @@ class EquipmentRequirementService:
 
     @staticmethod
     def _checked_quantity(quantity: object) -> int:
-        # bool is an int subclass; True is not "1 of something".
-        if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
-            raise InvalidInput("Quantity must be at least 1.", field="quantity_needed")
-        return quantity
+        return checked_quantity(quantity)
 
     @staticmethod
     def _checked_notes(notes: object) -> str | None:
