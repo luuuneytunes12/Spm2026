@@ -236,6 +236,35 @@ create table equipment_requests (
 create index idx_equipment_requests_event on equipment_requests (event_id);
 create index idx_equipment_requests_equipment on equipment_requests (equipment_id);
 
+-- The Coordinator's own record of what an event needs: a catalogue category,
+-- a quantity and technical notes. Separate from equipment_requests, which
+-- holds the ORGANISER's picks -- an approved Organiser change request deletes
+-- and rebuilds every one of those for the event, and a requirement stored
+-- there would go with them.
+--
+-- organiser_equipment_request_id links FROM a requirement TO the pick it was
+-- based on (the Organiser's table knows nothing about requirements). Nullable
+-- because a requirement may not come from a pick; SET NULL because replacing
+-- the pick must never delete the requirement.
+create table coordinator_equipment_requirements (
+    id bigint generated always as identity primary key,
+    event_id bigint not null references events (id) on delete cascade,
+    organiser_equipment_request_id bigint references equipment_requests (id) on delete set null,
+    category text not null check (length(btrim(category)) > 0),
+    quantity_needed integer not null check (quantity_needed > 0),
+    technical_notes text,
+    status equipment_status not null default 'requested',
+    created_by bigint not null references users (id) on delete restrict,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index idx_coordinator_equipment_requirements_event
+    on coordinator_equipment_requirements (event_id);
+create index idx_coordinator_equipment_requirements_pick
+    on coordinator_equipment_requirements (organiser_equipment_request_id)
+    where organiser_equipment_request_id is not null;
+
 -- ===== Attendance & comms =====
 
 create table registrations (
