@@ -31,6 +31,16 @@ export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   [EventStatus.CANCELLED]: 'Cancelled',
 }
 
+/** Wording for the Coordinator's progress timeline where the plain status
+ *  name is ambiguous there. On a row of stages, "Confirmed" and "Completed"
+ *  read as near-twins; "Event Confirmed" / "Event Completed" say what
+ *  actually happened. Everywhere else (badges, lists) the plain labels above
+ *  stay. */
+export const EVENT_TIMELINE_LABELS: Partial<Record<EventStatus, string>> = {
+  [EventStatus.CONFIRMED]: 'Event Confirmed',
+  [EventStatus.COMPLETED]: 'Event Completed',
+}
+
 /** One line explaining what a status actually means -- shown next to the
  *  badge so "Submitted" reads as a stage in a process, not just a word. */
 export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
@@ -45,20 +55,6 @@ export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
   [EventStatus.COMPLETED]: 'The event has taken place.',
   [EventStatus.CANCELLED]: 'The event has been cancelled and will not proceed.',
 }
-
-/** Statuses under which an event still needs an active Coordinator working
- *  it -- the same set backend/app/services/assignment.py reassigns out of
- *  (ACTIVE_ASSIGNMENT_STATUSES there; keep the two in sync). Used to decide
- *  whether "Mark unavailable for this event" makes sense to offer at all --
- *  an already-finished event has nothing left to hand off. */
-export const ACTIVE_ASSIGNMENT_STATUSES: readonly EventStatus[] = [
-  EventStatus.SUBMITTED,
-  EventStatus.UNDER_REVIEW,
-  EventStatus.CHANGES_REQUESTED,
-  EventStatus.APPROVED,
-  EventStatus.PLANNING,
-  EventStatus.CONFIRMED,
-]
 
 /** The lifecycle a request moves through from a Coordinator's point of view,
  *  used to draw the progress timeline on the assigned-event screen.
@@ -163,6 +159,10 @@ export interface EventDetail extends EventSummary {
   equipment_items: EquipmentLine[]
   special_arrangements: string | null
   registration_enabled: boolean
+  /** The window Attendees may register in; null until a Coordinator opens
+   *  registration and sets it. */
+  registration_opens_at?: string | null
+  registration_closes_at?: string | null
   created_at: string
 }
 
@@ -190,6 +190,8 @@ export interface AssignedEventDetail extends EventDetail {
   organiser: OrganiserContact
   activity: ActivityEntry[]
   change_requests: EventChangeRequest[]
+  /** What still blocks confirming an Approved event; empty when it is ready. */
+  confirmation_outstanding?: string[]
 }
 
 export interface EventChangeRequest {
@@ -267,20 +269,31 @@ export function getAssignedEvent(id: number): Promise<AssignedEventDetail> {
   return apiFetch(`/events/assigned/${id}`) as Promise<AssignedEventDetail>
 }
 
-/** Hand ONE assigned event off to another available Coordinator.
- *
- *  Narrower than declaring yourself unavailable outright: everything else
- *  on your plate, and your general eligibility for new work, is
- *  untouched -- this is "I can't do this particular one", not "I'm away".
- *  Rejects with a 409 ApiError if the event is no longer active (already
- *  approved/rejected/completed/cancelled has no "reassign" to do). */
-export function releaseAssignedEvent(id: number): Promise<EventDetail> {
-  return apiFetch(`/events/assigned/${id}/release`, { method: 'POST' }) as Promise<EventDetail>
-}
-
 /** Approve an event assigned to the signed-in Coordinator. */
 export function approveEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}/approve`, { method: 'POST' }) as Promise<EventDetail>
+}
+
+/** Confirm an approved event whose venue and equipment are arranged. Rejects
+ *  with a 409 ApiError naming the outstanding items when it is not ready. */
+export function confirmEvent(id: number): Promise<EventDetail> {
+  return apiFetch(`/events/${id}/confirm`, { method: 'POST' }) as Promise<EventDetail>
+}
+
+export interface RegistrationSettings {
+  registration_enabled: boolean
+  registration_opens_at: string | null
+  registration_closes_at: string | null
+}
+
+/** Open or close registration on a confirmed event and set its dates.
+ *  A 422 ApiError carries `fields` naming the date inputs to flag. */
+export function setEventRegistration(id: number, settings: RegistrationSettings): Promise<EventDetail> {
+  return apiFetch(`/events/assigned/${id}/registration`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  }) as Promise<EventDetail>
 }
 
 /** Reject an assigned event and retain the reason for the Organiser. */

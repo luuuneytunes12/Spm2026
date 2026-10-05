@@ -9,17 +9,12 @@ Acceptance criteria:
     AC2 - Given an Event Coordinator is assigned to my submitted event,
           then I receive a notification with the Event Coordinator's
           details.
-    AC3 - Given a new Event Coordinator is reassigned to my Event, I can
-          see name and contact of the new Event Coordinator.
-    AC4 - Given a new Event Coordinator is assigned to my submitted event,
-          then I receive a notification with the new Event Coordinator's
-          details.
 
-Assignment and reassignment both go through app/services/assignment.py
-(assign_coordinator / reassign_event), which is shared with the "Mark
-myself unavailable" story covered in test_coordinator_availability.py --
-this file only tests what THIS story's ACs, above, actually promise the
-Organiser, from the Organiser's own side of the fence.
+Assignment goes through app/services/assignment.py (assign_coordinator),
+covered in test_coordinator_assignment.py -- this file only tests what THIS
+story's ACs, above, actually promise the Organiser, from the Organiser's own
+side of the fence. (Reassignment used to be triggered by a Coordinator
+declining an event; that feature is gone, so its criteria are not tested.)
 
 Two different channels carry this information and are tested separately:
 
@@ -51,7 +46,7 @@ COMPLETE = {
 def _user(client, db_session, role, email, name="Test User"):
     """Register a user, promote them to `role`, and return (user, headers).
 
-    Mirrors the identical helper in test_coordinator_availability.py.
+    Mirrors the identical helper in test_coordinator_assignment.py.
     """
     password = "password123"
     res = client.post(
@@ -83,11 +78,6 @@ def _submit(client, organiser_headers, **overrides) -> int:
     ).json()["id"]
     assert client.post(f"/events/{event_id}/submit", headers=organiser_headers).status_code == 200
     return event_id
-
-
-def _reassign_by_declining(client, event_id, outgoing_headers) -> None:
-    res = client.post(f"/events/assigned/{event_id}/release", headers=outgoing_headers)
-    assert res.status_code == 200
 
 
 # --------------------------------------------------------------------------
@@ -151,86 +141,6 @@ def test_ac2_no_notification_when_nobody_is_available_to_assign(client, db_sessi
 
 
 # --------------------------------------------------------------------------
-# AC3 -- name and contact of the NEW coordinator visible after reassignment
-# --------------------------------------------------------------------------
-
-
-def test_ac3_organiser_sees_new_coordinators_name_and_contact_after_reassignment(client, db_session):
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    replacement, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-
-    event_id = _submit(client, organiser_headers)
-    assert client.get(f"/events/{event_id}", headers=organiser_headers).json()["coordinator"]["id"] == outgoing.id
-
-    _reassign_by_declining(client, event_id, outgoing_headers)
-
-    body = client.get(f"/events/{event_id}", headers=organiser_headers).json()
-    assert body["coordinator"] == {
-        "id": replacement.id,
-        "name": "Priya Nair",
-        "email": "priya@connectsphere.test",
-    }
-
-
-def test_ac3_organiser_sees_unassigned_when_reassignment_finds_nobody(client, db_session):
-    """The flip side: declining with no other Coordinator available leaves
-    the event unassigned rather than stuck with someone unavailable --
-    the Organiser's page must reflect that honestly, not show stale data."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    event_id = _submit(client, organiser_headers)
-
-    _reassign_by_declining(client, event_id, outgoing_headers)
-
-    body = client.get(f"/events/{event_id}", headers=organiser_headers).json()
-    assert body["coordinator"] is None
-    assert body["coordinator_id"] is None
-
-
-# --------------------------------------------------------------------------
-# AC4 -- notification with the NEW coordinator's details on reassignment
-# --------------------------------------------------------------------------
-
-
-def test_ac4_organiser_notified_with_new_coordinators_details_on_reassignment(client, db_session):
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    _replacement, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    event_id = _submit(client, organiser_headers)
-
-    _reassign_by_declining(client, event_id, outgoing_headers)
-
-    notifications = client.get("/notifications", headers=organiser_headers).json()
-    assigned = [n for n in notifications if n["type"] == "event_coordinator_assigned"]
-    assert len(assigned) == 2  # initial assignment, then reassignment
-    reassignment_notice = assigned[0]  # newest first
-    assert reassignment_notice["event_id"] == event_id
-    assert "Priya Nair" in reassignment_notice["message"]
-    assert "priya@connectsphere.test" in reassignment_notice["message"]
-
-
-def test_ac4_no_second_notification_when_reassignment_finds_nobody(client, db_session):
-    organiser, organiser_headers = _organiser(client, db_session)
-    outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    event_id = _submit(client, organiser_headers)
-
-    _reassign_by_declining(client, event_id, outgoing_headers)
-
-    notifications = client.get("/notifications", headers=organiser_headers).json()
-    assigned = [n for n in notifications if n["type"] == "event_coordinator_assigned"]
-    assert len(assigned) == 1  # only the initial assignment; nobody took over
-
-
-# --------------------------------------------------------------------------
 # AC2 / AC4 -- what the notification carries, and that it is well formed
 # --------------------------------------------------------------------------
 
@@ -269,52 +179,6 @@ def test_ac2_notification_is_pushed_live_to_the_organiser(client, db_session):
     assert "sam@connectsphere.test" in pushed[0]["message"]
 
 
-def test_going_unavailable_does_not_change_the_organisers_coordinator(client, db_session):
-    """Global unavailability (SCRUM-24) only stops NEW events, so it is not
-    a reassignment: the Organiser's page still shows the same Coordinator
-    and no "now coordinating" notification is sent."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-    _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    event_id = _submit(client, organiser_headers)
-
-    res = client.patch(
-        "/coordinators/me/availability", json={"is_available": False}, headers=holder_headers
-    )
-    assert res.status_code == 200
-
-    body = client.get(f"/events/{event_id}", headers=organiser_headers).json()
-    assert body["coordinator"]["id"] == holder.id
-    assert _types(client, organiser_headers) == ["event_coordinator_assigned"]  # just the first
-
-
-def test_ac4_every_reassignment_notifies_again(client, db_session):
-    """Three Coordinators, two hand-offs: one notification for the first
-    assignment plus one per reassignment, newest first."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    headers_by_name = {
-        name: _coordinator(client, db_session, f"{name.split()[0].lower()}@connectsphere.test", name)[1]
-        for name in ("Sam Tan", "Priya Nair", "Lee Wong")
-    }
-    event_id = _submit(client, organiser_headers)
-
-    def current_owner() -> dict:
-        return client.get(f"/events/{event_id}", headers=organiser_headers).json()["coordinator"]
-
-    # Whoever holds it declines, twice -- the pool is only three deep.
-    _reassign_by_declining(client, event_id, headers_by_name[current_owner()["name"]])
-    _reassign_by_declining(client, event_id, headers_by_name[current_owner()["name"]])
-
-    final_owner = current_owner()
-    assigned = [
-        n
-        for n in client.get("/notifications", headers=organiser_headers).json()
-        if n["type"] == "event_coordinator_assigned"
-    ]
-    assert len(assigned) == 3
-    assert final_owner["email"] in assigned[0]["message"]  # newest notification = current owner
-
-
 # --------------------------------------------------------------------------
 # Activity log: the SHARED record of the assignment
 # --------------------------------------------------------------------------
@@ -328,20 +192,6 @@ def test_assignment_is_in_the_activity_log_the_organiser_can_read(client, db_ses
 
     log = client.get(f"/events/{event_id}/activity", headers=organiser_headers).json()
     assert any(entry["note"] == "Assigned to Sam Tan." for entry in log)
-
-
-def test_reassignment_is_in_the_activity_log_the_organiser_can_read(client, db_session):
-    organiser, organiser_headers = _organiser(client, db_session)
-    _outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    event_id = _submit(client, organiser_headers)
-
-    _reassign_by_declining(client, event_id, outgoing_headers)
-
-    log = client.get(f"/events/{event_id}/activity", headers=organiser_headers).json()
-    assert log[0]["note"].startswith("Reassigned from Sam Tan to Priya Nair")  # newest first
 
 
 def test_the_activity_log_is_one_record_seen_by_organiser_and_coordinator(client, db_session):
@@ -397,26 +247,6 @@ def test_the_organisers_notification_is_worded_for_the_organiser(client, db_sess
     assert "is now coordinating" in organiser_msg
     assert "You have been assigned" in coordinator_msg
     assert organiser_msg != coordinator_msg
-
-
-def test_reassignment_sends_the_outgoing_coordinator_only_their_own_notice(client, db_session):
-    """The outgoing Coordinator hears it moved on; they do not get the
-    Organiser's "who is coordinating" message."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    _outgoing, outgoing_headers = _coordinator(
-        client, db_session, "sam@connectsphere.test", "Sam Tan"
-    )
-    _replacement, replacement_headers = _coordinator(
-        client, db_session, "priya@connectsphere.test", "Priya Nair"
-    )
-    event_id = _submit(client, organiser_headers)
-
-    _reassign_by_declining(client, event_id, outgoing_headers)
-
-    assert sorted(_types(client, outgoing_headers)) == ["event_assigned", "event_reassigned_away"]
-    assert _types(client, replacement_headers) == ["event_assigned"]
-    assert "event_coordinator_assigned" not in _types(client, outgoing_headers)
-    assert "event_coordinator_assigned" not in _types(client, replacement_headers)
 
 
 def test_an_unrelated_organiser_and_coordinator_are_not_notified(client, db_session):

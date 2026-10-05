@@ -82,6 +82,14 @@ export function EventView() {
     ['Accessibility requirements', event.accessibility_needs],
     ['Other equipment notes', event.equipment_requirements],
     ['Registration', event.registration_enabled ? 'Attendees must register' : 'Not required'],
+    ...(event.registration_opens_at && event.registration_closes_at
+      ? ([
+          [
+            'Registration window',
+            `${new Date(event.registration_opens_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} – ${new Date(event.registration_closes_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`,
+          ],
+        ] as [string, string | null][])
+      : []),
     ['Special arrangements', event.special_arrangements],
   ]
   const hasPendingChangeRequest = changeRequests.some((request) => request.status === 'pending')

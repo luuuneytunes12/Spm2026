@@ -23,7 +23,7 @@ async function signIn(page: import('@playwright/test').Page) {
   await page.getByLabel('Email').fill(E2E_ORGANISER.email)
   await page.getByLabel('Password').fill(E2E_ORGANISER.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Welcome back/ })).toBeVisible()
 }
 
 test.beforeEach(async ({ page }) => {

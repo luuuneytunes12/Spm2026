@@ -61,7 +61,6 @@ const RESET = `
 import json, sys
 from sqlalchemy import or_
 from app.core.db import SessionLocal
-from app.models.coordinator_availability import CoordinatorAvailabilityHistory
 from app.models.events import Event
 from app.models.notifications import Notification
 from app.models.user import User
@@ -73,16 +72,34 @@ ids = [u.id for u in db.query(User).filter(User.email.in_(emails)).all()]
 # cascade); then whatever is left that belongs to them.
 db.query(Event).filter(or_(Event.organiser_id.in_(ids), Event.coordinator_id.in_(ids))).delete(synchronize_session=False)
 db.query(Notification).filter(Notification.user_id.in_(ids)).delete(synchronize_session=False)
-db.query(CoordinatorAvailabilityHistory).filter(CoordinatorAvailabilityHistory.coordinator_id.in_(ids)).delete(synchronize_session=False)
 db.query(User).filter(User.id.in_(ids)).update({User.is_available: True}, synchronize_session=False)
 db.commit()
 db.close()
 `
 
-/** Back to a clean slate for these users: no events, notifications or
- *  availability history, and everyone available. */
+/** Back to a clean slate for these users: no events or notifications,
+ *  and everyone available. */
 export function resetUsers(emails: string[]): void {
   python(RESET, emails)
+}
+
+const MARK_UNAVAILABLE = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.user import User
+
+emails = json.loads(sys.argv[1])
+db = SessionLocal()
+db.query(User).filter(User.email.in_(emails)).update({User.is_available: False}, synchronize_session=False)
+db.commit()
+db.close()
+`
+
+/** Take these users out of the assignment pool, straight on their row.
+ *  Nothing in the app does this any more; the specs that need an empty pool
+ *  set it up here. resetUsers puts everyone back. */
+export function markUnavailable(emails: string[]): void {
+  python(MARK_UNAVAILABLE, emails)
 }
 
 const REMOVE = `
