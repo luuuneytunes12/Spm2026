@@ -49,7 +49,7 @@ export const ROLE_HOME_PATH: Record<Role, string> = {
   [Role.VENUE_STAFF]: '/venue-staff',
   [Role.TECH_SUPPORT]: '/tech-support',
   [Role.ATTENDEE]: '/attendee',
-  [Role.SAFETY_OFFICER]: '/safety-officer'
+  [Role.SAFETY_OFFICER]: '/safety-checks'
 }
 
 // Where a notification's `event_id` should link to for the signed-in

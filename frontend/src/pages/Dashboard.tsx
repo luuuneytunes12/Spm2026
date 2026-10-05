@@ -5,8 +5,16 @@ import { apiFetch } from '../lib/api'
 import { ROLE_HOME_PATH, ROLE_LABELS } from '../lib/roles'
 import { ROLE_WORKFLOWS } from '../lib/roleWorkflows'
 
+import { Navigate } from 'react-router'
+import { Role } from '../lib/roles'
+
 export function Dashboard() {
   const { user } = useAuth()
+
+  if (user?.role === Role.SAFETY_OFFICER) {
+    return <Navigate to={ROLE_HOME_PATH[user.role]} replace />
+  }
+
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking')
 
   useEffect(() => {

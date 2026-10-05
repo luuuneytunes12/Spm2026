@@ -81,7 +81,5 @@ export const ROLE_WORKFLOWS: Record<Role, PlannedWorkflow[]> = {
   [Role.ATTENDEE]: [
     { title: 'Notifications', description: 'updates about events you registered for (notifications).' },
   ],
-  [Role.SAFETY_OFFICER]: [
-    { title: 'Safety reviews', description: 'review events for safety compliance' },
-  ],
+  [Role.SAFETY_OFFICER]: [],
 }

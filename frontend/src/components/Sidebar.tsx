@@ -34,14 +34,19 @@ export function Sidebar({ id, open }: SidebarProps) {
     <aside id={id} className="sidebar" hidden={!open}>
       <nav aria-label="Main">
         <ul className="sidebar-nav">
-          <li>
-            <NavLink to="/" end>
-              Dashboard
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to={ROLE_HOME_PATH[user.role]}>{roleLabel}</NavLink>
-          </li>
+          {user.role !== Role.SAFETY_OFFICER && (
+            <>
+              <li>
+                <NavLink to="/" end>
+                  Dashboard
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to={ROLE_HOME_PATH[user.role]}>{roleLabel}</NavLink>
+              </li>
+            </>
+          )}
+
           {/* Each of these sits behind RequireRole for specific roles, so
               linking it for anyone else would just send them to /forbidden. */}
           {user.role === Role.ORGANISER && (
@@ -86,6 +91,13 @@ export function Sidebar({ id, open }: SidebarProps) {
               <NavLink to="/attendee/events">Events</NavLink>
             </li>
           )}
+
+          {user.role === Role.SAFETY_OFFICER && (
+            <li>
+              <NavLink to="/safety-checks">Safety Checks</NavLink>
+            </li>
+          )}
+
           <li>
             <NavLink to="/notifications">Notifications</NavLink>
           </li>
