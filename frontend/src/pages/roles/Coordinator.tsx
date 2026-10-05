@@ -4,7 +4,7 @@ import { ApiError } from '../../lib/api'
 import { getMyAvailabilityHistory, setMyAvailability } from '../../lib/coordinators'
 import type { AvailabilityHistoryEntry } from '../../lib/coordinators'
 import { formatTimestamp } from '../../lib/events'
-import { ROLE_LABELS, ROLE_PERMISSIONS, Role } from '../../lib/roles'
+import { ROLE_LABELS, Role } from '../../lib/roles'
 import { ROLE_WORKFLOWS } from '../../lib/roleWorkflows'
 
 /** The "mark myself unavailable" control at the heart of this story.
@@ -135,7 +135,6 @@ function AvailabilityHistory({ isAvailable }: { isAvailable: boolean }) {
  *  them. Notifications live in the navbar bell and /notifications. */
 export function Coordinator() {
   const { user } = useAuth()
-  const permissions = ROLE_PERMISSIONS[Role.COORDINATOR]
   const planned = ROLE_WORKFLOWS[Role.COORDINATOR]
 
   return (
@@ -149,20 +148,6 @@ export function Coordinator() {
         <section className="card bento-availability">
           <AvailabilityToggle />
           <AvailabilityHistory isAvailable={user?.is_available ?? true} />
-        </section>
-
-        <section className="card bento-permissions">
-          <h2>Permissions</h2>
-          <p className="page-subtitle" style={{ marginBottom: 14 }}>
-            Granted by the role, enforced by the backend on every request.
-          </p>
-          <ul className="chip-list">
-            {permissions.map((permission) => (
-              <li key={permission} className="chip">
-                {permission}
-              </li>
-            ))}
-          </ul>
         </section>
 
         <section className="card bento-planned">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useAuth } from '../auth/useAuth'
 import { apiFetch } from '../lib/api'
-import { ROLE_HOME_PATH, ROLE_LABELS, ROLE_PERMISSIONS } from '../lib/roles'
+import { ROLE_HOME_PATH, ROLE_LABELS } from '../lib/roles'
 import { ROLE_WORKFLOWS } from '../lib/roleWorkflows'
 
 export function Dashboard() {
@@ -15,7 +15,6 @@ export function Dashboard() {
       .catch(() => setApiStatus('error'))
   }, [])
 
-  const permissionCount = user ? ROLE_PERMISSIONS[user.role]?.length ?? 0 : 0
   const plannedCount = user ? ROLE_WORKFLOWS[user.role]?.length ?? 0 : 0
 
   return (
@@ -38,13 +37,6 @@ export function Dashboard() {
               <Link to={ROLE_HOME_PATH[user.role]}>Open your role page →</Link>
             </p>
           )}
-        </div>
-
-        <div className="card">
-          <h2>Permissions</h2>
-          <p className="page-subtitle">
-            {permissionCount} granted to this role
-          </p>
         </div>
 
         <div className="card">

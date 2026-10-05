@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Role } from '../../lib/roles'
-import { ROLE_LABELS, ROLE_PERMISSIONS } from '../../lib/roles'
+import { ROLE_LABELS } from '../../lib/roles'
 import type { PlannedWorkflow } from '../../lib/roleWorkflows'
 
 /** Shared presentational shell for every role landing page. Each role page
@@ -22,7 +22,6 @@ export function RoleHome({
   planned: PlannedWorkflow[]
   children?: ReactNode
 }) {
-  const permissions = ROLE_PERMISSIONS[role]
 
   return (
     <div className="stack">
@@ -34,20 +33,6 @@ export function RoleHome({
       </header>
 
       {children}
-
-      <section className="card">
-        <h2>Permissions</h2>
-        <p className="page-subtitle" style={{ marginBottom: 14 }}>
-          Granted by the role, enforced by the backend on every request.
-        </p>
-        <ul className="chip-list">
-          {permissions.map((permission) => (
-            <li key={permission} className="chip">
-              {permission}
-            </li>
-          ))}
-        </ul>
-      </section>
 
       <section className="card">
         <h2>
