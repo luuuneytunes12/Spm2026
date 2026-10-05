@@ -69,6 +69,9 @@ export function Sidebar({ id, open }: SidebarProps) {
               <Item to="/equipment" icon="equipment" end>
                 Equipment Catalogue
               </Item>
+              <Item to="/equipment-requirements" icon="list">
+                Equipment Requirements
+              </Item>
               <Item to="/equipment/reservations" icon="list">
                 Equipment Reservations
               </Item>

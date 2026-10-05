@@ -16,6 +16,9 @@ import { AssignedEventView } from './AssignedEventView'
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
+vi.mock('../../components/EquipmentRequirementsSection', () => ({
+  EquipmentRequirementsSection: () => <section aria-label="equipment requirements stub" />,
+}))
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
   return { ...actual, getAssignedEvent: vi.fn(), setEventRegistration: vi.fn() }
