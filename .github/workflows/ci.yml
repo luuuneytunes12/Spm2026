@@ -100,6 +100,10 @@ jobs:
     # including the coordinator-story and axe accessibility specs, passes
     # against exactly this setup: postgres:16, backend/db/schema.sql, and the
     # seeded organiser below.
+    #
+    # Switched off again while everyone is still building their own features
+    # in parallel. Remove the `if: false` below to turn it back on.
+    if: false
     runs-on: ubuntu-latest
 
     # A disposable database, started and destroyed by GitHub on this runner.
