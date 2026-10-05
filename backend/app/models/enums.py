@@ -1,14 +1,5 @@
 import enum
 
-
-class UserRole(enum.StrEnum):
-    organiser = "organiser"
-    coordinator = "coordinator"
-    venue_staff = "venue_staff"
-    tech_support = "tech_support"
-    attendee = "attendee"
-
-
 class EventStatus(enum.StrEnum):
     draft = "draft"
     submitted = "submitted"

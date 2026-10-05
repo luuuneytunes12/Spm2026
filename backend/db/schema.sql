@@ -5,7 +5,7 @@
 -- ===== Enums =====
 
 create type user_role as enum (
-    'organiser', 'coordinator', 'venue_staff', 'tech_support', 'attendee'
+    'organiser', 'coordinator', 'venue_staff', 'tech_support', 'attendee', 'safety_officer'
 );
 
 create type event_status as enum (
