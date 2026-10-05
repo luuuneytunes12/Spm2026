@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
+import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
 import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
 import { ApiError } from '../../lib/api'
@@ -527,6 +528,16 @@ export function AssignedEventView() {
           </div>
         </section>
       )}
+
+      {/* Always present: while the event is under review it explains that
+          equipment can be recorded once it is approved, rather than the
+          Coordinator wondering where equipment goes. */}
+      <EquipmentRequirementsSection
+        eventId={event.id}
+        eventStatus={event.status}
+        organiserLines={event.equipment_items}
+        organiserNotes={event.equipment_requirements}
+      />
 
       <section className="card">
         <h2>Event Details</h2>

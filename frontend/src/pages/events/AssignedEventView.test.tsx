@@ -22,6 +22,27 @@ import { AssignedEventView } from './AssignedEventView'
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
+// The card has its own tests (EquipmentRequirementsSection.test.tsx). Here
+// it only needs to show what the page hands it, so the stub echoes its props.
+vi.mock('../../components/EquipmentRequirementsSection', () => ({
+  EquipmentRequirementsSection: (props: {
+    eventId: number
+    eventStatus: string
+    organiserLines: { equipment_name: string }[]
+    organiserNotes: string | null
+  }) => (
+    <section
+      aria-label="equipment requirements stub"
+      data-event-id={props.eventId}
+      data-event-status={props.eventStatus}
+    >
+      {props.organiserLines.map((line) => (
+        <span key={line.equipment_name}>{line.equipment_name}</span>
+      ))}
+      {props.organiserNotes && <span>{`stub notes: ${props.organiserNotes}`}</span>}
+    </section>
+  ),
+}))
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
@@ -678,3 +699,66 @@ describe('SCRUM-39 - the venue booking card follows the event status', () => {
     expect(screen.queryByLabelText('venue booking stub')).not.toBeInTheDocument()
   })
 })
+
+describe('ER AC1 - the equipment requirements card', () => {
+  it('is on the Coordinator’s event page, for that event', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    renderView()
+
+    const card = await screen.findByLabelText('equipment requirements stub')
+    expect(card).toHaveAttribute('data-event-id', '7')
+    expect(card).toHaveAttribute('data-event-status', 'approved')
+  })
+
+  it('is given the Organiser’s picks, so a requirement can be based on one', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'approved',
+      equipment_items: [
+        {
+          id: 31,
+          equipment_id: 11,
+          equipment_name: 'Shure BLX24 Handheld Microphone',
+          equipment_category: 'Audio',
+          quantity_requested: 4,
+          technical_requirements: null,
+          status: 'requested',
+        },
+      ],
+    })
+    renderView()
+
+    const card = await screen.findByLabelText('equipment requirements stub')
+    expect(within(card).getByText('Shure BLX24 Handheld Microphone')).toBeInTheDocument()
+  })
+
+  it('is given the Organiser’s other equipment notes as context', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'approved',
+      equipment_requirements: 'Stage left, near the fire exit',
+    })
+    renderView()
+
+    const card = await screen.findByLabelText('equipment requirements stub')
+    expect(within(card).getByText('stub notes: Stage left, near the fire exit')).toBeInTheDocument()
+  })
+
+  it('is present while the event is under review too, where it explains the wait', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
+    renderView()
+
+    const card = await screen.findByLabelText('equipment requirements stub')
+    expect(card).toHaveAttribute('data-event-status', 'under_review')
+  })
+
+  it('does not replace the Organiser’s own equipment under Event Details', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    renderView()
+    await screen.findByLabelText('equipment requirements stub')
+
+    // What the Organiser asked for is still part of their request.
+    expect(screen.getByText('Equipment requirements')).toBeInTheDocument()
+  })
+})
+

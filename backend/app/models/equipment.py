@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Enum, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -89,3 +89,106 @@ class EquipmentRequest(Base):
     @property
     def equipment_category(self) -> str | None:
         return self.equipment.category
+
+
+class CoordinatorEquipmentRequirement(Base):
+    """What an Event Coordinator records an event needs.
+
+    A catalogue category (the equipment TYPE), a quantity and technical
+    notes. Technical Support reads these from the event record.
+
+    Deliberately NOT a row of `equipment_requests`. Those are the
+    Organiser's picks, and an Organiser's approved change request deletes
+    and rebuilds every one of them for the event; a requirement stored there
+    would be deleted with them.
+
+    `organiser_equipment_request_id` links FROM here TO the pick a
+    requirement was based on. The Organiser's table knows nothing about
+    requirements. Nullable, because a Coordinator may record an operational
+    need the Organiser never mentioned, and ON DELETE SET NULL, so replacing
+    the pick clears the link instead of deleting the requirement.
+
+    There is no unique constraint on (event, category): six microphones and
+    a PA system are both "Audio", and are separate needs.
+    """
+
+    __tablename__ = "coordinator_equipment_requirements"
+
+    # Declared here as well as in sql/015 so the in-memory SQLite database
+    # the tests build from this metadata enforces them too.
+    __table_args__ = (
+        CheckConstraint("quantity_needed > 0", name="coordinator_equipment_requirements_qty_check"),
+        CheckConstraint(
+            "length(trim(category)) > 0", name="coordinator_equipment_requirements_category_check"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("events.id", ondelete="CASCADE")
+    )
+    organiser_equipment_request_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("equipment_requests.id", ondelete="SET NULL")
+    )
+    category: Mapped[str] = mapped_column(Text)
+    quantity_needed: Mapped[int]
+    technical_notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[EquipmentStatus] = mapped_column(
+        Enum(EquipmentStatus, name="equipment_status", create_type=False),
+        default=EquipmentStatus.requested,
+    )
+    created_by: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class RequirementReservationLink(Base):
+    """Says which Coordinator requirement an item reserved for an event is
+    fulfilling.
+
+    Owned by the requirements feature. The reservation itself is
+    Technical Support's existing one -- an `equipment_requests` row moved to
+    `reserved` -- and this table adds nothing to it.
+
+    Keyed by (event, item), NOT by that row's id, for two reasons:
+      * the row's id does not exist until the reservation is made, so a link
+        to it could only be written after the reservation's commit, leaving
+        a window where a reservation exists with no link. Keyed by (event,
+        item), the link is written in the same commit.
+      * an approved Organiser change deletes and rebuilds the event's
+        `equipment_requests` rows. A link to a row's id would die with it; a
+        link to the item survives, and is simply no longer backed by a
+        reservation until the item is reserved again.
+
+    How much a requirement has reserved is therefore never stored here: it is
+    read from the reserved rows these links point at, so there is no second
+    copy to go out of step.
+
+    (event, item) is unique, because (event, item) is unique in the
+    reservations: one reserved row can fulfil only one requirement.
+    `event_id` repeats the requirement's event so that can be enforced.
+    """
+
+    __tablename__ = "coordinator_requirement_reservations"
+
+    # Mirrors sql/016. Declared here too so the in-memory SQLite database
+    # the tests build enforces it.
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "equipment_id", name="coordinator_requirement_reservations_event_item_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requirement_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("coordinator_equipment_requirements.id", ondelete="CASCADE")
+    )
+    event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("events.id", ondelete="CASCADE")
+    )
+    equipment_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("equipment.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

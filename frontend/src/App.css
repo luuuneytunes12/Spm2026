@@ -1811,3 +1811,131 @@ label.required::after {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------------
+   Equipment requirements
+
+   One row per requirement -- type, quantity, notes, status -- shared by the
+   Coordinator's card and Technical Support's event record. Rows are
+   separated by a rule rather than boxed, because they sit inside a card.
+   --------------------------------------------------------------------- */
+
+.requirement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.requirement {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.requirement:last-child {
+  border-bottom: none;
+}
+
+.requirement-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.requirement-title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.requirement-side {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 14px;
+}
+
+/* An open editor takes the whole row, and is tinted so it reads as the one
+   thing being changed rather than blending into the list around it. */
+.requirement-editing {
+  display: block;
+  margin: 6px 0;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.requirement-editor .form-row {
+  margin-bottom: 0;
+}
+
+/* The add form is separated from the list above it, not floating in it. */
+.requirement-form {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.requirement-form .form-row {
+  margin-bottom: 0;
+}
+
+.requirement-form-title,
+.requirement-subtitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* What the Organiser asked for: read-only context, so it is set apart and
+   tinted like the editor is, rather than looking like something to fill in. */
+.requirement-context {
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.requirement-context-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.requirement-context-notes p {
+  margin: 2px 0 0;
+  /* The notes are free text; keep the Organiser's own line breaks. */
+  white-space: pre-line;
+}
+
+/* Where a requirement came from: secondary to its type, quantity and notes. */
+.requirement-origin {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* How far a requirement has got: the one line of its detail that changes as
+   work is done, so it is set a little apart from the notes. */
+.requirement-progress {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* A panel opened on a row takes the whole row beneath it, tinted like the
+   editor so it reads as the one thing being worked on. */
+.requirement-panel {
+  flex: 1 1 100%;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
