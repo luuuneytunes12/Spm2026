@@ -31,10 +31,10 @@ const mockFetch = vi.mocked(apiFetch)
 describe('the status window', () => {
   it('is exactly approved, planning and confirmed', () => {
     // Mirrors EQUIPMENT_ACTIVE_STATUSES in backend/app/domain/equipment_requirements.py.
-    expect([...EQUIPMENT_ACTIVE_STATUSES].sort()).toEqual(['approved', 'confirmed', 'planning'])
+    expect([...EQUIPMENT_ACTIVE_STATUSES].sort()).toEqual(['event_approved', 'planning_event', 'safety_check_passed'])
   })
 
-  it.each([EventStatus.APPROVED, EventStatus.PLANNING, EventStatus.CONFIRMED])(
+  it.each([EventStatus.EVENT_APPROVED, EventStatus.PLANNING_EVENT, EventStatus.SAFETY_CHECK_PASSED])(
     'lets equipment be recorded while the event is %s',
     (status) => {
       expect(canRecordEquipment(status)).toBe(true)
@@ -43,12 +43,12 @@ describe('the status window', () => {
 
   it.each([
     EventStatus.DRAFT,
-    EventStatus.SUBMITTED,
+    EventStatus.SUBMITTED_AWAITING_COORDINATOR,
     EventStatus.UNDER_REVIEW,
-    EventStatus.CHANGES_REQUESTED,
-    EventStatus.REJECTED,
-    EventStatus.COMPLETED,
-    EventStatus.CANCELLED,
+    EventStatus.AWAITING_ORGANISER_REPLY,
+    EventStatus.EVENT_REJECTED,
+    EventStatus.EVENT_COMPLETED,
+    EventStatus.EVENT_CANCELLED,
   ])('does not while the event is %s', (status) => {
     expect(canRecordEquipment(status)).toBe(false)
   })

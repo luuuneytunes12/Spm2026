@@ -48,7 +48,7 @@ const SUBMITTED: EventSummary = {
   ...DRAFT,
   id: 2,
   name: 'Robotics Summit',
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: '2026-09-10T02:00:00Z',
   expected_attendance: 80,
 }
@@ -151,12 +151,12 @@ describe('a request that has moved past Submitted', () => {
   // the request at the very moment the Organiser went looking for it.
   const LATER_STAGES = [
     ['under_review', 'Under Review'],
-    ['approved', 'Event Approved'],
-    ['rejected', 'Event Rejected'],
-    ['planning', 'Planning Event'],
-    ['confirmed', 'Safety Check Passed (Event Confirmed)'],
-    ['completed', 'Event Completed'],
-    ['cancelled', 'Event Cancelled'],
+    ['event_approved', 'Event Approved'],
+    ['event_rejected', 'Event Rejected'],
+    ['planning_event', 'Planning Event'],
+    ['safety_check_passed', 'Safety Check Passed (Event Confirmed)'],
+    ['event_completed', 'Event Completed'],
+    ['event_cancelled', 'Event Cancelled'],
   ] as const
 
   it.each(LATER_STAGES)('still appears under Submitted Requests when %s', async (status, label) => {

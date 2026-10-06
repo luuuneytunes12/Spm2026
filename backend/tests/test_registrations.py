@@ -34,7 +34,7 @@ def _user(client, db_session, role, email):
     return user, {"Authorization": f"Bearer {token}"}
 
 
-def _event(db_session, organiser, *, status=EventStatus.confirmed, enabled=True, days=30):
+def _event(db_session, organiser, *, status=EventStatus.safety_check_passed, enabled=True, days=30):
     """Nothing in the app moves an event to `confirmed` yet, so it is set
     directly here."""
     start = datetime.now(timezone.utc) + timedelta(days=days)
@@ -122,7 +122,7 @@ def test_closed_event_stays_visible_to_someone_registered(client, db_session):
 
 def test_unconfirmed_or_disabled_events_are_not_offered(client, db_session):
     organiser, attendee = _setup(client, db_session)
-    draft = _event(db_session, organiser, status=EventStatus.approved)
+    draft = _event(db_session, organiser, status=EventStatus.event_approved)
     disabled = _event(db_session, organiser, enabled=False)
 
     assert _row(client, attendee, draft.id) is None

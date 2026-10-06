@@ -166,7 +166,7 @@ export function EventForm() {
         const e = await getEvent(eventId)
         if (cancelled) return
         setCanCorrectSubmitted(
-          e.status === EventStatus.SUBMITTED || e.status === EventStatus.UNDER_REVIEW,
+          e.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR || e.status === EventStatus.UNDER_REVIEW,
         )
         const loadedForm: FormState = {
           name: e.name ?? '',

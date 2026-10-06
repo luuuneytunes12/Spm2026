@@ -91,7 +91,7 @@ const EVENT: AssignedEventDetail = {
   equipment_items: [],
   special_arrangements: 'Halal catering',
   registration_enabled: true,
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: '2026-09-10T02:00:00Z',
   created_at: '2026-09-09T00:00:00Z',
   updated_at: '2026-09-10T02:00:00Z',
@@ -99,7 +99,7 @@ const EVENT: AssignedEventDetail = {
   activity: [
     {
       from_status: 'draft',
-      to_status: 'submitted',
+      to_status: 'submitted_awaiting_coordinator',
       note: 'Submitted by organiser.',
       changed_by_name: 'Priya Menon',
       created_at: '2026-09-10T02:00:00Z',
@@ -443,11 +443,11 @@ describe('AC3 - the current status', () => {
   it('TC-S3-3e: a branch status (changes requested) is drawn off the stage it departed from, not as its own fixed step', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'changes_requested',
+      status: 'awaiting_organiser_reply',
       activity: [
         {
           from_status: 'under_review',
-          to_status: 'changes_requested',
+          to_status: 'awaiting_organiser_reply',
           note: 'Please confirm the accessibility plan.',
           changed_by_name: 'Sam Tan',
           created_at: '2026-09-12T09:00:00Z',
@@ -476,11 +476,11 @@ describe('AC3 - the current status', () => {
   it('TC-S3-3f: a rejection is shown in a danger tone', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'rejected',
+      status: 'event_rejected',
       activity: [
         {
           from_status: 'under_review',
-          to_status: 'rejected',
+          to_status: 'event_rejected',
           note: null,
           changed_by_name: 'Sam Tan',
           created_at: '2026-09-12T09:00:00Z',
@@ -514,7 +514,7 @@ describe('AC4 - the activity log', () => {
       status: 'under_review',
       activity: [
         {
-          from_status: 'submitted',
+          from_status: 'submitted_awaiting_coordinator',
           to_status: 'under_review',
           note: 'Picked up for review.',
           changed_by_name: 'Sam Tan',
@@ -553,8 +553,8 @@ describe('AC4 - the activity log', () => {
       ...EVENT,
       activity: [
         {
-          from_status: 'submitted',
-          to_status: 'submitted',
+          from_status: 'submitted_awaiting_coordinator',
+          to_status: 'submitted_awaiting_coordinator',
           note: 'Assigned to Sam Tan.',
           changed_by_name: 'Priya Menon',
           created_at: '2026-09-10T02:05:00Z',
@@ -641,14 +641,14 @@ describe('what this screen deliberately does not offer', () => {
 
 describe('Coordinator decisions', () => {
   it('approves the assigned request and refreshes its activity', async () => {
-    const approved = { ...EVENT, status: 'approved' as const }
+    const approved = { ...EVENT, status: 'event_approved' as const }
     mockApprove.mockResolvedValue(approved)
     mockGet.mockResolvedValueOnce(EVENT).mockResolvedValueOnce({
       ...approved,
       activity: [
         {
           from_status: 'under_review',
-          to_status: 'approved',
+          to_status: 'event_approved',
           note: 'Approved by the Event Coordinator.',
           changed_by_name: 'Sam Tan',
           created_at: '2026-09-12T09:00:00Z',
@@ -667,7 +667,7 @@ describe('Coordinator decisions', () => {
   })
 
   it('requires a reason before rejecting and submits the recorded reason', async () => {
-    mockReject.mockResolvedValue({ ...EVENT, status: 'rejected' })
+    mockReject.mockResolvedValue({ ...EVENT, status: 'event_rejected' })
     renderView()
 
     const reject = await screen.findByRole('button', { name: 'Reject request' })
@@ -680,7 +680,7 @@ describe('Coordinator decisions', () => {
   })
 
   it('does not offer decision controls once the request has been decided', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
 
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
@@ -691,7 +691,7 @@ describe('Coordinator decisions', () => {
 
 describe('SCRUM-39 - the venue booking card follows the event status', () => {
   it('is offered once the event is approved', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
     expect(await screen.findByLabelText('venue booking stub')).toBeInTheDocument()
   })
@@ -703,7 +703,7 @@ describe('SCRUM-39 - the venue booking card follows the event status', () => {
   })
 
   it('is not offered for a rejected event', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'rejected' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_rejected' })
     renderView()
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
     expect(screen.queryByLabelText('venue booking stub')).not.toBeInTheDocument()
@@ -712,18 +712,18 @@ describe('SCRUM-39 - the venue booking card follows the event status', () => {
 
 describe('ER AC1 - the equipment requirements card', () => {
   it('is on the Coordinator’s event page, for that event', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
 
     const card = await screen.findByLabelText('equipment requirements stub')
     expect(card).toHaveAttribute('data-event-id', '7')
-    expect(card).toHaveAttribute('data-event-status', 'approved')
+    expect(card).toHaveAttribute('data-event-status', 'event_approved')
   })
 
   it('is given the Organiser’s picks, so a requirement can be based on one', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'approved',
+      status: 'event_approved',
       equipment_items: [
         {
           id: 31,
@@ -745,7 +745,7 @@ describe('ER AC1 - the equipment requirements card', () => {
   it('is given the Organiser’s other equipment notes as context', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'approved',
+      status: 'event_approved',
       equipment_requirements: 'Stage left, near the fire exit',
     })
     renderView()
@@ -763,7 +763,7 @@ describe('ER AC1 - the equipment requirements card', () => {
   })
 
   it('does not replace the Organiser’s own equipment under Event Details', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
     await screen.findByLabelText('equipment requirements stub')
 

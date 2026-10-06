@@ -62,7 +62,7 @@ def test_ac1_the_new_coordinator_can_open_and_act_on_it(client, w):
     assert client.get(f"/events/assigned/{e}", headers=w["priya_h"]).status_code == 200
     assert [r["id"] for r in client.get("/events/assigned", headers=w["priya_h"]).json()] == [e]
     approved = client.post(f"/events/{e}/approve", headers=w["priya_h"])
-    assert approved.status_code == 200 and approved.json()["status"] == "approved"
+    assert approved.status_code == 200 and approved.json()["status"] == "event_approved"
 
 
 def test_ac1_the_previous_coordinator_can_no_longer_open_or_act_on_it(client, w):
@@ -102,8 +102,8 @@ def test_ac1_workload_counts_move_with_the_event(client, w):
 # --- AC2 -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("status", [EventStatus.under_review, EventStatus.changes_requested, EventStatus.approved,
-                                    EventStatus.planning, EventStatus.confirmed])
+@pytest.mark.parametrize("status", [EventStatus.under_review, EventStatus.awaiting_organiser_reply, EventStatus.event_approved,
+                                    EventStatus.planning_event, EventStatus.safety_check_passed])
 def test_ac2_status_and_details_are_unchanged(client, w, status):
     e = assigned_event(client, w)
     set_status(w, e, status)
@@ -220,7 +220,7 @@ def test_reassign_inherits_the_shared_action_and_keeps_the_stories_finished_set(
     from app.services.lead_assignment import LeadAssignmentAction
 
     assert issubclass(ReassignEvent, LeadAssignmentAction)
-    assert set(FINISHED_STATUSES) == {EventStatus.rejected, EventStatus.cancelled, EventStatus.completed}
+    assert set(FINISHED_STATUSES) == {EventStatus.event_rejected, EventStatus.event_cancelled, EventStatus.event_completed}
 
 
 

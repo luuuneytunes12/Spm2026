@@ -1,16 +1,23 @@
 import enum
 
 class EventStatus(enum.StrEnum):
+    """The Event statuses of dod.md section 11a -- those names, and no others.
+
+    Each stored value is the DoD name in snake_case, so the UI label, the
+    database enum, the activity log and the tests all spell it the same way.
+    """
+
     draft = "draft"
-    submitted = "submitted"
+    submitted_awaiting_coordinator = "submitted_awaiting_coordinator"
     under_review = "under_review"
-    changes_requested = "changes_requested"
-    approved = "approved"
-    rejected = "rejected"
-    planning = "planning"
-    confirmed = "confirmed"
-    completed = "completed"
-    cancelled = "cancelled"
+    awaiting_organiser_reply = "awaiting_organiser_reply"
+    event_approved = "event_approved"
+    planning_event = "planning_event"
+    awaiting_safety_check = "awaiting_safety_check"
+    safety_check_passed = "safety_check_passed"  # "Safety Check Passed (Event Confirmed)"
+    event_completed = "event_completed"
+    event_rejected = "event_rejected"
+    event_cancelled = "event_cancelled"
 
 
 # An event that has been approved and has not yet finished: the window in
@@ -18,9 +25,9 @@ class EventStatus(enum.StrEnum):
 # is not yet a plan, and a rejected, completed or cancelled event has nothing
 # left to hold resources for.
 PLANNED_EVENT_STATUSES = (
-    EventStatus.approved,
-    EventStatus.planning,
-    EventStatus.confirmed,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.safety_check_passed,
 )
 
 

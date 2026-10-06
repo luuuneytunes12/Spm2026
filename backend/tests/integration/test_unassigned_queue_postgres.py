@@ -26,7 +26,7 @@ def test_queue_ac1_submit_leaves_no_coordinator_even_with_one_available(client, 
 
     rows = client.get("/lead/unassigned-queue", headers=lead_h).json()
     assert [r["id"] for r in rows] == [event_id]
-    assert rows[0]["status"] == "submitted" and rows[0]["coordinator"] is None
+    assert rows[0]["status"] == "submitted_awaiting_coordinator" and rows[0]["coordinator"] is None
 
 
 def test_queue_ac3_oldest_submission_comes_first(client, db, make_user):

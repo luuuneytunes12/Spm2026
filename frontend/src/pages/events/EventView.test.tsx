@@ -52,7 +52,7 @@ const BASE: EventDetail = {
   equipment_items: [],
   special_arrangements: null,
   registration_enabled: false,
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: '2026-09-10T02:00:00Z',
   created_at: '2026-09-09T00:00:00Z',
   updated_at: '2026-09-10T02:00:00Z',
@@ -124,7 +124,7 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
   })
 
   it('does not offer correction after the Coordinator decides', async () => {
-    mockGet.mockResolvedValue({ ...BASE, status: 'approved' })
+    mockGet.mockResolvedValue({ ...BASE, status: 'event_approved' })
 
     renderView()
 
@@ -183,12 +183,12 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
   it('shows the Coordinator rejection reason in the event activity log', async () => {
     const rejection: ActivityEntry = {
       from_status: 'under_review',
-      to_status: 'rejected',
+      to_status: 'event_rejected',
       note: 'The requested venue is unavailable on that date.',
       changed_by_name: 'Sam Tan',
       created_at: '2026-09-12T09:00:00Z',
     }
-    mockGet.mockResolvedValue({ ...BASE, status: 'rejected' })
+    mockGet.mockResolvedValue({ ...BASE, status: 'event_rejected' })
     mockActivity.mockResolvedValue([rejection])
 
     renderView()
@@ -257,7 +257,7 @@ describe('SCRUM-23 - the activity log records who was assigned', () => {
         created_at: '2026-09-12T09:00:00Z',
       },
       {
-        from_status: 'submitted',
+        from_status: 'submitted_awaiting_coordinator',
         to_status: 'under_review',
         note: 'Assigned to Sam Tan.',
         changed_by_name: 'Priya Menon',

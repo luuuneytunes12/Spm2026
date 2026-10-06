@@ -43,7 +43,7 @@ def item(db_session):
     return projector
 
 
-def _event(db_session, organiser, item, needs, name="Conference", status=EventStatus.approved,
+def _event(db_session, organiser, item, needs, name="Conference", status=EventStatus.event_approved,
            start=START, end=END):
     """An event that asked for `needs` of `item`."""
     event = Event(name=name, organiser_id=organiser[0].id, status=status, proposed_start=start, proposed_end=end)

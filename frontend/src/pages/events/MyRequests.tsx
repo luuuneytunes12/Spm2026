@@ -160,7 +160,7 @@ export function MyRequests() {
                 ) : (
                   <>
                     <Link to={`/organiser/events/${event.id}`}>View →</Link>
-                    {(event.status === EventStatus.SUBMITTED ||
+                    {(event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR ||
                       event.status === EventStatus.UNDER_REVIEW) &&
                       !event.has_pending_change_request && (
                       <Link to={`/organiser/events/${event.id}/edit`}>Request changes →</Link>

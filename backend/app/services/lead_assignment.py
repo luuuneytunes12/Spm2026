@@ -22,9 +22,9 @@ from app.services.notifications import notify
 
 # An Event in one of these states is finished and can no longer be moved.
 FINISHED_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.rejected,
-    EventStatus.cancelled,
-    EventStatus.completed,
+    EventStatus.event_rejected,
+    EventStatus.event_cancelled,
+    EventStatus.event_completed,
 )
 
 

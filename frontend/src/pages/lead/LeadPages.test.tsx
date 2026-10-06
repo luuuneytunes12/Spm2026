@@ -31,7 +31,7 @@ const event = (over: Partial<LeadEvent>): LeadEvent => ({
   proposed_start: null,
   proposed_end: null,
   expected_attendance: 120,
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: null,
   updated_at: '2026-10-01T00:00:00Z',
   organiser: { id: 2, name: 'Olivia Organiser', email: 'o@cs.local' },
@@ -124,7 +124,7 @@ describe('Lead pages', () => {
 
   it('SCRUM-82 AC1: lists each active Event with its name, Coordinator and status', async () => {
     vi.mocked(listCoordinatorAssignments).mockResolvedValue([
-      event({ id: 4, name: 'Held by Sam', status: 'planning', coordinator: { id: 3, name: 'Sam Tan', email: 's@cs.local' } }),
+      event({ id: 4, name: 'Held by Sam', status: 'planning_event', coordinator: { id: 3, name: 'Sam Tan', email: 's@cs.local' } }),
     ])
     render(
       <MemoryRouter>

@@ -29,12 +29,12 @@ from event_review_test_helpers import user
 LIST = "/lead/assignments"
 ACTIVE = [
     EventStatus.under_review,
-    EventStatus.changes_requested,
-    EventStatus.approved,
-    EventStatus.planning,
-    EventStatus.confirmed,
+    EventStatus.awaiting_organiser_reply,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.safety_check_passed,
 ]
-INACTIVE = [EventStatus.draft, EventStatus.submitted, EventStatus.rejected, EventStatus.completed, EventStatus.cancelled]
+INACTIVE = [EventStatus.draft, EventStatus.submitted_awaiting_coordinator, EventStatus.event_rejected, EventStatus.event_completed, EventStatus.event_cancelled]
 
 
 @pytest.fixture()
@@ -98,7 +98,7 @@ def test_ac1_an_event_without_a_coordinator_is_not_listed(client, world):
 
 def test_ac1_events_of_every_coordinator_are_listed(client, world):
     _event(world, EventStatus.under_review, world["sam"])
-    _event(world, EventStatus.planning, world["priya"])
+    _event(world, EventStatus.planning_event, world["priya"])
     assert {r["coordinator"]["name"] for r in client.get(LIST, headers=world["lead"]).json()} == {"Sam Tan", "Priya Nair"}
 
 
@@ -107,8 +107,8 @@ def test_ac1_events_of_every_coordinator_are_listed(client, world):
 
 def test_ac2_filtering_by_a_coordinator_shows_only_their_active_events(client, world):
     mine = [_event(world, EventStatus.under_review, world["sam"], name=f"S{i}") for i in range(2)]
-    _event(world, EventStatus.planning, world["priya"], name="P1")
-    _event(world, EventStatus.completed, world["sam"], name="Finished")  # not active
+    _event(world, EventStatus.planning_event, world["priya"], name="P1")
+    _event(world, EventStatus.event_completed, world["sam"], name="Finished")  # not active
     body = client.get(LIST, params={"coordinator_id": world["sam"].id}, headers=world["lead"]).json()
     assert {r["id"] for r in body} == {e.id for e in mine}
     assert len(body) == 2
@@ -122,7 +122,7 @@ def test_ac2_a_coordinator_with_no_active_events_gives_an_empty_list(client, wor
 def test_ac2_workload_counts_match_the_filtered_lists(client, world):
     for _ in range(2):
         _event(world, EventStatus.under_review, world["sam"])
-    _event(world, EventStatus.completed, world["sam"])
+    _event(world, EventStatus.event_completed, world["sam"])
     rows = {r["name"]: r["active_events"] for r in client.get("/lead/coordinators", headers=world["lead"]).json()}
     assert rows == {"Priya Nair": 0, "Sam Tan": 2}
     filtered = client.get(LIST, params={"coordinator_id": world["sam"].id}, headers=world["lead"]).json()
@@ -138,7 +138,7 @@ def test_ac2_workload_lists_only_coordinators(client, world):
 
 
 def test_ac3_opening_an_event_shows_what_the_organiser_entered_and_their_contact(client, world):
-    e = _event(world, EventStatus.approved, world["sam"], name="Review me")
+    e = _event(world, EventStatus.event_approved, world["sam"], name="Review me")
     body = client.get(f"{LIST}/{e.id}", headers=world["lead"]).json()
     assert body["name"] == "Review me"
     assert body["purpose"] == "Annual partner briefing"
@@ -149,7 +149,7 @@ def test_ac3_opening_an_event_shows_what_the_organiser_entered_and_their_contact
     assert body["equipment_requirements"] == "2 projectors"
     assert body["accessibility_needs"] == "Step-free access"
     assert body["registration_enabled"] is True
-    assert body["status"] == "approved"
+    assert body["status"] == "event_approved"
     assert body["organiser"] == {"id": world["org"].id, "name": "Olivia Organiser", "email": "org@cs.local"}
     assert "proposed_start" in body and "equipment_items" in body
 
@@ -210,7 +210,7 @@ def test_active_assignments_inherit_from_the_earlier_overview_class():
 
 def test_the_active_status_set_is_the_stories_definition():
     assert set(LEAD_ACTIVE_STATUSES) == set(ACTIVE)
-    assert EventStatus.submitted not in LEAD_ACTIVE_STATUSES
+    assert EventStatus.submitted_awaiting_coordinator not in LEAD_ACTIVE_STATUSES
 
 
 def test_workload_is_a_plain_read_that_changes_nothing(client, world):

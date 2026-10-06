@@ -173,7 +173,7 @@ def world(db_session):
         name="Conference",
         organiser_id=organiser.id,
         coordinator_id=coordinator.id,
-        status=EventStatus.approved,
+        status=EventStatus.event_approved,
         proposed_start=START,
         proposed_end=END,
     )

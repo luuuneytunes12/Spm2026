@@ -114,7 +114,7 @@ export function EventView() {
           </p>
         </div>
         {(event.status === EventStatus.DRAFT ||
-          ((event.status === EventStatus.SUBMITTED || event.status === EventStatus.UNDER_REVIEW) &&
+          ((event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR || event.status === EventStatus.UNDER_REVIEW) &&
             !hasPendingChangeRequest)) && (
           <Link to={`/organiser/events/${event.id}/edit`} className="btn-primary btn-link">
             {event.status === EventStatus.DRAFT ? 'Continue editing' : 'Request changes'}

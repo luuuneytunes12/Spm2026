@@ -39,7 +39,7 @@ def _approved(client, db_session):
     organiser, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.room_layout_preference = "Theatre"
-    event.status = EventStatus.approved
+    event.status = EventStatus.event_approved
     db_session.commit()
     _, staff_h = user(client, db_session, Role.VENUE_STAFF, "staff@example.com", "Venue Staff")
     return coordinator, coord_h, staff_h, event_id

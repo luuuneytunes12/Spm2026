@@ -20,11 +20,11 @@ def test_ac2_counts_and_filter_agree_on_postgres(client, db, make_user):
     sam, _ = make_user(Role.COORDINATOR, "sam@connectsphere.test", "Sam Tan")
     priya, _ = make_user(Role.COORDINATOR, "priya@connectsphere.test", "Priya Nair")
     _l, lead_h = make_user(Role.COORDINATOR_LEAD, "lead@connectsphere.test", "Lena Lead")
-    for status in (EventStatus.under_review, EventStatus.planning, EventStatus.completed):
+    for status in (EventStatus.under_review, EventStatus.planning_event, EventStatus.event_completed):
         _event(db, org.id, sam.id, status)
-    _event(db, org.id, priya.id, EventStatus.confirmed)
+    _event(db, org.id, priya.id, EventStatus.safety_check_passed)
 
     counts = {r["name"]: r["active_events"] for r in client.get("/lead/coordinators", headers=lead_h).json()}
     assert counts == {"Priya Nair": 1, "Sam Tan": 2}
     sams = client.get("/lead/assignments", params={"coordinator_id": sam.id}, headers=lead_h).json()
-    assert len(sams) == counts["Sam Tan"] and {r["status"] for r in sams} == {"under_review", "planning"}
+    assert len(sams) == counts["Sam Tan"] and {r["status"] for r in sams} == {"under_review", "planning_event"}

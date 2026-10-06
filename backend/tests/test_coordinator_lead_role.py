@@ -194,5 +194,5 @@ def test_ac3_lead_is_not_added_to_the_coordinator_assignment_pool(client, db_ses
 
 def test_ac3_existing_role_values_are_unchanged():
     assert {r.value for r in Role if r is not Role.COORDINATOR_LEAD} == {
-        "organiser", "coordinator", "venue_staff", "tech_support", "attendee",
+        "organiser", "coordinator", "venue_staff", "tech_support", "attendee", "safety_officer",
     }

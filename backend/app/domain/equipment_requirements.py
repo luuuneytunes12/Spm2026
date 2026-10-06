@@ -47,9 +47,9 @@ from app.models.events import Event
 # event). To be confirmed with the customer in Q&A; changing it is this one
 # line plus the status-by-status test cases.
 EQUIPMENT_ACTIVE_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.approved,
-    EventStatus.planning,
-    EventStatus.confirmed,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.safety_check_passed,
 )
 
 # The fields an edit may change. The link to an Organiser's pick is a fact

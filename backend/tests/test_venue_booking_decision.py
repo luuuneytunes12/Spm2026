@@ -26,7 +26,7 @@ pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 def _setup(client, db_session):
     """An approved event with a pending booking request, and everyone's headers."""
     _, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
-    db_session.get(Event, event_id).status = EventStatus.approved
+    db_session.get(Event, event_id).status = EventStatus.event_approved
     db_session.commit()
     staff, staff_h = user(client, db_session, Role.VENUE_STAFF, "staff@example.com", "Vera Staff")
     venue = _venue(db_session)
@@ -263,7 +263,7 @@ def _second_request_for_the_same_venue(client, db_session, s, **event_times):
     """Another approved event asking for the same venue; returns its booking id."""
     event_id = submitted_event(client, s["org_h"])
     event = db_session.get(Event, event_id)
-    event.status = EventStatus.approved
+    event.status = EventStatus.event_approved
     for field, value in event_times.items():
         setattr(event, field, value)
     db_session.commit()

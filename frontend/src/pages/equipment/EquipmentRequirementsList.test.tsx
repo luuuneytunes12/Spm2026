@@ -36,7 +36,7 @@ const CONFERENCE: SupportEventSummary = {
   proposed_start: '2026-11-02T09:00:00Z',
   proposed_end: '2026-11-02T17:00:00Z',
   expected_attendance: 120,
-  status: 'approved',
+  status: 'event_approved',
   requirement_count: 3,
 }
 
@@ -46,7 +46,7 @@ const WORKSHOP: SupportEventSummary = {
   name: 'Robotics Workshop',
   event_type: 'workshop',
   expected_attendance: 40,
-  status: 'confirmed',
+  status: 'safety_check_passed',
   requirement_count: 1,
 }
 

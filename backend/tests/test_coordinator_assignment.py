@@ -310,7 +310,7 @@ def test_rolled_back_assignment_pushes_nothing(client, db_session):
     leaves no notification row behind either."""
     organiser, _ = _organiser(client, db_session)
     _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-    event = Event(organiser_id=organiser.id, name="Draft", status=EventStatus.submitted)
+    event = Event(organiser_id=organiser.id, name="Draft", status=EventStatus.submitted_awaiting_coordinator)
     db_session.add(event)
     db_session.commit()
 

@@ -1,6 +1,6 @@
 """Backend tests for "View Unassigned Event Request Queue as Coordinator Lead".
 
-  AC1 - a submitted request enters the queue as 'submitted' with no
+  AC1 - a submitted request enters the queue as 'submitted_awaiting_coordinator' with no
         Coordinator (submit no longer auto-assigns)
   AC2 - a draft is not listed
   AC3 - each queued request shows name, type, date/time, expected attendance,
@@ -63,7 +63,7 @@ def test_ac1_submitted_request_enters_the_queue_as_submitted_with_no_coordinator
 
     body = client.get(QUEUE, headers=world["lead"]).json()
     assert [e["id"] for e in body] == [event_id]
-    assert body[0]["status"] == "submitted"
+    assert body[0]["status"] == "submitted_awaiting_coordinator"
     assert body[0]["coordinator"] is None
     assert db_session.get(Event, event_id).coordinator_id is None
 
@@ -72,11 +72,11 @@ def test_ac1_submit_does_not_assign_even_when_a_coordinator_is_available(client,
     assert world["coordinator"].is_available is True
     event_id = _submit(client, world["org"])
     event = db_session.get(Event, event_id)
-    assert (event.coordinator_id, event.status) == (None, EventStatus.submitted)
+    assert (event.coordinator_id, event.status) == (None, EventStatus.submitted_awaiting_coordinator)
     # nobody was told they were assigned, and the log holds only the submission
     assert db_session.query(Notification).filter(Notification.user_id == world["coordinator"].id).count() == 0
     log = db_session.query(EventStatusHistory).filter(EventStatusHistory.event_id == event_id).all()
-    assert [h.to_status for h in log] == ["submitted"]
+    assert [h.to_status for h in log] == ["submitted_awaiting_coordinator"]
 
 
 def test_ac1_an_assigned_request_leaves_the_queue(client, db_session, world):

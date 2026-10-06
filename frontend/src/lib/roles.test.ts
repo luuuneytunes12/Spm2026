@@ -45,3 +45,13 @@ describe('Event Coordinator Lead role', () => {
     }
   })
 })
+
+describe('Safety Officer beside the Event Coordinator Lead', () => {
+  it('is a read-only role with its own landing path, and the Lead is unchanged', () => {
+    expect(ROLE_PERMISSIONS[Role.SAFETY_OFFICER]).toEqual([Permission.EVENT_READ])
+    expect(ROLE_HOME_PATH[Role.SAFETY_OFFICER]).toBe('/safety-checks')
+    expect(ROLE_LABELS[Role.SAFETY_OFFICER]).toBe('Safety Officer')
+    expect(ROLE_HOME_PATH[Role.COORDINATOR_LEAD]).toBe('/coordinator-lead')
+    expect(roleHas(Role.SAFETY_OFFICER, Permission.ASSIGNMENT_MANAGE)).toBe(false)
+  })
+})

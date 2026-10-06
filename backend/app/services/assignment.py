@@ -28,12 +28,12 @@ from app.services.notifications import notify
 # event there does not need reassigning just because its (former)
 # Coordinator has gone unavailable.
 ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.submitted,
+    EventStatus.submitted_awaiting_coordinator,
     EventStatus.under_review,
-    EventStatus.changes_requested,
-    EventStatus.approved,
-    EventStatus.planning,
-    EventStatus.confirmed,
+    EventStatus.awaiting_organiser_reply,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.safety_check_passed,
 )
 
 
@@ -154,7 +154,7 @@ def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
 
     event.coordinator_id = coordinator.id
     previous_status = event.status
-    if event.status == EventStatus.submitted:
+    if event.status == EventStatus.submitted_awaiting_coordinator:
         event.status = EventStatus.under_review
 
     db.add(

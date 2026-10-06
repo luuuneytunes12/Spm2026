@@ -384,7 +384,7 @@ export function AssignedEventView() {
       <section className="card">
         <h2>Status</h2>
         <StatusTimeline event={event} />
-        {(event.status === EventStatus.SUBMITTED ||
+        {(event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR ||
           event.status === EventStatus.UNDER_REVIEW) && (
           <div className="status-actions">
             <h3>Coordinator decision</h3>
@@ -426,7 +426,7 @@ export function AssignedEventView() {
             )}
           </div>
         )}
-        {event.status === EventStatus.APPROVED && (
+        {event.status === EventStatus.EVENT_APPROVED && (
           <div className="status-actions">
             <h3>Confirm event</h3>
             <p className="page-subtitle">
@@ -466,7 +466,7 @@ export function AssignedEventView() {
         <VenueBookingSection eventId={event.id} expectedAttendance={event.expected_attendance} />
       )}
 
-      {event.status === EventStatus.CONFIRMED && (
+      {event.status === EventStatus.SAFETY_CHECK_PASSED && (
         <section className="card">
           <h2>Registration</h2>
           <p className="page-subtitle">

@@ -19,10 +19,10 @@ def test_coordinator_can_approve_assigned_request_and_notify_organiser(client, d
     response = client.post(f"/events/{event_id}/approve", headers=coordinator_headers)
 
     assert response.status_code == 200
-    assert response.json()["status"] == "approved"
+    assert response.json()["status"] == "event_approved"
     decision = (
         db_session.query(EventStatusHistory)
-        .filter_by(event_id=event_id, to_status="approved")
+        .filter_by(event_id=event_id, to_status="event_approved")
         .one()
     )
     assert decision.changed_by == coordinator.id
@@ -35,7 +35,7 @@ def test_coordinator_can_approve_assigned_request_and_notify_organiser(client, d
     assert "has been approved" in notification.message
 
 
-@pytest.mark.parametrize("status", ["draft", "approved", "rejected", "cancelled"])
+@pytest.mark.parametrize("status", ["draft", "event_approved", "event_rejected", "event_cancelled"])
 def test_request_outside_reviewable_status_cannot_be_approved(client, db_session, status):
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)

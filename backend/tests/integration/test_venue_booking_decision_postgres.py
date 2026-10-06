@@ -33,7 +33,7 @@ def _setup(client, make_user, db, events=1):
     event_ids, booking_ids = [], []
     for _ in range(events):
         event_id = submit_event(client, org_h)
-        db.get(Event, event_id).status = EventStatus.approved
+        db.get(Event, event_id).status = EventStatus.event_approved
         db.commit()
         event_ids.append(event_id)
         booking_ids.append(_submit(client, sam_h, event_id, venue.id).json()["id"])

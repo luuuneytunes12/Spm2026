@@ -28,7 +28,7 @@ const DETAIL: LeadEventDetail = {
   proposed_start: '2026-11-02T09:00:00Z',
   proposed_end: '2026-11-02T17:00:00Z',
   expected_attendance: 120,
-  status: 'planning',
+  status: 'planning_event',
   submitted_at: '2026-10-01T09:30:00Z',
   updated_at: '2026-10-02T09:30:00Z',
   organiser_id: 2,

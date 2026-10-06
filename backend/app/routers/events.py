@@ -34,7 +34,7 @@ from app.services.submission_notice import SubmissionNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
 
-REVIEWABLE_STATUSES = (EventStatus.submitted, EventStatus.under_review)
+REVIEWABLE_STATUSES = (EventStatus.submitted_awaiting_coordinator, EventStatus.under_review)
 IMPORTANT_CHANGE_FIELDS = {
     "proposed_start",
     "proposed_end",
@@ -353,7 +353,7 @@ def list_my_events(
 
     Scoped to `organiser_id == user.id`, which is what backs both the
     "Drafts" and "Submitted Requests" tabs -- the caller passes
-    ?status=draft or ?status=submitted.
+    ?status=draft or ?status=submitted_awaiting_coordinator.
     """
     query = db.query(Event).filter(Event.organiser_id == user.id)
     if status_filter is not None:
@@ -397,7 +397,7 @@ def review_queue(
     """
     events = (
         db.query(Event)
-        .filter(Event.status == EventStatus.submitted)
+        .filter(Event.status == EventStatus.submitted_awaiting_coordinator)
         .order_by(Event.submitted_at.desc())
         .all()
     )
@@ -481,7 +481,7 @@ def get_assigned_event(
         organiser=OrganiserContact.model_validate(event.organiser),
         activity=_event_activity(db, event.id),
         confirmation_outstanding=(
-            _confirmation_outstanding(db, event) if event.status == EventStatus.approved else []
+            _confirmation_outstanding(db, event) if event.status == EventStatus.event_approved else []
         ),
         change_requests=[
             _change_request_out(db, request)
@@ -638,10 +638,10 @@ def confirm_event(
     is not approved or any equipment requirement is not reserved. Records
     who confirmed it and when in the activity log, and tells the Organiser.
     """
-    # Locked: two overlapping confirms must not both see "approved" and both
+    # Locked: two overlapping confirms must not both see "event_approved" and both
     # log a transition and notify the Organiser.
     event = _get_assigned_event(event_id, user, db, lock=True)
-    if event.status != EventStatus.approved:
+    if event.status != EventStatus.event_approved:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Only an approved event can be confirmed; this one is '{event.status}'.",
@@ -655,7 +655,7 @@ def confirm_event(
         )
 
     previous_status = event.status
-    event.status = EventStatus.confirmed
+    event.status = EventStatus.safety_check_passed
     db.add(
         EventStatusHistory(
             event_id=event.id,
@@ -694,7 +694,7 @@ def set_event_registration(
     event = _get_assigned_event(event_id, user, db, lock=True)
 
     if body.registration_enabled:
-        if event.status != EventStatus.confirmed:
+        if event.status != EventStatus.safety_check_passed:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Registration can only be opened for a confirmed event.",
@@ -743,7 +743,7 @@ def approve_event(
     """Approve a request assigned to the current Coordinator."""
     event = _get_reviewable_event(event_id, user, db)
     previous_status = event.status
-    event.status = EventStatus.approved
+    event.status = EventStatus.event_approved
     db.add(
         EventStatusHistory(
             event_id=event.id,
@@ -775,7 +775,7 @@ def reject_event(
     """Reject an assigned request and retain the Coordinator's reason."""
     event = _get_reviewable_event(event_id, user, db)
     previous_status = event.status
-    event.status = EventStatus.rejected
+    event.status = EventStatus.event_rejected
     db.add(
         EventStatusHistory(
             event_id=event.id,
@@ -860,7 +860,7 @@ def _after_submit(db: Session, event: Event, user: User) -> None:
     """Runs inside the submit transaction, after the status change is logged.
 
     Deliberately does nothing: a submitted request is NOT auto-assigned. It
-    waits in the Event Coordinator Lead's Unassigned Queue as "submitted"
+    waits in the Event Coordinator Lead's Unassigned Queue as "submitted_awaiting_coordinator"
     with no Coordinator, and only the Lead assigns one (see
     app/services/assignment_overview.py). Older coordinator-workflow tests
     swap this for `assign_coordinator` -- see `coordinator_auto_assign` in
@@ -902,7 +902,7 @@ def submit_event(
         )
 
     previous = event.status
-    event.status = EventStatus.submitted
+    event.status = EventStatus.submitted_awaiting_coordinator
     event.submitted_at = datetime.now(timezone.utc)
 
     # Record the transition. Cheap to do now, and it is what makes "who
@@ -913,7 +913,7 @@ def submit_event(
             event_id=event.id,
             changed_by=user.id,
             from_status=previous,
-            to_status=EventStatus.submitted,
+            to_status=EventStatus.submitted_awaiting_coordinator,
             note="Submitted by organiser.",
         )
     )

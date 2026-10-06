@@ -27,7 +27,7 @@ def _setup(client, make_user, db):
     _v, staff_h = make_user(Role.VENUE_STAFF, "staff@connectsphere.test", "Vera Staff")
     event_id = submit_event(client, org_h)
     event = db.get(Event, event_id)
-    event.status = EventStatus.approved
+    event.status = EventStatus.event_approved
     event.room_layout_preference = "Theatre"
     venue = Venue(name="Marina Hall", location="10 Bayfront Ave", capacity=250)
     db.add(venue)

@@ -94,7 +94,7 @@ function renderSection(
   return render(
     <EquipmentRequirementsSection
       eventId={7}
-      eventStatus={props.eventStatus ?? EventStatus.APPROVED}
+      eventStatus={props.eventStatus ?? EventStatus.EVENT_APPROVED}
       organiserLines={props.organiserLines ?? []}
       organiserNotes={props.organiserNotes ?? null}
     />,
@@ -727,7 +727,7 @@ describe('editing and removing', () => {
 })
 
 describe('the status window', () => {
-  it.each([EventStatus.APPROVED, EventStatus.PLANNING, EventStatus.CONFIRMED])(
+  it.each([EventStatus.EVENT_APPROVED, EventStatus.PLANNING_EVENT, EventStatus.SAFETY_CHECK_PASSED])(
     'lets equipment be recorded while the event is %s',
     async (eventStatus) => {
       mockList.mockResolvedValue([AUDIO])
@@ -751,12 +751,12 @@ describe('the status window', () => {
 
   it.each([
     EventStatus.DRAFT,
-    EventStatus.SUBMITTED,
+    EventStatus.SUBMITTED_AWAITING_COORDINATOR,
     EventStatus.UNDER_REVIEW,
-    EventStatus.CHANGES_REQUESTED,
-    EventStatus.REJECTED,
-    EventStatus.COMPLETED,
-    EventStatus.CANCELLED,
+    EventStatus.AWAITING_ORGANISER_REPLY,
+    EventStatus.EVENT_REJECTED,
+    EventStatus.EVENT_COMPLETED,
+    EventStatus.EVENT_CANCELLED,
   ])('offers no way to change anything while the event is %s', async (eventStatus) => {
     mockList.mockResolvedValue([AUDIO])
     renderSection({ eventStatus })
@@ -769,7 +769,7 @@ describe('the status window', () => {
 
   it('still shows what was recorded after the event has finished', async () => {
     mockList.mockResolvedValue([AUDIO])
-    renderSection({ eventStatus: EventStatus.COMPLETED })
+    renderSection({ eventStatus: EventStatus.EVENT_COMPLETED })
 
     expect((await recorded()).getByText('Handheld wireless, for panel Q&A')).toBeInTheDocument()
   })

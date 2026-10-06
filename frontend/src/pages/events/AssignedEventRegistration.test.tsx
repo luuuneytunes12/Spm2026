@@ -52,7 +52,7 @@ const CONFIRMED: AssignedEventDetail = {
   registration_enabled: false,
   registration_opens_at: null,
   registration_closes_at: null,
-  status: 'confirmed',
+  status: 'safety_check_passed',
   submitted_at: '2026-09-10T02:00:00Z',
   created_at: '2026-09-09T00:00:00Z',
   updated_at: '2026-09-10T02:00:00Z',
@@ -159,7 +159,7 @@ describe('Registration card', () => {
   })
 
   it('AC3: an event that is not confirmed offers no way to enable registration', async () => {
-    for (const status of ['submitted', 'under_review', 'approved', 'rejected'] as const) {
+    for (const status of ['submitted_awaiting_coordinator', 'under_review', 'event_approved', 'event_rejected'] as const) {
       mockGet.mockResolvedValue({ ...CONFIRMED, status })
       const view = renderView()
 

@@ -40,7 +40,7 @@ def _account(client, db_session, role: Role, email: str, name="Test User"):
     return user, {"Authorization": f"Bearer {token}"}
 
 
-def _event(db_session, organiser, *, status=EventStatus.submitted, coordinator=None, name="Event"):
+def _event(db_session, organiser, *, status=EventStatus.submitted_awaiting_coordinator, coordinator=None, name="Event"):
     event = Event(
         organiser_id=organiser.id,
         coordinator_id=coordinator.id if coordinator else None,
@@ -68,7 +68,7 @@ def test_ac2_unassigned_requests_lists_only_active_unassigned_events(client, db_
     wanted = _event(db_session, org, name="Needs a coordinator")
     _event(db_session, org, name="Already assigned", coordinator=coord)
     _event(db_session, org, name="Still a draft", status=EventStatus.draft)
-    _event(db_session, org, name="Was rejected", status=EventStatus.rejected)
+    _event(db_session, org, name="Was rejected", status=EventStatus.event_rejected)
 
     res = client.get("/lead/unassigned-requests", headers=world["lead_auth"])
     assert res.status_code == 200
@@ -82,7 +82,7 @@ def test_ac2_assignments_lists_active_assigned_events_with_their_coordinator(cli
     org, coord = world["organiser"], world["coordinator"]
     held = _event(db_session, org, name="Held", coordinator=coord, status=EventStatus.under_review)
     _event(db_session, org, name="Unassigned")
-    _event(db_session, org, name="Done", coordinator=coord, status=EventStatus.completed)
+    _event(db_session, org, name="Done", coordinator=coord, status=EventStatus.event_completed)
 
     res = client.get("/lead/assignments", headers=world["lead_auth"])
     assert res.status_code == 200
@@ -96,7 +96,7 @@ def test_ac2_assignments_include_every_coordinators_events(client, db_session, w
     org = world["organiser"]
     other, _ = _account(client, db_session, Role.COORDINATOR, "c2@cs.local", "Priya Nair")
     _event(db_session, org, coordinator=world["coordinator"], status=EventStatus.under_review)
-    _event(db_session, org, coordinator=other, status=EventStatus.planning)
+    _event(db_session, org, coordinator=other, status=EventStatus.planning_event)
     body = client.get("/lead/assignments", headers=world["lead_auth"]).json()
     assert {e["coordinator"]["name"] for e in body} == {"Sam Tan", "Priya Nair"}
 

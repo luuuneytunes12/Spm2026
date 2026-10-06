@@ -117,9 +117,9 @@ def test_ac1_a_repeat_submit_is_refused_and_does_not_notify_twice(client, world)
 def test_ac1_existing_submit_result_is_unchanged(client, db_session, world):
     event_id = _draft(client, world["org"])
     body = client.post(f"/events/{event_id}/submit", headers=world["org"]).json()
-    assert body["status"] == "submitted"
+    assert body["status"] == "submitted_awaiting_coordinator"
     assert body["coordinator_id"] is None
-    assert db_session.get(Event, event_id).status == EventStatus.submitted
+    assert db_session.get(Event, event_id).status == EventStatus.submitted_awaiting_coordinator
 
 
 # --- AC2 -------------------------------------------------------------------

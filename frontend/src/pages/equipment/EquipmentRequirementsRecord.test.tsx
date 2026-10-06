@@ -90,7 +90,7 @@ const RECORD: SupportEventRecord = {
   proposed_end: '2026-11-02T17:00:00Z',
   expected_attendance: 120,
   venue_requirements: 'Main hall, stage, podium',
-  status: 'approved',
+  status: 'event_approved',
   coordinator: { id: 2, name: 'Sam Tan', email: 'sam@connectsphere.test' },
   requirements: [
     {

@@ -33,7 +33,7 @@ def w(client, db_session):
                 lead=lead, lead_h=lead_h)
 
 
-def queued(w, name="Queued", status=EventStatus.submitted, coordinator=None):
+def queued(w, name="Queued", status=EventStatus.submitted_awaiting_coordinator, coordinator=None):
     e = Event(organiser_id=w["org"].id, coordinator_id=coordinator.id if coordinator else None,
               name=name, status=status)
     w["db"].add(e)
@@ -87,9 +87,9 @@ def test_ac1_the_lead_assigns_one_chosen_coordinator_not_the_least_loaded(client
 
 
 def test_ac2_the_list_shows_each_coordinator_with_their_active_event_count(client, w):
-    for s in (EventStatus.under_review, EventStatus.planning, EventStatus.confirmed):
+    for s in (EventStatus.under_review, EventStatus.planning_event, EventStatus.safety_check_passed):
         queued(w, status=s, coordinator=w["sam"])
-    for s in (EventStatus.rejected, EventStatus.cancelled, EventStatus.completed):
+    for s in (EventStatus.event_rejected, EventStatus.event_cancelled, EventStatus.event_completed):
         queued(w, status=s, coordinator=w["sam"])  # finished: not counted
     rows = {r["name"]: r["active_events"] for r in client.get("/lead/coordinators", headers=w["lead_h"]).json()}
     assert rows == {"Priya Nair": 0, "Sam Tan": 3}
@@ -112,7 +112,7 @@ def test_ac3_the_activity_log_records_the_lead_the_coordinator_and_the_time(clie
     line = log[0]  # newest first
     assert line["changed_by_name"] == "Lena Lead"
     assert "Sam Tan" in line["note"]
-    assert (line["from_status"], line["to_status"]) == ("submitted", "under_review")
+    assert (line["from_status"], line["to_status"]) == ("submitted_awaiting_coordinator", "under_review")
     assert line["created_at"]
     # and the Organiser can read the same record
     org_log = client.get(f"/events/{e.id}/activity", headers=w["org_h"]).json()
@@ -152,7 +152,7 @@ def test_ac5_an_already_assigned_event_cannot_be_assigned_again(client, w):
     assert e.coordinator_id == w["sam"].id  # the existing assignment is unchanged
 
 
-@pytest.mark.parametrize("status", [EventStatus.draft, EventStatus.rejected, EventStatus.completed, EventStatus.cancelled])
+@pytest.mark.parametrize("status", [EventStatus.draft, EventStatus.event_rejected, EventStatus.event_completed, EventStatus.event_cancelled])
 def test_ac5_an_event_that_is_not_in_the_queue_is_refused_and_unchanged(client, w, status):
     e = queued(w, status=status)
     assert assign(client, w, e, w["sam"]).status_code == 409
@@ -198,7 +198,7 @@ def test_ac6_other_roles_are_refused_and_the_request_stays_unassigned(client, db
     _, h = user(client, db_session, role, f"x_{role.value}@cs.local", "Someone")
     assert assign(client, w, e, w["sam"], headers=h).status_code == 403
     db_session.refresh(e)
-    assert (e.coordinator_id, e.status) == (None, EventStatus.submitted)
+    assert (e.coordinator_id, e.status) == (None, EventStatus.submitted_awaiting_coordinator)
     assert db_session.query(EventStatusHistory).filter(EventStatusHistory.event_id == e.id).count() == 0
 
 
@@ -221,4 +221,4 @@ def test_no_endpoint_assigns_a_coordinator_automatically_any_more(client, w):
     """Submitting leaves a request unassigned; only the Lead's assign endpoint changes that."""
     e = queued(w)
     w["db"].refresh(e)
-    assert (e.coordinator_id, e.status) == (None, EventStatus.submitted)
+    assert (e.coordinator_id, e.status) == (None, EventStatus.submitted_awaiting_coordinator)

@@ -57,7 +57,7 @@ class UnassignedQueue(UnassignedRequests):
     an active status), and neither does anything already assigned."""
 
     def narrow(self, query: Query) -> Query:
-        return super().narrow(query).filter(Event.status == EventStatus.submitted)
+        return super().narrow(query).filter(Event.status == EventStatus.submitted_awaiting_coordinator)
 
     def order(self, query: Query) -> Query:
         return query.order_by(Event.submitted_at.asc(), Event.id.asc())
@@ -74,10 +74,10 @@ class UnassignedQueue(UnassignedRequests):
 # submitted request has no Coordinator and sits in the Unassigned Queue.
 LEAD_ACTIVE_STATUSES: tuple[EventStatus, ...] = (
     EventStatus.under_review,
-    EventStatus.changes_requested,
-    EventStatus.approved,
-    EventStatus.planning,
-    EventStatus.confirmed,
+    EventStatus.awaiting_organiser_reply,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.safety_check_passed,
 )
 
 
