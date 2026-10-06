@@ -10,6 +10,7 @@ export const Role = {
   VENUE_STAFF: 'venue_staff',
   TECH_SUPPORT: 'tech_support',
   ATTENDEE: 'attendee',
+  SAFETY_OFFICER: 'safety_officer'
 } as const
 export type Role = (typeof Role)[keyof typeof Role]
 
@@ -21,6 +22,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.VENUE_STAFF]: 'Venue Staff',
   [Role.TECH_SUPPORT]: 'Technical Support Staff',
   [Role.ATTENDEE]: 'Attendee',
+  [Role.SAFETY_OFFICER]: 'Safety Officer',
 }
 
 export const Permission = {
@@ -39,26 +41,6 @@ export const Permission = {
 } as const
 export type Permission = (typeof Permission)[keyof typeof Permission]
 
-export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  [Role.ORGANISER]: Object.values(Permission),
-  [Role.COORDINATOR]: [
-    Permission.EVENT_READ,
-    Permission.EVENT_WRITE,
-    Permission.VENUE_READ,
-    Permission.VENUE_BOOK,
-    Permission.EQUIPMENT_READ,
-    Permission.REGISTRATION_READ,
-    Permission.REGISTRATION_MANAGE,
-  ],
-  [Role.VENUE_STAFF]: [Permission.VENUE_READ, Permission.VENUE_MANAGE, Permission.EVENT_READ],
-  [Role.TECH_SUPPORT]: [Permission.EQUIPMENT_READ, Permission.EQUIPMENT_MANAGE, Permission.EVENT_READ],
-  [Role.ATTENDEE]: [Permission.EVENT_READ, Permission.VENUE_READ, Permission.REGISTRATION_READ],
-}
-
-export function roleHas(role: Role, permission: Permission): boolean {
-  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false
-}
-
 // Single source of truth for "which page does this role land on" — used by
 // the /my redirect route and by Dashboard's link to the user's own page.
 export const ROLE_HOME_PATH: Record<Role, string> = {
@@ -67,6 +49,7 @@ export const ROLE_HOME_PATH: Record<Role, string> = {
   [Role.VENUE_STAFF]: '/venue-staff',
   [Role.TECH_SUPPORT]: '/tech-support',
   [Role.ATTENDEE]: '/attendee',
+  [Role.SAFETY_OFFICER]: '/safety-checks'
 }
 
 // Where a notification's `event_id` should link to for the signed-in

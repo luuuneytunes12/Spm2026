@@ -147,4 +147,8 @@ export const ROLE_LANDING: Record<Role, RoleLandingConfig> = {
       PROFILE,
     ],
   },
+  [Role.SAFETY_OFFICER]: {
+    tagline: 'Review events for safety compliance.',
+    tiles: [NOTIFICATIONS, PROFILE],
+  },
 }

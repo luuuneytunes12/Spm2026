@@ -17,7 +17,7 @@ class Role(StrEnum):
     VENUE_STAFF = "venue_staff"  # Venue Staff
     TECH_SUPPORT = "tech_support"  # Technical Support Staff (12 chars -- exactly at the limit)
     ATTENDEE = "attendee"  # Attendee
-
+    SAFETY_OFFICER = "safety_officer" #Safety Officer
 
 # Human-readable label for each role, since the slugs above are not
 # presentable as-is (e.g. "venue_staff" -> "Venue Staff"). Used by the UI;
@@ -28,6 +28,7 @@ ROLE_LABELS: dict[Role, str] = {
     Role.VENUE_STAFF: "Venue Staff",
     Role.TECH_SUPPORT: "Technical Support Staff",
     Role.ATTENDEE: "Attendee",
+    Role.SAFETY_OFFICER: "Safety Officer",
 }
 
 
@@ -84,6 +85,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.REGISTRATION_READ,
         }
     ),
+    Role.SAFETY_OFFICER: frozenset({Permission.EVENT_READ})
 }
 
 # Public registration must only ever create attendees; every other role is

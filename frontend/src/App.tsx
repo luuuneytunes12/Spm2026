@@ -28,6 +28,8 @@ import { VenueStaff } from './pages/roles/VenueStaff'
 import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
+import { SafetyChecks } from './pages/safety/SafetyChecks'
+
 import './App.css'
 
 function App() {
@@ -91,6 +93,9 @@ function App() {
             <Route path="/attendee" element={<Attendee />} />
             <Route path="/attendee/events" element={<AttendeeEvents />} />
             <Route path="/attendee/registrations" element={<MyRegistrations />} />
+          </Route>
+          <Route element={<RequireRole roles={[Role.SAFETY_OFFICER]} />}>
+            <Route path="/safety-checks" element={<SafetyChecks />} />
           </Route>
         </Route>
       </Route>

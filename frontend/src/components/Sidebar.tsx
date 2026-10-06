@@ -41,9 +41,12 @@ export function Sidebar({ id, open }: SidebarProps) {
     <aside id={id} className="sidebar" hidden={!open}>
       <nav aria-label="Main">
         <ul className="sidebar-nav">
-          <Item to={ROLE_HOME_PATH[user.role]} icon="home" end>
-            Home
-          </Item>
+          {user.role !== Role.SAFETY_OFFICER && (
+            <Item to={ROLE_HOME_PATH[user.role]} icon="home" end>
+              Home
+            </Item>
+          )}
+
           {user.role === Role.ORGANISER && (
             <Item to="/organiser/events" icon="list">
               My Event Requests
@@ -87,6 +90,12 @@ export function Sidebar({ id, open }: SidebarProps) {
               </Item>
             </>
           )}
+          {user.role === Role.SAFETY_OFFICER && (
+            <Item to="/safety-checks" icon="check">
+              Safety Checks
+            </Item>
+          )}
+
           <Item to="/notifications" icon="bell">
             Notifications
           </Item>
