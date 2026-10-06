@@ -11,6 +11,7 @@ export const Role = {
   TECH_SUPPORT: 'tech_support',
   ATTENDEE: 'attendee',
   COORDINATOR_LEAD: 'event_coordinator_lead',
+  SAFETY_OFFICER: 'safety_officer',
 } as const
 export type Role = (typeof Role)[keyof typeof Role]
 
@@ -23,6 +24,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.TECH_SUPPORT]: 'Technical Support Staff',
   [Role.ATTENDEE]: 'Attendee',
   [Role.COORDINATOR_LEAD]: 'Event Coordinator Lead',
+  [Role.SAFETY_OFFICER]: 'Safety Officer',
 }
 
 export const Permission = {
@@ -71,6 +73,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     Permission.ASSIGNMENT_MANAGE,
     Permission.ASSIGNMENT_VIEW_ALL,
   ],
+  // Mirrors the backend: a Safety Officer may only read events for now.
+  [Role.SAFETY_OFFICER]: [Permission.EVENT_READ],
 }
 
 export function roleHas(role: Role, permission: Permission): boolean {
@@ -86,6 +90,7 @@ export const ROLE_HOME_PATH: Record<Role, string> = {
   [Role.TECH_SUPPORT]: '/tech-support',
   [Role.ATTENDEE]: '/attendee',
   [Role.COORDINATOR_LEAD]: '/coordinator-lead',
+  [Role.SAFETY_OFFICER]: '/safety-checks',
 }
 
 // Where a notification's `event_id` should link to for the signed-in

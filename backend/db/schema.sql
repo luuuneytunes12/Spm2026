@@ -6,12 +6,15 @@
 
 create type user_role as enum (
     'organiser', 'coordinator', 'venue_staff', 'tech_support', 'attendee',
-    'event_coordinator_lead'
+    'event_coordinator_lead', 'safety_officer'
 );
 
+-- The Event statuses of dod.md section 11a, and no others.
 create type event_status as enum (
-    'draft', 'submitted', 'under_review', 'changes_requested',
-    'approved', 'rejected', 'planning', 'confirmed', 'completed', 'cancelled'
+    'draft', 'submitted_awaiting_coordinator', 'under_review',
+    'awaiting_organiser_reply', 'event_approved', 'planning_event',
+    'awaiting_safety_check', 'safety_check_passed', 'event_completed',
+    'event_rejected', 'event_cancelled'
 );
 
 create type booking_status as enum (

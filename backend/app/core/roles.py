@@ -21,6 +21,7 @@ class Role(StrEnum):
     # Event Requests. The label is the live `user_role` enum value.
     COORDINATOR_LEAD = "event_coordinator_lead"
 
+    SAFETY_OFFICER = "safety_officer" #Safety Officer
 
 # Human-readable label for each role, since the slugs above are not
 # presentable as-is (e.g. "venue_staff" -> "Venue Staff"). Used by the UI;
@@ -32,6 +33,7 @@ ROLE_LABELS: dict[Role, str] = {
     Role.TECH_SUPPORT: "Technical Support Staff",
     Role.ATTENDEE: "Attendee",
     Role.COORDINATOR_LEAD: "Event Coordinator Lead",
+    Role.SAFETY_OFFICER: "Safety Officer",
 }
 
 
@@ -90,6 +92,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.REGISTRATION_READ,
         }
     ),
+    Role.SAFETY_OFFICER: frozenset({Permission.EVENT_READ})
 }
 
 
