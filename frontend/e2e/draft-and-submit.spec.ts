@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { E2E_ORGANISER } from '../playwright.config'
+import { resetUsers } from './support/db'
 
 /**
  * End-to-end coverage of the two Organiser stories, driven through a real
@@ -12,10 +13,16 @@ import { E2E_ORGANISER } from '../playwright.config'
  *
  * Test isolation: every run stamps its event names with a unique prefix and
  * every assertion is scoped to that prefix. Cheaper and far less brittle
- * than truncating tables between tests, and it keeps these specs free of any
- * database coupling.
+ * than truncating tables between tests.
+ *
+ * The one database touch is the cleanup below. A submitted request waits,
+ * unassigned, in the Event Coordinator Lead's queue, and that queue is shared
+ * by every spec: leaving these requests behind would put them in front of the
+ * Lead specs that run later and expect a queue they set up themselves.
  */
 const RUN = `E2E-${Date.now()}`
+
+test.afterAll(() => resetUsers([E2E_ORGANISER.email]))
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/login')
