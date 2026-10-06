@@ -90,6 +90,12 @@ export function Sidebar({ id, open }: SidebarProps) {
               </Item>
             </>
           )}
+          {user.role === Role.SAFETY_OFFICER && (
+            <Item to="/safety-checks" icon="check">
+              Safety Checks
+            </Item>
+          )}
+
           <Item to="/notifications" icon="bell">
             Notifications
           </Item>
