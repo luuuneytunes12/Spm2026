@@ -67,12 +67,17 @@ export class ApiError extends Error {
    *  Lets a form mark each offending input instead of showing one generic
    *  message, without the client having to duplicate the server's rules. */
   readonly fields: string[]
+  /** The server's own sentences from a 422 body, WITHOUT the `field:` prefix
+   *  that `message` carries -- for a form that words its own error and does
+   *  not want to show column names. Empty for any other kind of error. */
+  readonly messages: string[]
 
-  constructor(status: number, message: string, fields: string[] = []) {
+  constructor(status: number, message: string, fields: string[] = [], messages: string[] = []) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.fields = fields
+    this.messages = messages
   }
 }
 
@@ -108,17 +113,30 @@ function extractFields(body: unknown): string[] {
     .filter((f): f is string => Boolean(f))
 }
 
+/** Each distinct `detail[].msg`, in order, with no field names attached. */
+function extractMessages(body: unknown): string[] {
+  if (typeof body !== 'object' || body === null) return []
+  const detail = (body as { detail?: unknown }).detail
+  if (!Array.isArray(detail)) return []
+  const msgs = (detail as ValidationItem[])
+    .map((item) => item.msg)
+    .filter((m): m is string => typeof m === 'string' && m.length > 0)
+  return [...new Set(msgs)]
+}
+
 async function toApiError(res: Response): Promise<ApiError> {
   let detail: string | null = null
   let fields: string[] = []
+  let messages: string[] = []
   try {
     const body = await parseBody(res)
     detail = formatDetail(body)
     fields = extractFields(body)
+    messages = extractMessages(body)
   } catch {
     // non-JSON error body; fall back to the status line
   }
-  return new ApiError(res.status, detail ?? `${res.status} ${res.statusText}`, fields)
+  return new ApiError(res.status, detail ?? `${res.status} ${res.statusText}`, fields, messages)
 }
 
 async function refreshAccessToken(): Promise<boolean> {

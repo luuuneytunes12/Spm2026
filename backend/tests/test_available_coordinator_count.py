@@ -55,9 +55,10 @@ def _count(client, headers) -> int:
     return res.json()["available"]
 
 
-def _set_available(client, headers, value: bool) -> None:
-    res = client.patch("/coordinators/me/availability", json={"is_available": value}, headers=headers)
-    assert res.status_code == 200
+def _set_available(db_session, coordinator, value: bool) -> None:
+    """Flip the Coordinator's flag directly: nothing in the app toggles it."""
+    coordinator.is_available = value
+    db_session.commit()
 
 
 def test_the_count_is_zero_when_there_are_no_coordinators(client, db_session):
@@ -90,23 +91,10 @@ def test_going_unavailable_lowers_the_count_and_coming_back_raises_it(client, db
     _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
     assert _count(client, organiser_headers) == 2
 
-    _set_available(client, sam_headers, False)
+    _set_available(db_session, _sam, False)
     assert _count(client, organiser_headers) == 1
 
-    _set_available(client, sam_headers, True)
-    assert _count(client, organiser_headers) == 2
-
-
-def test_declining_one_event_does_not_change_the_count(client, db_session):
-    """Declining an event (SCRUM-64) leaves the Coordinator in the pool."""
-    _org, organiser_headers = _organiser(client, db_session)
-    _sam, sam_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-    _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    event_id = client.post("/events", json=COMPLETE, headers=organiser_headers).json()["id"]
-    client.post(f"/events/{event_id}/submit", headers=organiser_headers)
-
-    client.post(f"/events/assigned/{event_id}/release", headers=sam_headers)
-
+    _set_available(db_session, _sam, True)
     assert _count(client, organiser_headers) == 2
 
 
@@ -114,7 +102,7 @@ def test_zero_available_means_a_submitted_event_stays_unassigned(client, db_sess
     """The count explains the "Not yet assigned" state it exists to debug."""
     _org, organiser_headers = _organiser(client, db_session)
     _sam, sam_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-    _set_available(client, sam_headers, False)
+    _set_available(db_session, _sam, False)
     assert _count(client, organiser_headers) == 0
 
     event_id = client.post("/events", json=COMPLETE, headers=organiser_headers).json()["id"]
@@ -158,7 +146,7 @@ def test_the_count_always_equals_the_length_of_the_list(client, db_session):
     _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
 
     for available in (True, False, True):
-        _set_available(client, sam_headers, available)
+        _set_available(db_session, _sam, available)
         body = client.get("/coordinators/available-count", headers=organiser_headers).json()
         assert body["available"] == len(body["coordinators"])
 
@@ -168,17 +156,17 @@ def test_an_unavailable_coordinator_leaves_the_list_and_returns_when_available(c
     _sam, sam_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
     _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
 
-    _set_available(client, sam_headers, False)
+    _set_available(db_session, _sam, False)
     assert [c["name"] for c in _pool(client, organiser_headers)] == ["Priya Nair"]
 
-    _set_available(client, sam_headers, True)
+    _set_available(db_session, _sam, True)
     assert [c["name"] for c in _pool(client, organiser_headers)] == ["Sam Tan", "Priya Nair"]
 
 
 def test_the_list_is_empty_when_nobody_is_available(client, db_session):
     _org, organiser_headers = _organiser(client, db_session)
     _sam, sam_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-    _set_available(client, sam_headers, False)
+    _set_available(db_session, _sam, False)
 
     body = client.get("/coordinators/available-count", headers=organiser_headers).json()
 
@@ -191,7 +179,7 @@ def test_the_listed_coordinator_is_who_a_new_event_actually_goes_to(client, db_s
     _org, organiser_headers = _organiser(client, db_session)
     _sam, sam_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
     priya, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    _set_available(client, sam_headers, False)
+    _set_available(db_session, _sam, False)
     [listed] = _pool(client, organiser_headers)
 
     event_id = client.post("/events", json=COMPLETE, headers=organiser_headers).json()["id"]

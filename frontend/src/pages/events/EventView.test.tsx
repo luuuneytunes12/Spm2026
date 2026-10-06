@@ -7,7 +7,7 @@
  *   their event page -- and, after a reassignment, who the NEW one is.
  *
  * Whether a Coordinator actually gets assigned is the backend's job,
- * covered by backend/tests/test_coordinator_availability.py. These tests
+ * covered by backend/tests/test_coordinator_assignment.py. These tests
  * cover what this screen does with the answer.
  */
 import { render, screen, waitFor, within } from '@testing-library/react'

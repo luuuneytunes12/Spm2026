@@ -3,7 +3,6 @@ import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import { RequireRole } from './auth/RequireRole'
 import { Role } from './lib/roles'
-import { Dashboard } from './pages/Dashboard'
 import { Forbidden } from './pages/Forbidden'
 import { Login } from './pages/Login'
 import { My } from './pages/My'
@@ -20,6 +19,7 @@ import { EventForm } from './pages/events/EventForm'
 import { EventView } from './pages/events/EventView'
 import { MyRequests } from './pages/events/MyRequests'
 import { AttendeeEvents } from './pages/registrations/AttendeeEvents'
+import { MyRegistrations } from './pages/registrations/MyRegistrations'
 import { Attendee } from './pages/roles/Attendee'
 import { Coordinator } from './pages/roles/Coordinator'
 import { Organiser } from './pages/roles/Organiser'
@@ -41,7 +41,7 @@ function App() {
 
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<My />} />
           <Route path="/my" element={<My />} />
           {/* Notifications and Profile are per-user, not per-role, so
               these routes sit outside every RequireRole group below. */}
@@ -92,6 +92,7 @@ function App() {
           <Route element={<RequireRole roles={[Role.ATTENDEE]} />}>
             <Route path="/attendee" element={<Attendee />} />
             <Route path="/attendee/events" element={<AttendeeEvents />} />
+            <Route path="/attendee/registrations" element={<MyRegistrations />} />
           </Route>
           <Route element={<RequireRole roles={[Role.SAFETY_OFFICER]} />}>
             <Route path="/safety-checks" element={<SafetyChecks />} />

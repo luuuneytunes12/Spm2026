@@ -220,6 +220,8 @@ class EventOut(BaseModel):
     equipment_items: list[EquipmentLineOut] = []
     special_arrangements: str | None
     registration_enabled: bool
+    registration_opens_at: datetime | None = None
+    registration_closes_at: datetime | None = None
     status: EventStatus
     submitted_at: datetime | None
     created_at: datetime
@@ -253,6 +255,21 @@ class AssignedEventDetail(EventOut):
     organiser: OrganiserContact
     activity: list[ActivityEntry]
     change_requests: list[EventChangeRequestOut] = []
+    # What still stands between an Approved event and "Confirmed": an empty
+    # list means the Coordinator may confirm it now.
+    confirmation_outstanding: list[str] = []
+
+
+class RegistrationSettingsIn(BaseModel):
+    """What a Coordinator sets to open (or close) registration on an event.
+
+    Dates are only mandatory when enabling -- checked by the router, which
+    reports each offending field the same way the submit endpoint does.
+    """
+
+    registration_enabled: bool
+    registration_opens_at: datetime | None = None
+    registration_closes_at: datetime | None = None
 
 
 class EventSummary(BaseModel):

@@ -1,21 +1,19 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { API, login, submitEvent } from './support/api'
+import { login, submitEvent } from './support/api'
 import { EMAILS, OLIVIA, PRIYA, SAM, USERS, openAs } from './support/coordinator-users'
-import { removeUsers, resetUsers, seedUsers } from './support/db'
+import { markUnavailable, removeUsers, resetUsers, seedUsers } from './support/db'
 
 /**
- * End-to-end coverage of the four Sprint 1 coordinator stories, driven
+ * End-to-end coverage of the Sprint 1 coordinator stories, driven
  * through a real browser against the real backend and a real Postgres.
  *
  *   SCRUM-23  View Coordinator Assignment          (the Organiser's side)
- *   SCRUM-24  Declare Coordinator Global Unavailability
  *   SCRUM-28  View Full Event Details as Coordinator
- *   SCRUM-64  Declare Coordinator Per-Event Unavailability
  *
  * Each test's title names the story and acceptance criterion it proves, the
  * same traceability convention as the unit tests
- * (see docs/test-cases-coordinator-availability.md).
+ * (see docs/test-cases-coordinator-assigned-events.md).
  *
  * Three accounts are created for these specs and removed afterwards, so they
  * never linger in the assignment pool for the specs that run after:
@@ -96,162 +94,12 @@ test('SCRUM-23: the activity log (shared) and the notifications (per role) tell 
 // SCRUM-64 (and SCRUM-23 AC3/AC4) -- declining one event
 // ---------------------------------------------------------------------------
 
-test('SCRUM-64 AC1 + SCRUM-23 AC3/AC4: declining reassigns the event and the Organiser sees and is told the new coordinator', async ({ browser, request }) => {
-  const eventId = await submittedByOlivia(request, 'Declined event')
-  const olivia = await openAs(browser, OLIVIA)
-  const sam = await openAs(browser, SAM)
-  const priya = await openAs(browser, PRIYA)
-
-  await sam.goto('/coordinator/events')
-  await sam.getByRole('button', { name: 'Decline this event' }).click()
-  await expect(sam.getByText('Nothing assigned to you yet.')).toBeVisible()
-
-  await priya.goto('/coordinator/events')
-  await expect(priya.getByText('Declined event')).toBeVisible()
-
-  await olivia.goto(`/organiser/events/${eventId}`)
-  const card = coordinatorCard(olivia)
-  await expect(card.getByText('Priya Nair')).toBeVisible() // AC3
-  await expect(card.getByText('Sam Tan')).toHaveCount(0)
-  await olivia.goto('/notifications')
-  await expect(olivia.getByText(new RegExp(`Priya Nair \\(${PRIYA.email}\\) is now coordinating`))).toBeVisible() // AC4
-})
-
-test('SCRUM-64 AC2 + AC3: after declining, the coordinator is still available and still receives new events', async ({ browser, request }) => {
-  await submittedByOlivia(request, 'To decline')
-  const sam = await openAs(browser, SAM)
-  await sam.goto('/coordinator/events')
-  await sam.getByRole('button', { name: 'Decline this event' }).click()
-  await expect(sam.getByText('Nothing assigned to you yet.')).toBeVisible()
-
-  // AC3: nothing about their status changed.
-  await sam.goto('/coordinator')
-  await expect(sam.getByText('Available', { exact: true })).toBeVisible()
-  await expect(sam.getByText('Unavailable', { exact: true })).toHaveCount(0)
-  await sam.goto('/profile')
-  await expect(sam.getByRole('region', { name: 'Availability' }).getByText('Available', { exact: true })).toBeVisible()
-
-  // AC2: Sam now holds the fewest, so the next event comes to Sam.
-  const nextId = await submittedByOlivia(request, 'Next event')
-  await sam.goto('/coordinator/events')
-  await expect(sam.getByText('Next event')).toBeVisible()
-  const olivia = await openAs(browser, OLIVIA)
-  await olivia.goto(`/organiser/events/${nextId}`)
-  await expect(coordinatorCard(olivia).getByText('Sam Tan')).toBeVisible()
-})
-
-test('SCRUM-64 AC4: the decline is in the activity log with the coordinator’s name and a timestamp', async ({ browser, request }) => {
-  const eventId = await submittedByOlivia(request, 'Logged decline')
-  const sam = await openAs(browser, SAM)
-  await sam.goto('/coordinator/events')
-  await sam.getByRole('button', { name: 'Decline this event' }).click()
-  await expect(sam.getByText('Nothing assigned to you yet.')).toBeVisible()
-
-  const olivia = await openAs(browser, OLIVIA)
-  await olivia.goto(`/organiser/events/${eventId}`)
-  const entry = olivia.locator('.activity-item', { hasText: 'declined this event' })
-  await expect(entry).toContainText('Reassigned from Sam Tan to Priya Nair')
-  await expect(entry.locator('.activity-meta')).toContainText('Sam Tan')
-  await expect(entry.locator('.activity-meta')).toContainText('·') // "name · timestamp"
-})
-
-test('SCRUM-64 AC4: a decline with nobody to take over is still logged, and the event reads as unassigned', async ({ browser, request }) => {
-  // Only Sam is in the pool: Priya steps out first.
-  const priya = await openAs(browser, PRIYA)
-  await priya.goto('/coordinator')
-  await priya.getByRole('button', { name: 'Mark myself unavailable' }).click()
-  await expect(priya.getByText('Unavailable', { exact: true })).toBeVisible()
-  const eventId = await submittedByOlivia(request, 'Nobody else')
-  const sam = await openAs(browser, SAM)
-
-  await sam.goto('/coordinator/events')
-  await sam.getByRole('button', { name: 'Decline this event' }).click()
-  await expect(sam.getByText('Nothing assigned to you yet.')).toBeVisible()
-
-  const olivia = await openAs(browser, OLIVIA)
-  await olivia.goto(`/organiser/events/${eventId}`)
-  await expect(olivia.getByText(/Not yet assigned/)).toBeVisible()
-  await expect(olivia.locator('.activity-item', { hasText: 'declined this event' })).toContainText('Sam Tan')
-})
-
 // ---------------------------------------------------------------------------
-// SCRUM-24 -- global unavailability
+// The Organiser's view of an empty assignment pool
 // ---------------------------------------------------------------------------
-
-test('SCRUM-24 AC1 + AC4: going unavailable shows on the Coordinator page and profile until they return, and each change is logged with a time', async ({ browser }) => {
-  const sam = await openAs(browser, SAM)
-  await sam.goto('/coordinator')
-  await expect(sam.getByText('Available', { exact: true })).toBeVisible()
-
-  await sam.getByRole('button', { name: 'Mark myself unavailable' }).click()
-
-  await expect(sam.getByText('Unavailable', { exact: true })).toBeVisible()
-  await expect(sam.getByRole('button', { name: 'Mark myself available' })).toBeVisible()
-  const history = sam.getByRole('list', { name: 'Availability history' })
-  await expect(history.getByRole('listitem').first()).toContainText('Marked unavailable')
-  await expect(history.getByRole('listitem').first().locator('.activity-meta')).not.toBeEmpty() // AC4: timestamp
-
-  // AC1: it is still what the profile says after a reload, and on /profile.
-  await sam.reload()
-  await expect(sam.getByText('Unavailable', { exact: true })).toBeVisible()
-  await sam.goto('/profile')
-  await expect(sam.getByRole('region', { name: 'Availability' }).getByText('Unavailable', { exact: true })).toBeVisible()
-
-  // ...until they mark themselves available again.
-  await sam.goto('/coordinator')
-  await sam.getByRole('button', { name: 'Mark myself available' }).click()
-  await expect(sam.getByText('Available', { exact: true })).toBeVisible()
-  await expect(history.getByRole('listitem')).toHaveCount(2)
-  await expect(history.getByRole('listitem').first()).toContainText('Marked available') // newest first
-  await sam.goto('/profile')
-  await expect(sam.getByRole('region', { name: 'Availability' }).getByText('Available', { exact: true })).toBeVisible()
-})
-
-test('SCRUM-24 AC2 + AC3: an unavailable coordinator is left out of new assignments, but keeps what they hold, and rejoins when available', async ({ browser, request }) => {
-  const heldId = await submittedByOlivia(request, 'Already held')
-  const olivia = await openAs(browser, OLIVIA)
-  const sam = await openAs(browser, SAM)
-
-  // The pool, as the Organiser sees it: both coordinators.
-  await olivia.goto('/organiser/events')
-  await expect(olivia.getByText(/Coordinators currently available for assignment/)).toContainText('2')
-  await olivia.getByText(/Coordinators currently available for assignment/).click()
-  const pool = olivia.getByRole('list', { name: 'Coordinators in the assignment pool' })
-  await expect(pool).toContainText('Sam Tan')
-  await expect(pool).toContainText('Priya Nair')
-
-  // Sam steps out.
-  await sam.goto('/coordinator')
-  await sam.getByRole('button', { name: 'Mark myself unavailable' }).click()
-  await expect(sam.getByText('Unavailable', { exact: true })).toBeVisible()
-
-  // AC2: out of the pool -- and the event Sam already held did not move.
-  await olivia.reload()
-  await expect(olivia.getByText(/Coordinators currently available for assignment/)).toContainText('1')
-  await olivia.getByText(/Coordinators currently available for assignment/).click()
-  await expect(pool).toContainText('Priya Nair')
-  await expect(pool).not.toContainText('Sam Tan')
-  const newId = await submittedByOlivia(request, 'Submitted while Sam is away')
-  await olivia.goto(`/organiser/events/${newId}`)
-  await expect(coordinatorCard(olivia).getByText('Priya Nair')).toBeVisible()
-  await olivia.goto(`/organiser/events/${heldId}`)
-  await expect(coordinatorCard(olivia).getByText('Sam Tan')).toBeVisible()
-  await sam.goto('/coordinator/events')
-  await expect(sam.getByText('Already held')).toBeVisible() // still Sam's, and still workable
-
-  // AC3: Sam returns, and is back in the pool.
-  await sam.goto('/coordinator')
-  await sam.getByRole('button', { name: 'Mark myself available' }).click()
-  await expect(sam.getByText('Available', { exact: true })).toBeVisible()
-  await olivia.goto('/organiser/events')
-  await expect(olivia.getByText(/Coordinators currently available for assignment/)).toContainText('2')
-})
 
 test('with nobody available the Organiser is told why: the count is 0 and a new request stays unassigned', async ({ browser, request }) => {
-  for (const user of [SAM, PRIYA]) {
-    const headers = await login(request, user.email, user.password)
-    await request.patch(`${API}/coordinators/me/availability`, { data: { is_available: false }, headers })
-  }
+  markUnavailable([SAM.email, PRIYA.email])
   const olivia = await openAs(browser, OLIVIA)
 
   await olivia.goto('/organiser/events')

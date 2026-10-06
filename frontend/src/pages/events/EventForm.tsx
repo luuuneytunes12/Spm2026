@@ -57,17 +57,19 @@ const EMPTY: FormState = {
 // Suggestions only -- the backend stores event_type as free text because the
 // customer briefing leaves the category list open-ended ("...or any other
 // type defined by ConnectSphere").
+// Title Case, as the venues' own layouts are recorded -- venue search matches
+// them case-insensitively, so what is stored here still finds the same rooms.
 const EVENT_TYPES = [
-  'conference',
-  'workshop',
-  'training session',
-  'exhibition',
-  'meeting',
-  'seminar',
-  'networking event',
+  'Conference',
+  'Workshop',
+  'Training Session',
+  'Exhibition',
+  'Meeting',
+  'Seminar',
+  'Networking Event',
 ]
 
-const ROOM_LAYOUTS = ['classroom', 'theatre', 'boardroom', 'banquet', 'exhibition', 'u-shape']
+const ROOM_LAYOUTS = ['Classroom', 'Theatre', 'Boardroom', 'Banquet', 'Exhibition', 'U-shape']
 
 /** '' -> null so an untouched field is stored as "not answered" rather than
  *  an empty string. The submit endpoint treats both as missing, but null is
@@ -330,13 +332,21 @@ export function EventForm() {
           saveable while empty. The backend is the only gate on completeness,
           and only at submit time. */}
       <form onSubmit={onSaveDraft} noValidate className="stack" ref={formRef}>
+        <p className="form-required-note">
+          <span className="required-mark" aria-hidden="true">
+            *
+          </span>{' '}
+          Required to submit. You can save an incomplete request as a draft.
+        </p>
+
         <section className="card stack-tight">
           <h2>About the Event</h2>
 
           <div className={fieldClass('name')}>
-            <label htmlFor="name">Event name</label>
+            <label htmlFor="name" className="required">Event name</label>
             <input
               id="name"
+              aria-required="true"
               type="text"
               maxLength={200}
               placeholder="Regional Partner Conference"
@@ -348,13 +358,14 @@ export function EventForm() {
           </div>
 
           <div className={fieldClass('event_type')}>
-            <label htmlFor="event_type">Event type</label>
+            <label htmlFor="event_type" className="required">Event type</label>
             <input
               id="event_type"
+              aria-required="true"
               type="text"
               list="event-types"
               maxLength={100}
-              placeholder="conference"
+              placeholder="Conference"
               value={form.event_type}
               onChange={(e) => set('event_type', e.target.value)}
               aria-invalid={flagged('event_type')}
@@ -368,9 +379,10 @@ export function EventForm() {
           </div>
 
           <div className={fieldClass('purpose')}>
-            <label htmlFor="purpose">Purpose</label>
+            <label htmlFor="purpose" className="required">Purpose</label>
             <textarea
               id="purpose"
+              aria-required="true"
               rows={2}
               placeholder="Why is this event being held?"
               value={form.purpose}
@@ -398,9 +410,10 @@ export function EventForm() {
 
           <div className="form-row">
             <div className={fieldClass('proposed_start')}>
-              <label htmlFor="proposed_start">Preferred start</label>
+              <label htmlFor="proposed_start" className="required">Preferred start</label>
               <input
                 id="proposed_start"
+              aria-required="true"
                 type="datetime-local"
                 value={form.proposed_start}
                 onChange={(e) => set('proposed_start', e.target.value)}
@@ -412,9 +425,10 @@ export function EventForm() {
             </div>
 
             <div className={fieldClass('proposed_end')}>
-              <label htmlFor="proposed_end">Preferred end</label>
+              <label htmlFor="proposed_end" className="required">Preferred end</label>
               <input
                 id="proposed_end"
+              aria-required="true"
                 type="datetime-local"
                 value={form.proposed_end}
                 onChange={(e) => set('proposed_end', e.target.value)}
@@ -427,9 +441,10 @@ export function EventForm() {
           </div>
 
           <div className={fieldClass('expected_attendance')}>
-            <label htmlFor="expected_attendance">Expected attendees</label>
+            <label htmlFor="expected_attendance" className="required">Expected attendees</label>
             <input
               id="expected_attendance"
+              aria-required="true"
               type="number"
               min={1}
               placeholder="120"
@@ -459,9 +474,10 @@ export function EventForm() {
           <h2>Requirements</h2>
 
           <div className={fieldClass('venue_requirements')}>
-            <label htmlFor="venue_requirements">Venue requirements</label>
+            <label htmlFor="venue_requirements" className="required">Venue requirements</label>
             <textarea
               id="venue_requirements"
+              aria-required="true"
               rows={2}
               placeholder="Main hall with stage and podium"
               value={form.venue_requirements}
@@ -480,7 +496,7 @@ export function EventForm() {
               type="text"
               list="room-layouts"
               maxLength={100}
-              placeholder="theatre"
+              placeholder="Theatre"
               value={form.room_layout_preference}
               onChange={(e) => set('room_layout_preference', e.target.value)}
             />
@@ -492,9 +508,10 @@ export function EventForm() {
           </div>
 
           <div className={fieldClass('accessibility_needs')}>
-            <label htmlFor="accessibility_needs">Accessibility requirements</label>
+            <label htmlFor="accessibility_needs" className="required">Accessibility requirements</label>
             <textarea
               id="accessibility_needs"
+              aria-required="true"
               rows={2}
               placeholder="Step-free access, hearing loop"
               value={form.accessibility_needs}

@@ -70,13 +70,6 @@ describe('Technical Support', () => {
     )
   })
 
-  it('still sees reviewing and reserving as planned, because it is not built yet', () => {
-    signedInAs(Role.TECH_SUPPORT)
-
-    // Updating a requirement's status is the next story. Removing this entry
-    // now would claim it is done.
-    expect(screen.getByText('Equipment requests')).toBeInTheDocument()
-  })
 })
 
 describe('Event Coordinator', () => {

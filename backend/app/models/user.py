@@ -16,8 +16,8 @@ from app.core.roles import DEFAULT_ROLE, Role
 # against the real database.
 #
 # `is_available` is a deliberate addition beyond that mirror -- see
-# sql/004_coordinator_availability.sql. It backs the Coordinator's "mark
-# myself unavailable" toggle; every other role's row carries it too (one
+# sql/004_coordinator_availability.sql. Coordinator assignment picks only
+# from users where it is true; every other role's row carries it too (one
 # shared table) but never reads or writes it.
 #
 # `organisation`, `phone_country_code`, `phone_number` and
