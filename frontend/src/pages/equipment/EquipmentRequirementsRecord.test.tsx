@@ -148,7 +148,7 @@ describe('ER AC2 - the event record', () => {
     ]) {
       expect(screen.getByText(label).parentElement).toHaveTextContent(value)
     }
-    expect(screen.getByText('Approved')).toBeInTheDocument()
+    expect(screen.getByText('Event Approved')).toBeInTheDocument()
   })
 
   it('names the Coordinator to ask about it', async () => {

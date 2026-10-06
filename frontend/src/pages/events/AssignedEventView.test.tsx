@@ -375,7 +375,7 @@ describe('AC3 - the current status', () => {
     // Appears twice once loaded -- the header badge and the timeline's
     // current step both show it -- so any match at all proves the label
     // rendered; the second assertion is what proves the raw slug did not.
-    await waitFor(() => expect(screen.getAllByText('Under review').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('Under Review').length).toBeGreaterThan(0))
     expect(screen.queryByText('under_review')).toBeNull()
   })
 
@@ -397,11 +397,11 @@ describe('AC3 - the current status', () => {
     // Scoped to the timeline's own label class: "Submitted" also appears in
     // the header badge, so an unscoped match would be ambiguous.
     const steps = [
-      'Submitted',
-      'Under review',
-      'Approved',
-      'Planning',
-      'Event Confirmed',
+      'Submitted – Awaiting Coordinator',
+      'Under Review',
+      'Event Approved',
+      'Planning Event',
+      'Safety Check Passed (Event Confirmed)',
       'Event Completed',
     ]
     for (const label of steps) {
@@ -409,7 +409,7 @@ describe('AC3 - the current status', () => {
     }
     // Exactly one stage is "current" -- the event's actual status.
     const current = screen
-      .getByText('Submitted', { selector: '.status-step-label' })
+      .getByText('Submitted – Awaiting Coordinator', { selector: '.status-step-label' })
       .closest('[aria-current="step"]')
     expect(current).not.toBeNull()
     expect(
@@ -420,7 +420,7 @@ describe('AC3 - the current status', () => {
   it("does not show Draft on the timeline -- a Coordinator's process only begins at Submitted", async () => {
     renderView()
 
-    await screen.findByText('Submitted', { selector: '.status-step-label' })
+    await screen.findByText('Submitted – Awaiting Coordinator', { selector: '.status-step-label' })
     expect(screen.queryByText('Draft', { selector: '.status-step-label' })).toBeNull()
   })
 
@@ -460,15 +460,15 @@ describe('AC3 - the current status', () => {
     // "Under review" and "Changes requested" each appear twice on this page
     // -- once as a timeline node, once in the activity log's own wording --
     // so the timeline's copy is picked out by its label class.
-    await screen.findByText('Changes requested', { selector: '.status-step-label' })
+    await screen.findByText('Awaiting Organiser Reply', { selector: '.status-step-label' })
     const reviewStep = screen
-      .getByText('Under review', { selector: '.status-step-label' })
+      .getByText('Under Review', { selector: '.status-step-label' })
       .closest('.status-step')
     expect(reviewStep).toHaveClass('status-step-done')
-    const approvedStep = screen.getByText('Approved').closest('.status-step')
+    const approvedStep = screen.getByText('Event Approved').closest('.status-step')
     expect(approvedStep).toHaveClass('status-step-upcoming')
     const branchStep = screen
-      .getByText('Changes requested', { selector: '.status-step-label' })
+      .getByText('Awaiting Organiser Reply', { selector: '.status-step-label' })
       .closest('.status-step')
     expect(branchStep).toHaveClass('status-step-branch', 'status-step-branch-warning')
   })
@@ -489,7 +489,7 @@ describe('AC3 - the current status', () => {
     })
     renderView()
 
-    const branchStep = await screen.findByText('Rejected', { selector: '.status-step-label' })
+    const branchStep = await screen.findByText('Event Rejected', { selector: '.status-step-label' })
     expect(branchStep.closest('.status-step')).toHaveClass('status-step-branch-danger')
   })
 })
@@ -598,6 +598,16 @@ describe('AC4 - the activity log', () => {
 })
 
 describe('AC5 - events that are not assigned to me', () => {
+  it('shows the server\'s reassignment message when the Lead moved the event away', async () => {
+    const msg =
+      "'Robotics Summit' that was initially assigned to you by the Event Coordinator Lead has been reassigned to Priya Nair."
+    mockGet.mockRejectedValue(new ApiError(409, msg))
+    renderView('99')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(msg)
+    expect(screen.getByRole('link', { name: /back to my assigned events/i })).toBeInTheDocument()
+  })
+
   it('TC-S3-5b: a 404 becomes a refusal, and none of the event is rendered', async () => {
     mockGet.mockRejectedValue(new ApiError(404, 'Event not found'))
     renderView('99')
@@ -651,7 +661,7 @@ describe('Coordinator decisions', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve request' }))
 
     await waitFor(() => expect(mockApprove).toHaveBeenCalledWith(7))
-    expect(await screen.findByText('Approved', { selector: '.badge' })).toBeInTheDocument()
+    expect(await screen.findByText('Event Approved', { selector: '.badge' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
     expect(screen.getByText('Approved by the Event Coordinator.')).toBeInTheDocument()
   })

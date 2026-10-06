@@ -22,6 +22,11 @@ from app.core.roles import Role
 from app.models.events import Event, EventStatusHistory
 from app.models.notifications import Notification
 from tests.integration.conftest import COMPLETE_EVENT
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see tests/conftest.py).
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("coordinator_auto_assign")]
 
 THREADS = 6
 

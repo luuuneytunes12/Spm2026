@@ -12,6 +12,11 @@ from app.core.roles import Role
 from app.models.notifications import Notification
 from app.models.user import User
 from app.services.notifications import broker
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 COMPLETE = {
     "name": "Regional Partner Conference",

@@ -12,6 +12,11 @@ docstrings, and docs/test-cases-coordinator-assigned-events.md).
 from app.core.roles import Role
 from app.models.events import Event
 from app.models.user import User
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 # A request with every mandatory field filled in, plus the optional ones, so
 # that "the Coordinator can see every requirement" is testable against a

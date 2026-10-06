@@ -8,6 +8,10 @@ from app.models.events import Event, EventStatusHistory
 from app.models.notifications import Notification
 from event_review_test_helpers import review_setup, user
 
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
+
 
 def test_coordinator_can_approve_assigned_request_and_notify_organiser(client, db_session):
     organiser, _, coordinator, coordinator_headers, event_id = review_setup(client, db_session)

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
@@ -28,8 +29,8 @@ from app.schemas.event import (
     OrganiserContact,
     RegistrationSettingsIn,
 )
-from app.services.assignment import assign_coordinator
 from app.services.notifications import notify
+from app.services.submission_notice import SubmissionNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -92,6 +93,22 @@ def _get_assigned_event(event_id: int, user: User, db: Session, *, lock: bool = 
     if event is None or event.coordinator_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return event
+
+
+def _was_reassigned_from(db: Session, event: Event, user: User) -> bool:
+    """True if the Lead moved `event` away from `user` (they were told so)."""
+    return (
+        db.scalar(
+            select(Notification.id)
+            .where(
+                Notification.user_id == user.id,
+                Notification.event_id == event.id,
+                Notification.type == NotificationType.event_reassigned_away,
+            )
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def _get_reviewable_event(event_id: int, user: User, db: Session) -> Event:
@@ -446,6 +463,17 @@ def get_assigned_event(
     returning 404 for anybody else's; this one answers "the request I am
     responsible for", and returns a different shape with it.
     """
+    event = db.get(Event, event_id)
+    if event is not None and event.coordinator_id not in (None, user.id) and _was_reassigned_from(db, event, user):
+        # Only the Coordinator the Lead took it from learns who has it now;
+        # everyone else still gets the indistinguishable 404 below.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{event.name or 'This event'}' that was initially assigned to you by the "
+                f"Event Coordinator Lead has been reassigned to {event.coordinator.name}."
+            ),
+        )
     event = _get_assigned_event(event_id, user, db)
 
     return AssignedEventDetail(
@@ -827,6 +855,18 @@ def update_event(
     return EventOut.model_validate(event)
 
 
+
+def _after_submit(db: Session, event: Event, user: User) -> None:
+    """Runs inside the submit transaction, after the status change is logged.
+
+    Deliberately does nothing: a submitted request is NOT auto-assigned. It
+    waits in the Event Coordinator Lead's Unassigned Queue as "submitted"
+    with no Coordinator, and only the Lead assigns one (see
+    app/services/assignment_overview.py). Older coordinator-workflow tests
+    swap this for `assign_coordinator` -- see `coordinator_auto_assign` in
+    tests/conftest.py -- because they need an already-assigned event.
+    """
+
 @router.post("/{event_id}/submit", response_model=EventOut)
 def submit_event(
     event_id: int,
@@ -878,10 +918,10 @@ def submit_event(
         )
     )
 
-    # AC1 of "Mark myself unavailable": a submitted request is handed to an
-    # available Coordinator automatically. Left unassigned (silently) if
-    # nobody is available right now -- see assign_coordinator.
-    assign_coordinator(db, event, actor_id=user.id)
+    _after_submit(db, event, user)
+    # Outside _after_submit on purpose: tests swap that hook out, and the Lead
+    # must be told whatever it does.
+    SubmissionNotice().send(db, event)
 
     db.commit()
     db.refresh(event)

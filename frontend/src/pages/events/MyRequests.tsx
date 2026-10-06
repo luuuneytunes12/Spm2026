@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { AvailableCoordinatorsCount } from '../../components/AvailableCoordinatorsCount'
 import { ApiError } from '../../lib/api'
 import {
   EVENT_STATUS_LABELS,
@@ -92,7 +91,6 @@ export function MyRequests() {
         </Link>
       </header>
 
-      <AvailableCoordinatorsCount />
 
       <div className="tabs" role="tablist" aria-label="Request status">
         {TABS.map((tab) => (

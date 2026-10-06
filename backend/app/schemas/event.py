@@ -292,3 +292,33 @@ class EventSummary(BaseModel):
     submitted_at: datetime | None
     updated_at: datetime
     has_pending_change_request: bool = False
+
+
+class LeadEventOut(EventSummary):
+    """An EventSummary plus the two people on it, for the Coordinator Lead's
+    views. `coordinator` is null for an unassigned request."""
+
+    organiser: OrganiserContact
+    coordinator: OrganiserContact | None = None
+
+
+class LeadEventDetail(EventOut):
+    """A queued request as the Coordinator Lead reviews it: everything the
+    Organiser entered (EventOut) plus who the Organiser is. Read-only."""
+
+    organiser: OrganiserContact
+
+
+class LeadCoordinatorOut(BaseModel):
+    """A Coordinator and how many active Events they hold (Lead's filter)."""
+
+    id: int
+    name: str
+    email: str
+    active_events: int
+
+
+class LeadAssignIn(BaseModel):
+    """Which Coordinator the Lead is assigning or reassigning an Event to."""
+
+    coordinator_id: int

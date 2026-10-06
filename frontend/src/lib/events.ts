@@ -18,27 +18,22 @@ export const EventStatus = {
 } as const
 export type EventStatus = (typeof EventStatus)[keyof typeof EventStatus]
 
+/** The ONLY wording for an Event's status anywhere in the UI, for every role.
+ *  These are the names in dod.md section 11a, spelled exactly as written there.
+ *  The stored slugs (the keys) are the database's own and differ for a few
+ *  (`changes_requested` is "Awaiting Organiser Reply", `confirmed` is "Safety
+ *  Check Passed (Event Confirmed)"). Add no label here that dod.md lacks. */
 export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   [EventStatus.DRAFT]: 'Draft',
-  [EventStatus.SUBMITTED]: 'Submitted',
-  [EventStatus.UNDER_REVIEW]: 'Under review',
-  [EventStatus.CHANGES_REQUESTED]: 'Changes requested',
-  [EventStatus.APPROVED]: 'Approved',
-  [EventStatus.REJECTED]: 'Rejected',
-  [EventStatus.PLANNING]: 'Planning',
-  [EventStatus.CONFIRMED]: 'Confirmed',
-  [EventStatus.COMPLETED]: 'Completed',
-  [EventStatus.CANCELLED]: 'Cancelled',
-}
-
-/** Wording for the Coordinator's progress timeline where the plain status
- *  name is ambiguous there. On a row of stages, "Confirmed" and "Completed"
- *  read as near-twins; "Event Confirmed" / "Event Completed" say what
- *  actually happened. Everywhere else (badges, lists) the plain labels above
- *  stay. */
-export const EVENT_TIMELINE_LABELS: Partial<Record<EventStatus, string>> = {
-  [EventStatus.CONFIRMED]: 'Event Confirmed',
+  [EventStatus.SUBMITTED]: 'Submitted – Awaiting Coordinator',
+  [EventStatus.UNDER_REVIEW]: 'Under Review',
+  [EventStatus.CHANGES_REQUESTED]: 'Awaiting Organiser Reply',
+  [EventStatus.APPROVED]: 'Event Approved',
+  [EventStatus.REJECTED]: 'Event Rejected',
+  [EventStatus.PLANNING]: 'Planning Event',
+  [EventStatus.CONFIRMED]: 'Safety Check Passed (Event Confirmed)',
   [EventStatus.COMPLETED]: 'Event Completed',
+  [EventStatus.CANCELLED]: 'Event Cancelled',
 }
 
 /** One line explaining what a status actually means -- shown next to the

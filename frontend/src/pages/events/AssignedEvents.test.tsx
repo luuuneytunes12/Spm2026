@@ -77,7 +77,7 @@ describe('what the list shows', () => {
     renderList()
 
     const row = await screen.findByRole('listitem')
-    expect(within(row).getByText('Submitted')).toBeInTheDocument()
+    expect(within(row).getByText('Submitted – Awaiting Coordinator')).toBeInTheDocument()
     expect(within(row).getByText(/120 attendees/)).toBeInTheDocument()
     expect(within(row).getByText(/conference/)).toBeInTheDocument()
   })

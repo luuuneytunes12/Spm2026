@@ -91,7 +91,7 @@ test('TC-S2-3c: a completed request submits and moves out of Drafts', async ({ p
   )
   const submittedRow = page.getByRole('listitem').filter({ hasText: name })
   await expect(submittedRow).toBeVisible()
-  await expect(submittedRow.getByText('Submitted')).toBeVisible()
+  await expect(submittedRow.getByText('Submitted – Awaiting Coordinator')).toBeVisible()
 
   // ...and gone from Drafts. This is the half of AC3 that is easy to forget.
   await page.getByRole('tab', { name: 'Drafts' }).click()

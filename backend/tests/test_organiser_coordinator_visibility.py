@@ -29,6 +29,11 @@ Each test name states the acceptance criterion it covers.
 
 from app.core.roles import Role
 from app.models.user import User
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 COMPLETE = {
     "name": "Regional Partner Conference",

@@ -12,6 +12,11 @@ from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event
 from app.models.venues import Venue, VenueBooking
 from tests.event_review_test_helpers import review_setup, user
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 
 def _venue(db_session, name="Marina Hall", **overrides) -> Venue:

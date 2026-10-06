@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { AvailableCoordinatorsCount } from '../../components/AvailableCoordinatorsCount'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { ApiError } from '../../lib/api'
 import {
@@ -162,7 +161,6 @@ export function EventView() {
       {event.status !== EventStatus.DRAFT && (
         <section className="card">
           <h2>Your Assigned Event Coordinator</h2>
-          <AvailableCoordinatorsCount />
           {event.coordinator ? (
             <dl className="detail-list">
               <div className="detail-row">

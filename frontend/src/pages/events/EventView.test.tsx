@@ -11,21 +11,9 @@
  * cover what this screen does with the answer.
  */
 import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventView } from './EventView'
-
-// The count is a separate, best-effort request -- covered by its own test.
-vi.mock('../../lib/coordinators', () => ({
-  getAssignmentPool: vi.fn().mockResolvedValue({
-    available: 2,
-    coordinators: [
-      { id: 8, name: 'Alex Kim', email: 'alex@connectsphere.test' },
-      { id: 9, name: 'Jordan Lee', email: 'jordan@connectsphere.test' },
-    ],
-  }),
-}))
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
@@ -140,7 +128,7 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
 
     renderView()
 
-    await screen.findByText('Approved')
+    await screen.findByText('Event Approved')
     expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
   })
 
@@ -284,30 +272,5 @@ describe('SCRUM-23 - the activity log records who was assigned', () => {
     expect(items).toHaveLength(2)
     expect(items[0]).toHaveTextContent('Reassigned from Sam Tan to Priya Nair')
     expect(items[1]).toHaveTextContent('Assigned to Sam Tan.')
-  })
-})
-
-describe('coordinators available (debugging aid)', () => {
-  it('shows the count beside the Coordinator card, including when nobody is assigned', async () => {
-    mockGet.mockResolvedValue({ ...BASE })
-
-    renderView()
-
-    expect(await screen.findByText(/Not yet assigned/)).toBeInTheDocument()
-    // The count arrives on its own request, so wait for it rather than assume.
-    expect(await screen.findByTestId('available-coordinators')).toHaveTextContent(
-      'Coordinators currently available for assignment: 2',
-    )
-    await userEvent.click(screen.getByText(/Coordinators currently available/))
-    expect(screen.getByText('Alex Kim')).toBeVisible()
-  })
-
-  it('has no count on a draft, which has no Coordinator section', async () => {
-    mockGet.mockResolvedValue({ ...BASE, status: 'draft', submitted_at: null })
-
-    renderView()
-
-    await screen.findByText('Robotics Summit')
-    expect(screen.queryByTestId('available-coordinators')).not.toBeInTheDocument()
   })
 })

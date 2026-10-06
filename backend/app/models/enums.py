@@ -77,6 +77,7 @@ class NotificationType(enum.StrEnum):
     event_approved = "event_approved"
     event_rejected = "event_rejected"
     event_confirmed = "event_confirmed"
+    event_submitted = "event_submitted"
 
 
 class ChangeRequestStatus(enum.StrEnum):

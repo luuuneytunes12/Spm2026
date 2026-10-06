@@ -18,6 +18,10 @@ from app.models.venues import VenueBooking, VenueUnavailability
 from tests.event_review_test_helpers import review_setup, submitted_event, user
 from tests.test_venue_booking_request import _submit, _venue
 
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
+
 
 def _setup(client, db_session):
     """An approved event with a pending booking request, and everyone's headers."""

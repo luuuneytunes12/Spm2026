@@ -93,8 +93,8 @@ describe('ER AC2 - finding an event with equipment to review', () => {
 
     const first = (await screen.findByText('Regional Partner Conference')).closest('li')!
     const second = screen.getByText('Robotics Workshop').closest('li')!
-    expect(within(first).getByText('Approved')).toBeInTheDocument()
-    expect(within(second).getByText('Confirmed')).toBeInTheDocument()
+    expect(within(first).getByText('Event Approved')).toBeInTheDocument()
+    expect(within(second).getByText('Safety Check Passed (Event Confirmed)')).toBeInTheDocument()
   })
 
   it('links each event to its record', async () => {

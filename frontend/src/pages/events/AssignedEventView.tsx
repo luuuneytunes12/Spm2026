@@ -10,7 +10,6 @@ import {
   EVENT_STATUS_DESCRIPTIONS,
   EVENT_STATUS_LABELS,
   EVENT_STATUS_PIPELINE,
-  EVENT_TIMELINE_LABELS,
   EventStatus,
   approveEvent,
   approveEventChangeRequest,
@@ -52,7 +51,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
  *  one is visible here at all -- see EVENT_STATUS_PIPELINE).
  *
  *  If the current status IS a pipeline stage, that is the answer. If it is
- *  a branch (Changes requested / Rejected / Cancelled), the answer comes
+ *  a branch (Awaiting Organiser Reply / Event Rejected / Event Cancelled), the answer comes
  *  from the event's own activity log -- the `from_status` of its most
  *  recent transition is the stage it was AT when it branched off, and a
  *  branch can leave the path from more than one stage, so this is read
@@ -68,8 +67,8 @@ function reachedPipelineIndex(event: AssignedEventDetail): number {
  *  progress marked on it -- not just the single word "Submitted", but where
  *  that sits between Draft and Completed.
  *
- *  A status that branches off the main path (Changes requested / Rejected /
- *  Cancelled) is drawn as an extra node after the stage it departed from,
+ *  A status that branches off the main path (Awaiting Organiser Reply / Event Rejected /
+ *  Event Cancelled) is drawn as an extra node after the stage it departed from,
  *  rather than forced into the fixed sequence -- it isn't the 8th step of
  *  a 7-step process, it's an exit from one of the earlier steps. */
 function StatusTimeline({ event }: { event: AssignedEventDetail }) {
@@ -90,7 +89,7 @@ function StatusTimeline({ event }: { event: AssignedEventDetail }) {
             >
               <span className="status-step-dot" aria-hidden="true" />
               <span className="status-step-label">
-                {EVENT_TIMELINE_LABELS[step] ?? EVENT_STATUS_LABELS[step]}
+                {EVENT_STATUS_LABELS[step]}
               </span>
             </li>
           )

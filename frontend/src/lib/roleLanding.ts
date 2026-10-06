@@ -1,5 +1,6 @@
 import type { IconName } from '../components/Icon'
 import { listMyEvents, listAssignedEvents } from './events'
+import { listUnassignedQueue } from './coordinatorLead'
 import { listMyRegistrations } from './registrations'
 import { listVenueBookingQueue } from './venueBookings'
 import { Role } from './roles'
@@ -142,6 +143,26 @@ export const ROLE_LANDING: Record<Role, RoleLandingConfig> = {
         icon: 'check',
         count: async () =>
           (await listMyRegistrations()).filter((e) => e.my_status === 'registered').length,
+      },
+      NOTIFICATIONS,
+      PROFILE,
+    ],
+  },
+  [Role.COORDINATOR_LEAD]: {
+    tagline: 'Assign Event Requests to Coordinators and oversee their assignments.',
+    tiles: [
+      {
+        title: 'Unassigned Requests',
+        description: 'Submitted Event Requests waiting for a Coordinator.',
+        to: '/coordinator-lead/queue',
+        icon: 'list',
+        count: async () => (await listUnassignedQueue()).length,
+      },
+      {
+        title: 'Coordinator Assignments',
+        description: 'Every Coordinator and the active Events they hold.',
+        to: '/coordinator-lead/assignments',
+        icon: 'venue',
       },
       NOTIFICATIONS,
       PROFILE,

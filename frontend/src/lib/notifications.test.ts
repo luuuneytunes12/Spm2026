@@ -40,6 +40,10 @@ describe('notificationLink', () => {
     expect(notificationLink(n, 'organiser')).toBe('/organiser/events/7')
   })
 
+  it("sends the Coordinator Lead's submission notice to the queued request", () => {
+    expect(notificationLink({ ...n, type: 'event_submitted' }, 'event_coordinator_lead')).toBe('/coordinator-lead/queue/7')
+  })
+
   it('has no link without an event, or for roles with no event page', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
     expect(notificationLink(n, 'attendee')).toBeNull()

@@ -96,3 +96,20 @@ describe('everyone else', () => {
     },
   )
 })
+
+describe('Event Coordinator Lead', () => {
+  it('can reach the Unassigned Requests and Coordinator Assignments from the sidebar', () => {
+    signedInAs(Role.COORDINATOR_LEAD)
+
+    const nav = within(screen.getByRole('navigation', { name: 'Main' }))
+    expect(nav.getByRole('link', { name: 'Unassigned Requests' })).toHaveAttribute('href', '/coordinator-lead/queue')
+    expect(nav.getByRole('link', { name: 'Coordinator Assignments' })).toHaveAttribute('href', '/coordinator-lead/assignments')
+  })
+
+  it('does not show the Lead links to other roles', () => {
+    signedInAs(Role.COORDINATOR)
+
+    expect(screen.queryByRole('link', { name: 'Coordinator Assignments' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Unassigned Requests' })).not.toBeInTheDocument()
+  })
+})

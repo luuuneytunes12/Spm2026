@@ -10,6 +10,7 @@ export const Role = {
   VENUE_STAFF: 'venue_staff',
   TECH_SUPPORT: 'tech_support',
   ATTENDEE: 'attendee',
+  COORDINATOR_LEAD: 'event_coordinator_lead',
 } as const
 export type Role = (typeof Role)[keyof typeof Role]
 
@@ -21,6 +22,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   [Role.VENUE_STAFF]: 'Venue Staff',
   [Role.TECH_SUPPORT]: 'Technical Support Staff',
   [Role.ATTENDEE]: 'Attendee',
+  [Role.COORDINATOR_LEAD]: 'Event Coordinator Lead',
 }
 
 export const Permission = {
@@ -36,6 +38,8 @@ export const Permission = {
   REGISTRATION_MANAGE: 'registration:manage',
   USER_READ: 'user:read',
   ROLE_ASSIGN: 'role:assign',
+  ASSIGNMENT_MANAGE: 'assignment:manage',
+  ASSIGNMENT_VIEW_ALL: 'assignment:view_all',
 } as const
 export type Permission = (typeof Permission)[keyof typeof Permission]
 
@@ -53,6 +57,20 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   [Role.VENUE_STAFF]: [Permission.VENUE_READ, Permission.VENUE_MANAGE, Permission.EVENT_READ],
   [Role.TECH_SUPPORT]: [Permission.EQUIPMENT_READ, Permission.EQUIPMENT_MANAGE, Permission.EVENT_READ],
   [Role.ATTENDEE]: [Permission.EVENT_READ, Permission.VENUE_READ, Permission.REGISTRATION_READ],
+  // A Coordinator's grants plus assignment powers (mirrors CoordinatorLeadProfile).
+  [Role.COORDINATOR_LEAD]: [
+    ...[
+      Permission.EVENT_READ,
+      Permission.EVENT_WRITE,
+      Permission.VENUE_READ,
+      Permission.VENUE_BOOK,
+      Permission.EQUIPMENT_READ,
+      Permission.REGISTRATION_READ,
+      Permission.REGISTRATION_MANAGE,
+    ],
+    Permission.ASSIGNMENT_MANAGE,
+    Permission.ASSIGNMENT_VIEW_ALL,
+  ],
 }
 
 export function roleHas(role: Role, permission: Permission): boolean {
@@ -67,6 +85,7 @@ export const ROLE_HOME_PATH: Record<Role, string> = {
   [Role.VENUE_STAFF]: '/venue-staff',
   [Role.TECH_SUPPORT]: '/tech-support',
   [Role.ATTENDEE]: '/attendee',
+  [Role.COORDINATOR_LEAD]: '/coordinator-lead',
 }
 
 // Where a notification's `event_id` should link to for the signed-in
