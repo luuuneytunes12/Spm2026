@@ -19,6 +19,8 @@ class RequiredEquipment(BaseModel):
     equipment_category: str | None
     quantity_requested: int
     status: EquipmentStatus
+    placement_notes: str | None = None
+    safety_recheck_reason: str | None = None
 
 
 class ReservableEvent(BaseModel):
@@ -67,6 +69,15 @@ class EquipmentReservationCreate(BaseModel):
     event_id: int
     equipment_id: int
     quantity: int | None = Field(default=None, ge=1)
+    # Where the item will be set up at the venue, for the Safety Officer.
+    placement_notes: str | None = Field(default=None, max_length=2000)
+
+
+class SafetyRecheckConfirmation(BaseModel):
+    """Technical Support confirming a reserved line a Safety Officer sent
+    back, optionally correcting where it is placed."""
+
+    placement_notes: str | None = Field(default=None, max_length=2000)
 
 
 class EquipmentReservationOut(BaseModel):
@@ -81,5 +92,7 @@ class EquipmentReservationOut(BaseModel):
     quantity: int
     start_time: datetime
     end_time: datetime
+    placement_notes: str | None = None
+    safety_recheck_reason: str | None = None
     reserved_by: BookingPerson
     reserved_at: datetime

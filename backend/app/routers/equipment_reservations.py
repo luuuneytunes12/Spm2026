@@ -17,6 +17,7 @@ from app.schemas.equipment_reservation import (
     EquipmentReservationCreate,
     EquipmentReservationOut,
     ReservableEvent,
+    SafetyRecheckConfirmation,
 )
 from app.services.equipment_availability import available_quantity, reserved_units
 
@@ -59,6 +60,8 @@ def _out(line: EquipmentRequest) -> EquipmentReservationOut:
         quantity=line.quantity_requested,
         start_time=event.proposed_start,
         end_time=event.proposed_end,
+        placement_notes=line.placement_notes,
+        safety_recheck_reason=line.safety_recheck_reason,
         reserved_by=line.reviewed_by_user,
         reserved_at=line.reviewed_at,
     )
@@ -228,6 +231,38 @@ def reserve_equipment(
         line = EquipmentRequest(event_id=event.id, equipment_id=item.id, quantity_requested=quantity)
         db.add(line)
     line.status = EquipmentStatus.reserved
+    line.placement_notes = (body.placement_notes or "").strip() or None
+    line.reviewed_by = user.id
+    line.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(line)
+    return _out(line)
+
+
+@router.post("/{line_id}/safety-recheck/confirm", response_model=EquipmentReservationOut)
+def confirm_safety_recheck(
+    line_id: int,
+    body: SafetyRecheckConfirmation,
+    db: Session = Depends(get_db),
+    user: User = Depends(_tech_support),
+) -> EquipmentReservationOut:
+    """Confirm a reserved line a Safety Officer sent back for review.
+
+    The reservation never lapsed, so stock is not re-checked: this clears the
+    flag, records who confirmed it and when, and may correct the placement.
+    To give the equipment up instead, the line is handled like any other.
+    """
+    line = db.get(EquipmentRequest, line_id, with_for_update=True)
+    if line is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
+    if line.status is not EquipmentStatus.reserved or not line.safety_recheck_reason:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This reservation is not awaiting a safety re-review.",
+        )
+    if "placement_notes" in body.model_fields_set:
+        line.placement_notes = (body.placement_notes or "").strip() or None
+    line.safety_recheck_reason = None
     line.reviewed_by = user.id
     line.reviewed_at = datetime.now(timezone.utc)
     db.commit()

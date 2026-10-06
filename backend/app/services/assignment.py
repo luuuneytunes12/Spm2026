@@ -33,6 +33,7 @@ ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
     EventStatus.changes_requested,
     EventStatus.approved,
     EventStatus.planning,
+    EventStatus.awaiting_safety_check,
     EventStatus.confirmed,
 )
 

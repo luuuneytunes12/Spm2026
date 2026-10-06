@@ -51,6 +51,11 @@ export interface EquipmentReservation {
   quantity: number
   start_time: string
   end_time: string
+  /** Where the item is set up at the venue, read by the Safety Officer. */
+  placement_notes?: string | null
+  /** Set when a Safety Officer sent the reservation back for review. It
+   *  stays reserved; confirming it again clears this. */
+  safety_recheck_reason?: string | null
   reserved_by: { name: string; email: string }
   reserved_at: string
 }
@@ -79,11 +84,30 @@ export function reserveEquipment(
   eventId: number,
   equipmentId: number,
   quantity?: number,
+  placementNotes?: string,
 ): Promise<EquipmentReservation> {
   return apiFetch('/equipment-reservations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event_id: eventId, equipment_id: equipmentId, quantity }),
+    body: JSON.stringify({
+      event_id: eventId,
+      equipment_id: equipmentId,
+      quantity,
+      placement_notes: placementNotes,
+    }),
+  }) as Promise<EquipmentReservation>
+}
+
+/** Confirm a reservation a Safety Officer sent back for review, optionally
+ *  correcting where it is placed. */
+export function confirmSafetyRecheck(
+  reservationId: number,
+  placementNotes: string,
+): Promise<EquipmentReservation> {
+  return apiFetch(`/equipment-reservations/${reservationId}/safety-recheck/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ placement_notes: placementNotes }),
   }) as Promise<EquipmentReservation>
 }
 

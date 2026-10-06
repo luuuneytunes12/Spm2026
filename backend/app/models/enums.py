@@ -8,6 +8,9 @@ class EventStatus(enum.StrEnum):
     approved = "approved"
     rejected = "rejected"
     planning = "planning"
+    # Venue and equipment are arranged; a Safety Officer must pass the event
+    # before it is confirmed (see routers/safety_checks.py).
+    awaiting_safety_check = "awaiting_safety_check"
     confirmed = "confirmed"
     completed = "completed"
     cancelled = "cancelled"
@@ -68,6 +71,9 @@ class NotificationType(enum.StrEnum):
     event_approved = "event_approved"
     event_rejected = "event_rejected"
     event_confirmed = "event_confirmed"
+    safety_check_passed = "safety_check_passed"
+    safety_changes_requested = "safety_changes_requested"
+    safety_check_rejected = "safety_check_rejected"
 
 
 class ChangeRequestStatus(enum.StrEnum):

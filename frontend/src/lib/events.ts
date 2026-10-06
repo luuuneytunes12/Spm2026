@@ -12,6 +12,7 @@ export const EventStatus = {
   APPROVED: 'approved',
   REJECTED: 'rejected',
   PLANNING: 'planning',
+  AWAITING_SAFETY_CHECK: 'awaiting_safety_check',
   CONFIRMED: 'confirmed',
   COMPLETED: 'completed',
   CANCELLED: 'cancelled',
@@ -26,6 +27,7 @@ export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   [EventStatus.APPROVED]: 'Approved',
   [EventStatus.REJECTED]: 'Rejected',
   [EventStatus.PLANNING]: 'Planning',
+  [EventStatus.AWAITING_SAFETY_CHECK]: 'Awaiting Safety Check',
   [EventStatus.CONFIRMED]: 'Confirmed',
   [EventStatus.COMPLETED]: 'Completed',
   [EventStatus.CANCELLED]: 'Cancelled',
@@ -37,7 +39,8 @@ export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
  *  actually happened. Everywhere else (badges, lists) the plain labels above
  *  stay. */
 export const EVENT_TIMELINE_LABELS: Partial<Record<EventStatus, string>> = {
-  [EventStatus.CONFIRMED]: 'Event Confirmed',
+  [EventStatus.PLANNING]: 'Planning Event',
+  [EventStatus.CONFIRMED]: 'Safety Check Passed (Event Confirmed)',
   [EventStatus.COMPLETED]: 'Event Completed',
 }
 
@@ -51,7 +54,8 @@ export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
   [EventStatus.APPROVED]: 'The request has been approved and is ready to move into planning.',
   [EventStatus.REJECTED]: 'The request was not approved. It will not proceed.',
   [EventStatus.PLANNING]: 'Approved and being planned -- venue, equipment and other logistics are being arranged.',
-  [EventStatus.CONFIRMED]: 'Planning is complete. The event is confirmed to go ahead.',
+  [EventStatus.AWAITING_SAFETY_CHECK]: 'Venue and equipment are arranged. A Safety Officer is checking the arrangement.',
+  [EventStatus.CONFIRMED]: 'The event passed its Safety Check and is confirmed to go ahead.',
   [EventStatus.COMPLETED]: 'The event has taken place.',
   [EventStatus.CANCELLED]: 'The event has been cancelled and will not proceed.',
 }
@@ -83,6 +87,7 @@ export const EVENT_STATUS_PIPELINE: readonly EventStatus[] = [
   EventStatus.UNDER_REVIEW,
   EventStatus.APPROVED,
   EventStatus.PLANNING,
+  EventStatus.AWAITING_SAFETY_CHECK,
   EventStatus.CONFIRMED,
   EventStatus.COMPLETED,
 ]
@@ -190,7 +195,8 @@ export interface AssignedEventDetail extends EventDetail {
   organiser: OrganiserContact
   activity: ActivityEntry[]
   change_requests: EventChangeRequest[]
-  /** What still blocks confirming an Approved event; empty when it is ready. */
+  /** What still blocks submitting a planned event for its Safety Check;
+   *  empty when it is ready. */
   confirmation_outstanding?: string[]
 }
 
@@ -274,9 +280,10 @@ export function approveEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}/approve`, { method: 'POST' }) as Promise<EventDetail>
 }
 
-/** Confirm an approved event whose venue and equipment are arranged. Rejects
- *  with a 409 ApiError naming the outstanding items when it is not ready. */
-export function confirmEvent(id: number): Promise<EventDetail> {
+/** Submit a planned event whose venue and equipment are arranged for its
+ *  Safety Check. Rejects with a 409 ApiError naming the outstanding items
+ *  when it is not ready. */
+export function submitForSafetyCheck(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}/confirm`, { method: 'POST' }) as Promise<EventDetail>
 }
 
