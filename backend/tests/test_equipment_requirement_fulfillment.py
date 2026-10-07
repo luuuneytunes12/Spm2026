@@ -81,7 +81,7 @@ def _user(client, db_session, role, name="Test User"):
     return user, {"Authorization": f"Bearer {create_access_token(user.id, user.role)}"}
 
 
-def _world(client, db_session, needed=5, status=EventStatus.approved, **event_overrides):
+def _world(client, db_session, needed=5, status=EventStatus.event_approved, **event_overrides):
     """An approved, dated event whose Coordinator needs `needed` Audio items,
     a catalogue with two Audio items and a projector, and Technical Support."""
     organiser, organiser_headers = _user(client, db_session, Role.ORGANISER, name="Organiser")

@@ -16,9 +16,9 @@ import { EventStatus } from './events'
  *  for both sides, so a requirement never sits where Technical Support
  *  is not looking. */
 export const EQUIPMENT_ACTIVE_STATUSES: readonly EventStatus[] = [
-  EventStatus.APPROVED,
-  EventStatus.PLANNING,
-  EventStatus.CONFIRMED,
+  EventStatus.EVENT_APPROVED,
+  EventStatus.PLANNING_EVENT,
+  EventStatus.SAFETY_CHECK_PASSED,
 ]
 
 export function canRecordEquipment(status: EventStatus): boolean {

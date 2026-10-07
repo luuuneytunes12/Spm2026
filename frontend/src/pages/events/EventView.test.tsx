@@ -11,21 +11,9 @@
  * cover what this screen does with the answer.
  */
 import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventView } from './EventView'
-
-// The count is a separate, best-effort request -- covered by its own test.
-vi.mock('../../lib/coordinators', () => ({
-  getAssignmentPool: vi.fn().mockResolvedValue({
-    available: 2,
-    coordinators: [
-      { id: 8, name: 'Alex Kim', email: 'alex@connectsphere.test' },
-      { id: 9, name: 'Jordan Lee', email: 'jordan@connectsphere.test' },
-    ],
-  }),
-}))
 
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
@@ -64,7 +52,7 @@ const BASE: EventDetail = {
   equipment_items: [],
   special_arrangements: null,
   registration_enabled: false,
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: '2026-09-10T02:00:00Z',
   created_at: '2026-09-09T00:00:00Z',
   updated_at: '2026-09-10T02:00:00Z',
@@ -136,11 +124,11 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
   })
 
   it('does not offer correction after the Coordinator decides', async () => {
-    mockGet.mockResolvedValue({ ...BASE, status: 'approved' })
+    mockGet.mockResolvedValue({ ...BASE, status: 'event_approved' })
 
     renderView()
 
-    await screen.findByText('Approved')
+    await screen.findByText('Event Approved')
     expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
   })
 
@@ -195,12 +183,12 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
   it('shows the Coordinator rejection reason in the event activity log', async () => {
     const rejection: ActivityEntry = {
       from_status: 'under_review',
-      to_status: 'rejected',
+      to_status: 'event_rejected',
       note: 'The requested venue is unavailable on that date.',
       changed_by_name: 'Sam Tan',
       created_at: '2026-09-12T09:00:00Z',
     }
-    mockGet.mockResolvedValue({ ...BASE, status: 'rejected' })
+    mockGet.mockResolvedValue({ ...BASE, status: 'event_rejected' })
     mockActivity.mockResolvedValue([rejection])
 
     renderView()
@@ -269,7 +257,7 @@ describe('SCRUM-23 - the activity log records who was assigned', () => {
         created_at: '2026-09-12T09:00:00Z',
       },
       {
-        from_status: 'submitted',
+        from_status: 'submitted_awaiting_coordinator',
         to_status: 'under_review',
         note: 'Assigned to Sam Tan.',
         changed_by_name: 'Priya Menon',
@@ -284,30 +272,5 @@ describe('SCRUM-23 - the activity log records who was assigned', () => {
     expect(items).toHaveLength(2)
     expect(items[0]).toHaveTextContent('Reassigned from Sam Tan to Priya Nair')
     expect(items[1]).toHaveTextContent('Assigned to Sam Tan.')
-  })
-})
-
-describe('coordinators available (debugging aid)', () => {
-  it('shows the count beside the Coordinator card, including when nobody is assigned', async () => {
-    mockGet.mockResolvedValue({ ...BASE })
-
-    renderView()
-
-    expect(await screen.findByText(/Not yet assigned/)).toBeInTheDocument()
-    // The count arrives on its own request, so wait for it rather than assume.
-    expect(await screen.findByTestId('available-coordinators')).toHaveTextContent(
-      'Coordinators currently available for assignment: 2',
-    )
-    await userEvent.click(screen.getByText(/Coordinators currently available/))
-    expect(screen.getByText('Alex Kim')).toBeVisible()
-  })
-
-  it('has no count on a draft, which has no Coordinator section', async () => {
-    mockGet.mockResolvedValue({ ...BASE, status: 'draft', submitted_at: null })
-
-    renderView()
-
-    await screen.findByText('Robotics Summit')
-    expect(screen.queryByTestId('available-coordinators')).not.toBeInTheDocument()
   })
 })

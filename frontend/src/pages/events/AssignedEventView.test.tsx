@@ -91,7 +91,7 @@ const EVENT: AssignedEventDetail = {
   equipment_items: [],
   special_arrangements: 'Halal catering',
   registration_enabled: true,
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: '2026-09-10T02:00:00Z',
   created_at: '2026-09-09T00:00:00Z',
   updated_at: '2026-09-10T02:00:00Z',
@@ -99,7 +99,7 @@ const EVENT: AssignedEventDetail = {
   activity: [
     {
       from_status: 'draft',
-      to_status: 'submitted',
+      to_status: 'submitted_awaiting_coordinator',
       note: 'Submitted by organiser.',
       changed_by_name: 'Priya Menon',
       created_at: '2026-09-10T02:00:00Z',
@@ -375,7 +375,7 @@ describe('AC3 - the current status', () => {
     // Appears twice once loaded -- the header badge and the timeline's
     // current step both show it -- so any match at all proves the label
     // rendered; the second assertion is what proves the raw slug did not.
-    await waitFor(() => expect(screen.getAllByText('Under review').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.getAllByText('Under Review').length).toBeGreaterThan(0))
     expect(screen.queryByText('under_review')).toBeNull()
   })
 
@@ -397,9 +397,9 @@ describe('AC3 - the current status', () => {
     // Scoped to the timeline's own label class: "Submitted" also appears in
     // the header badge, so an unscoped match would be ambiguous.
     const steps = [
-      'Submitted',
-      'Under review',
-      'Approved',
+      'Submitted – Awaiting Coordinator',
+      'Under Review',
+      'Event Approved',
       'Planning Event',
       'Awaiting Safety Check',
       'Safety Check Passed (Event Confirmed)',
@@ -410,7 +410,7 @@ describe('AC3 - the current status', () => {
     }
     // Exactly one stage is "current" -- the event's actual status.
     const current = screen
-      .getByText('Submitted', { selector: '.status-step-label' })
+      .getByText('Submitted – Awaiting Coordinator', { selector: '.status-step-label' })
       .closest('[aria-current="step"]')
     expect(current).not.toBeNull()
     expect(
@@ -421,7 +421,7 @@ describe('AC3 - the current status', () => {
   it("does not show Draft on the timeline -- a Coordinator's process only begins at Submitted", async () => {
     renderView()
 
-    await screen.findByText('Submitted', { selector: '.status-step-label' })
+    await screen.findByText('Submitted – Awaiting Coordinator', { selector: '.status-step-label' })
     expect(screen.queryByText('Draft', { selector: '.status-step-label' })).toBeNull()
   })
 
@@ -444,11 +444,11 @@ describe('AC3 - the current status', () => {
   it('TC-S3-3e: a branch status (changes requested) is drawn off the stage it departed from, not as its own fixed step', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'changes_requested',
+      status: 'awaiting_organiser_reply',
       activity: [
         {
           from_status: 'under_review',
-          to_status: 'changes_requested',
+          to_status: 'awaiting_organiser_reply',
           note: 'Please confirm the accessibility plan.',
           changed_by_name: 'Sam Tan',
           created_at: '2026-09-12T09:00:00Z',
@@ -461,15 +461,15 @@ describe('AC3 - the current status', () => {
     // "Under review" and "Changes requested" each appear twice on this page
     // -- once as a timeline node, once in the activity log's own wording --
     // so the timeline's copy is picked out by its label class.
-    await screen.findByText('Changes requested', { selector: '.status-step-label' })
+    await screen.findByText('Awaiting Organiser Reply', { selector: '.status-step-label' })
     const reviewStep = screen
-      .getByText('Under review', { selector: '.status-step-label' })
+      .getByText('Under Review', { selector: '.status-step-label' })
       .closest('.status-step')
     expect(reviewStep).toHaveClass('status-step-done')
-    const approvedStep = screen.getByText('Approved').closest('.status-step')
+    const approvedStep = screen.getByText('Event Approved').closest('.status-step')
     expect(approvedStep).toHaveClass('status-step-upcoming')
     const branchStep = screen
-      .getByText('Changes requested', { selector: '.status-step-label' })
+      .getByText('Awaiting Organiser Reply', { selector: '.status-step-label' })
       .closest('.status-step')
     expect(branchStep).toHaveClass('status-step-branch', 'status-step-branch-warning')
   })
@@ -477,11 +477,11 @@ describe('AC3 - the current status', () => {
   it('TC-S3-3f: a rejection is shown in a danger tone', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'rejected',
+      status: 'event_rejected',
       activity: [
         {
           from_status: 'under_review',
-          to_status: 'rejected',
+          to_status: 'event_rejected',
           note: null,
           changed_by_name: 'Sam Tan',
           created_at: '2026-09-12T09:00:00Z',
@@ -490,7 +490,7 @@ describe('AC3 - the current status', () => {
     })
     renderView()
 
-    const branchStep = await screen.findByText('Rejected', { selector: '.status-step-label' })
+    const branchStep = await screen.findByText('Event Rejected', { selector: '.status-step-label' })
     expect(branchStep.closest('.status-step')).toHaveClass('status-step-branch-danger')
   })
 })
@@ -515,7 +515,7 @@ describe('AC4 - the activity log', () => {
       status: 'under_review',
       activity: [
         {
-          from_status: 'submitted',
+          from_status: 'submitted_awaiting_coordinator',
           to_status: 'under_review',
           note: 'Picked up for review.',
           changed_by_name: 'Sam Tan',
@@ -554,8 +554,8 @@ describe('AC4 - the activity log', () => {
       ...EVENT,
       activity: [
         {
-          from_status: 'submitted',
-          to_status: 'submitted',
+          from_status: 'submitted_awaiting_coordinator',
+          to_status: 'submitted_awaiting_coordinator',
           note: 'Assigned to Sam Tan.',
           changed_by_name: 'Priya Menon',
           created_at: '2026-09-10T02:05:00Z',
@@ -599,6 +599,16 @@ describe('AC4 - the activity log', () => {
 })
 
 describe('AC5 - events that are not assigned to me', () => {
+  it('shows the server\'s reassignment message when the Lead moved the event away', async () => {
+    const msg =
+      "'Robotics Summit' that was initially assigned to you by the Event Coordinator Lead has been reassigned to Priya Nair."
+    mockGet.mockRejectedValue(new ApiError(409, msg))
+    renderView('99')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(msg)
+    expect(screen.getByRole('link', { name: /back to my assigned events/i })).toBeInTheDocument()
+  })
+
   it('TC-S3-5b: a 404 becomes a refusal, and none of the event is rendered', async () => {
     mockGet.mockRejectedValue(new ApiError(404, 'Event not found'))
     renderView('99')
@@ -632,14 +642,14 @@ describe('what this screen deliberately does not offer', () => {
 
 describe('Coordinator decisions', () => {
   it('approves the assigned request and refreshes its activity', async () => {
-    const approved = { ...EVENT, status: 'approved' as const }
+    const approved = { ...EVENT, status: 'event_approved' as const }
     mockApprove.mockResolvedValue(approved)
     mockGet.mockResolvedValueOnce(EVENT).mockResolvedValueOnce({
       ...approved,
       activity: [
         {
           from_status: 'under_review',
-          to_status: 'approved',
+          to_status: 'event_approved',
           note: 'Approved by the Event Coordinator.',
           changed_by_name: 'Sam Tan',
           created_at: '2026-09-12T09:00:00Z',
@@ -652,13 +662,13 @@ describe('Coordinator decisions', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve request' }))
 
     await waitFor(() => expect(mockApprove).toHaveBeenCalledWith(7))
-    expect(await screen.findByText('Approved', { selector: '.badge' })).toBeInTheDocument()
+    expect(await screen.findByText('Event Approved', { selector: '.badge' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
     expect(screen.getByText('Approved by the Event Coordinator.')).toBeInTheDocument()
   })
 
   it('requires a reason before rejecting and submits the recorded reason', async () => {
-    mockReject.mockResolvedValue({ ...EVENT, status: 'rejected' })
+    mockReject.mockResolvedValue({ ...EVENT, status: 'event_rejected' })
     renderView()
 
     const reject = await screen.findByRole('button', { name: 'Reject request' })
@@ -671,7 +681,7 @@ describe('Coordinator decisions', () => {
   })
 
   it('does not offer decision controls once the request has been decided', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
 
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
@@ -682,7 +692,7 @@ describe('Coordinator decisions', () => {
 
 describe('SCRUM-39 - the venue booking card follows the event status', () => {
   it('is offered once the event is approved', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
     expect(await screen.findByLabelText('venue booking stub')).toBeInTheDocument()
   })
@@ -694,7 +704,7 @@ describe('SCRUM-39 - the venue booking card follows the event status', () => {
   })
 
   it('is not offered for a rejected event', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'rejected' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_rejected' })
     renderView()
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
     expect(screen.queryByLabelText('venue booking stub')).not.toBeInTheDocument()
@@ -703,18 +713,18 @@ describe('SCRUM-39 - the venue booking card follows the event status', () => {
 
 describe('ER AC1 - the equipment requirements card', () => {
   it('is on the Coordinator’s event page, for that event', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
 
     const card = await screen.findByLabelText('equipment requirements stub')
     expect(card).toHaveAttribute('data-event-id', '7')
-    expect(card).toHaveAttribute('data-event-status', 'approved')
+    expect(card).toHaveAttribute('data-event-status', 'event_approved')
   })
 
   it('is given the Organiser’s picks, so a requirement can be based on one', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'approved',
+      status: 'event_approved',
       equipment_items: [
         {
           id: 31,
@@ -736,7 +746,7 @@ describe('ER AC1 - the equipment requirements card', () => {
   it('is given the Organiser’s other equipment notes as context', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
-      status: 'approved',
+      status: 'event_approved',
       equipment_requirements: 'Stage left, near the fire exit',
     })
     renderView()
@@ -754,7 +764,7 @@ describe('ER AC1 - the equipment requirements card', () => {
   })
 
   it('does not replace the Organiser’s own equipment under Event Details', async () => {
-    mockGet.mockResolvedValue({ ...EVENT, status: 'approved' })
+    mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
     renderView()
     await screen.findByLabelText('equipment requirements stub')
 

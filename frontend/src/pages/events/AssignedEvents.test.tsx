@@ -31,7 +31,7 @@ const ASSIGNED: EventSummary = {
   proposed_start: '2026-11-02T09:00:00Z',
   proposed_end: '2026-11-02T17:00:00Z',
   expected_attendance: 120,
-  status: 'submitted',
+  status: 'submitted_awaiting_coordinator',
   submitted_at: '2026-09-10T02:00:00Z',
   updated_at: '2026-09-10T02:00:00Z',
 }
@@ -77,7 +77,7 @@ describe('what the list shows', () => {
     renderList()
 
     const row = await screen.findByRole('listitem')
-    expect(within(row).getByText('Submitted')).toBeInTheDocument()
+    expect(within(row).getByText('Submitted – Awaiting Coordinator')).toBeInTheDocument()
     expect(within(row).getByText(/120 attendees/)).toBeInTheDocument()
     expect(within(row).getByText(/conference/)).toBeInTheDocument()
   })

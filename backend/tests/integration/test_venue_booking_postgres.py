@@ -16,6 +16,10 @@ from app.models.venues import Venue, VenueBooking
 from tests.integration.conftest import submit_event
 from tests.integration.test_coordinator_concurrency_postgres import THREADS, race
 
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see tests/conftest.py).
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("coordinator_auto_assign")]
+
 
 def _setup(client, make_user, db):
     _o, org_h = make_user(Role.ORGANISER, "org@connectsphere.test", "Priya Menon")
@@ -23,7 +27,7 @@ def _setup(client, make_user, db):
     _v, staff_h = make_user(Role.VENUE_STAFF, "staff@connectsphere.test", "Vera Staff")
     event_id = submit_event(client, org_h)
     event = db.get(Event, event_id)
-    event.status = EventStatus.approved
+    event.status = EventStatus.event_approved
     event.room_layout_preference = "Theatre"
     venue = Venue(name="Marina Hall", location="10 Bayfront Ave", capacity=250)
     db.add(venue)

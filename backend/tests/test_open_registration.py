@@ -20,7 +20,7 @@ def _iso(delta_days: float) -> str:
     return (datetime.now(timezone.utc) + timedelta(days=delta_days)).isoformat()
 
 
-def _setup(client, db_session, *, status=EventStatus.confirmed):
+def _setup(client, db_session, *, status=EventStatus.safety_check_passed):
     organiser, organiser_h = user(client, db_session, Role.ORGANISER, "org@example.com", "Organiser")
     coordinator, coordinator_h = user(
         client, db_session, Role.COORDINATOR, "coord@example.com", "Coordinator"
@@ -137,10 +137,10 @@ def test_ac2_closing_at_the_same_moment_it_opens_is_allowed(client, db_session):
 
 def test_ac3_enabling_on_an_unconfirmed_event_is_blocked(client, db_session):
     for status in (
-        EventStatus.submitted,
+        EventStatus.submitted_awaiting_coordinator,
         EventStatus.under_review,
-        EventStatus.approved,
-        EventStatus.rejected,
+        EventStatus.event_approved,
+        EventStatus.event_rejected,
     ):
         event, _, coordinator_h, _ = _setup_fresh(client, db_session, status)
 

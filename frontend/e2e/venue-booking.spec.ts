@@ -66,10 +66,10 @@ test('SCRUM-39 AC2 + AC3: a submitted request appears in the Venue Staff queue c
   const value = await sam.locator('option', { hasText: VENUE }).getAttribute('value')
   await sam.getByRole('combobox', { name: /^Venue/ }).selectOption(value!)
   await sam.getByRole('button', { name: 'Submit booking request' }).click()
-  await expect(sam.getByRole('status')).toContainText(VENUE) // AC2 (coordinator side)
-  await expect(sam.getByRole('status')).toContainText('Pending review')
+  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText(VENUE) // AC2 (coordinator side)
+  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Pending review')
   await sam.reload() // persisted, not just on screen
-  await expect(sam.getByRole('status')).toContainText(VENUE)
+  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText(VENUE)
   await expect(sam.getByRole('button', { name: 'Submit booking request' })).toHaveCount(0) // no duplicate
 
   await vera.goto('/venue-staff/bookings')

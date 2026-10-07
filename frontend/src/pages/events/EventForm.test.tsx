@@ -136,7 +136,7 @@ beforeEach(() => {
     venue_bookings_to_reconsider: [],
     equipment_reservations_to_reconsider: [],
   })
-  mockSubmit.mockResolvedValue({ ...SAVED, status: 'submitted' })
+  mockSubmit.mockResolvedValue({ ...SAVED, status: 'submitted_awaiting_coordinator' })
   mockGet.mockResolvedValue({ ...SAVED })
 })
 
@@ -367,7 +367,7 @@ describe('Story 2 AC1 - submitting an incomplete request is blocked and the gaps
     })
     mockSubmit.mockImplementation(async () => {
       order.push('submit')
-      return { ...SAVED, status: 'submitted' as const }
+      return { ...SAVED, status: 'submitted_awaiting_coordinator' as const }
     })
     renderNew()
 

@@ -22,6 +22,10 @@ import { AttendeeEvents } from './pages/registrations/AttendeeEvents'
 import { MyRegistrations } from './pages/registrations/MyRegistrations'
 import { Attendee } from './pages/roles/Attendee'
 import { Coordinator } from './pages/roles/Coordinator'
+import { CoordinatorLead } from './pages/roles/CoordinatorLead'
+import { CoordinatorAssignments, UnassignedQueue, UnassignedRequests } from './pages/lead/LeadPages'
+import { AssignedEventReview } from './pages/lead/AssignedEventReview'
+import { QueuedRequestView } from './pages/lead/QueuedRequestView'
 import { Organiser } from './pages/roles/Organiser'
 import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
@@ -62,6 +66,14 @@ function App() {
             <Route path="/coordinator" element={<Coordinator />} />
             <Route path="/coordinator/events" element={<AssignedEvents />} />
             <Route path="/coordinator/events/:id" element={<AssignedEventView />} />
+          </Route>
+          <Route element={<RequireRole roles={[Role.COORDINATOR_LEAD]} />}>
+            <Route path="/coordinator-lead" element={<CoordinatorLead />} />
+            <Route path="/coordinator-lead/queue" element={<UnassignedQueue />} />
+            <Route path="/coordinator-lead/queue/:id" element={<QueuedRequestView />} />
+            <Route path="/coordinator-lead/unassigned" element={<UnassignedRequests />} />
+            <Route path="/coordinator-lead/assignments" element={<CoordinatorAssignments />} />
+            <Route path="/coordinator-lead/assignments/:id" element={<AssignedEventReview />} />
           </Route>
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />

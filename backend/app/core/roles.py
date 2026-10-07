@@ -17,6 +17,10 @@ class Role(StrEnum):
     VENUE_STAFF = "venue_staff"  # Venue Staff
     TECH_SUPPORT = "tech_support"  # Technical Support Staff (12 chars -- exactly at the limit)
     ATTENDEE = "attendee"  # Attendee
+    # Event Coordinator Lead -- a Coordinator who also assigns/reassigns
+    # Event Requests. The label is the live `user_role` enum value.
+    COORDINATOR_LEAD = "event_coordinator_lead"
+
     SAFETY_OFFICER = "safety_officer" #Safety Officer
 
 # Human-readable label for each role, since the slugs above are not
@@ -28,6 +32,7 @@ ROLE_LABELS: dict[Role, str] = {
     Role.VENUE_STAFF: "Venue Staff",
     Role.TECH_SUPPORT: "Technical Support Staff",
     Role.ATTENDEE: "Attendee",
+    Role.COORDINATOR_LEAD: "Event Coordinator Lead",
     Role.SAFETY_OFFICER: "Safety Officer",
 }
 
@@ -44,6 +49,8 @@ class Permission(StrEnum):
     EQUIPMENT_MANAGE = "equipment:manage"
     REGISTRATION_READ = "registration:read"
     REGISTRATION_MANAGE = "registration:manage"
+    ASSIGNMENT_MANAGE = "assignment:manage"  # assign / reassign Event Requests
+    ASSIGNMENT_VIEW_ALL = "assignment:view_all"  # see every Coordinator Assignment
 
 
 # Explicit per-role permission table. ORGANISER gets every permission (it
@@ -87,6 +94,56 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     ),
     Role.SAFETY_OFFICER: frozenset({Permission.EVENT_READ})
 }
+
+
+# --- Role profiles (OOP) ------------------------------------------------
+# New roles are modelled as classes so a role can inherit another's grants
+# and add its own. The existing roles above are left as the plain table
+# they were; a profile only READS from that table, never replaces it.
+
+
+class RoleProfile:
+    """A role's identity and permission set. Subclasses inherit the parent
+    profile's permissions and add `extra_permissions`."""
+
+    role: Role
+    extra_permissions: frozenset[Permission] = frozenset()
+
+    @property
+    def label(self) -> str:
+        return ROLE_LABELS[self.role]
+
+    @property
+    def base_permissions(self) -> frozenset[Permission]:
+        return frozenset()
+
+    @property
+    def permissions(self) -> frozenset[Permission]:
+        return self.base_permissions | self.extra_permissions
+
+
+class CoordinatorProfile(RoleProfile):
+    """Event Coordinator: exactly the grants already in ROLE_PERMISSIONS."""
+
+    role = Role.COORDINATOR
+
+    @property
+    def base_permissions(self) -> frozenset[Permission]:
+        return ROLE_PERMISSIONS[Role.COORDINATOR]
+
+
+class CoordinatorLeadProfile(CoordinatorProfile):
+    """Event Coordinator Lead: everything a Coordinator can do (so login,
+    logout and profile editing behave identically), plus assigning and
+    reassigning Event Requests and viewing all Coordinator Assignments."""
+
+    role = Role.COORDINATOR_LEAD
+    extra_permissions = frozenset(
+        {Permission.ASSIGNMENT_MANAGE, Permission.ASSIGNMENT_VIEW_ALL}
+    )
+
+
+ROLE_PERMISSIONS[Role.COORDINATOR_LEAD] = CoordinatorLeadProfile().permissions
 
 # Public registration must only ever create attendees; every other role is
 # granted by an ORGANISER via PATCH /users/{id}/role.

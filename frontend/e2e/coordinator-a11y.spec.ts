@@ -81,25 +81,19 @@ for (const colorScheme of SCHEMES) {
       await expectNoSeriousViolations(sam, `/coordinator/events/:id (${colorScheme})`)
     })
 
-    test('Organiser request list, with the coordinator pool collapsed and open', async ({ browser, request }) => {
+    test('Organiser request list', async ({ browser, request }) => {
       await eventFor(request, 'Organiser view')
       const olivia = await openAs(browser, OLIVIA, { colorScheme })
       await olivia.goto('/organiser/events')
-      const summary = olivia.getByText(/Coordinators currently available for assignment/)
-      await expect(summary).toBeVisible()
-      await expectNoSeriousViolations(olivia, `/organiser/events, pool collapsed (${colorScheme})`)
-
-      await summary.click()
-      await expect(olivia.getByRole('list', { name: 'Coordinators in the assignment pool' })).toBeVisible()
-      await expectNoSeriousViolations(olivia, `/organiser/events, pool open (${colorScheme})`)
+      await expect(olivia.getByRole('heading', { level: 1 })).toBeVisible()
+      await expectNoSeriousViolations(olivia, `/organiser/events (${colorScheme})`)
     })
 
-    test('Organiser event page: assigned coordinator card, pool and activity log', async ({ browser, request }) => {
+    test('Organiser event page: assigned coordinator card and activity log', async ({ browser, request }) => {
       const eventId = await eventFor(request, 'Organiser event')
       const olivia = await openAs(browser, OLIVIA, { colorScheme })
       await olivia.goto(`/organiser/events/${eventId}`)
       await expect(olivia.getByRole('heading', { name: 'Your Assigned Event Coordinator' })).toBeVisible()
-      await olivia.getByText(/Coordinators currently available for assignment/).click()
       await expectNoSeriousViolations(olivia, `/organiser/events/:id (${colorScheme})`)
     })
 
@@ -121,36 +115,7 @@ for (const colorScheme of SCHEMES) {
 // Keyboard-only operation
 // ---------------------------------------------------------------------------
 
-/** Press Tab until `target` has focus, failing if it is never reached: proves
- *  it is in the tab order, not merely focusable by a script. */
-async function tabTo(page: Page, target: import('@playwright/test').Locator, max = 60) {
-  for (let i = 0; i < max; i++) {
-    await page.keyboard.press('Tab')
-    if (await target.evaluate((el) => el === document.activeElement)) return
-  }
-  throw new Error(`Never reached ${target} in ${max} Tab presses`)
-}
-
-async function hasVisibleFocus(locator: import('@playwright/test').Locator): Promise<boolean> {
-  return locator.evaluate((el) => {
-    const s = getComputedStyle(el)
-    return (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || s.boxShadow !== 'none'
-  })
-}
-
 test.describe('keyboard only', () => {
-  test('the organiser can reach the coordinator pool dropdown by Tab and open it with the keyboard', async ({ browser }) => {
-    const olivia = await openAs(browser, OLIVIA)
-    await olivia.goto('/organiser/events')
-    const summary = olivia.locator('details.pool-details > summary')
-
-    await tabTo(olivia, summary)
-    expect(await hasVisibleFocus(summary)).toBe(true)
-    await olivia.keyboard.press('Enter')
-
-    await expect(olivia.getByRole('list', { name: 'Coordinators in the assignment pool' })).toBeVisible()
-  })
-
   test('every field on the profile form is labelled', async ({ browser }) => {
     const sam = await openAs(browser, SAM)
     await sam.goto('/profile')

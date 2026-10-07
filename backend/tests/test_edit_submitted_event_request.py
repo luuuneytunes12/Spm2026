@@ -17,6 +17,10 @@ from app.models.events import Event, EventChangeRequest
 from app.models.venues import Venue, VenueBooking
 from event_review_test_helpers import COMPLETE, review_setup, user
 
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
+
 
 def test_change_request_is_pending_and_does_not_mutate_event(client, db_session):
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
@@ -162,7 +166,7 @@ def test_coordinator_approval_applies_equipment_proposal(client, db_session):
 
 
 @pytest.mark.parametrize(
-    "terminal_status", [EventStatus.rejected, EventStatus.completed, EventStatus.cancelled]
+    "terminal_status", [EventStatus.event_rejected, EventStatus.event_completed, EventStatus.event_cancelled]
 )
 def test_terminal_event_cannot_receive_change_request(client, db_session, terminal_status):
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
@@ -251,5 +255,5 @@ def test_decided_request_cannot_be_edited(client, db_session, decision):
 
     assert response.status_code == 409
     assert db_session.get(Event, event_id).name == COMPLETE["name"]
-    expected_status = EventStatus.approved if decision == "approve" else EventStatus.rejected
+    expected_status = EventStatus.event_approved if decision == "approve" else EventStatus.event_rejected
     assert db_session.get(Event, event_id).status == expected_status

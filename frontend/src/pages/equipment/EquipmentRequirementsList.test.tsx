@@ -36,7 +36,7 @@ const CONFERENCE: SupportEventSummary = {
   proposed_start: '2026-11-02T09:00:00Z',
   proposed_end: '2026-11-02T17:00:00Z',
   expected_attendance: 120,
-  status: 'approved',
+  status: 'event_approved',
   requirement_count: 3,
 }
 
@@ -46,7 +46,7 @@ const WORKSHOP: SupportEventSummary = {
   name: 'Robotics Workshop',
   event_type: 'workshop',
   expected_attendance: 40,
-  status: 'confirmed',
+  status: 'safety_check_passed',
   requirement_count: 1,
 }
 
@@ -93,8 +93,8 @@ describe('ER AC2 - finding an event with equipment to review', () => {
 
     const first = (await screen.findByText('Regional Partner Conference')).closest('li')!
     const second = screen.getByText('Robotics Workshop').closest('li')!
-    expect(within(first).getByText('Approved')).toBeInTheDocument()
-    expect(within(second).getByText('Confirmed')).toBeInTheDocument()
+    expect(within(first).getByText('Event Approved')).toBeInTheDocument()
+    expect(within(second).getByText('Safety Check Passed (Event Confirmed)')).toBeInTheDocument()
   })
 
   it('links each event to its record', async () => {

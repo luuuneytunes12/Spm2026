@@ -47,9 +47,9 @@ function originOf(requirement: EquipmentRequirement, organiserLines: EquipmentLi
  *  but will be, so the card says so rather than just being empty. */
 const BEFORE_APPROVAL: EventStatus[] = [
   EventStatus.DRAFT,
-  EventStatus.SUBMITTED,
+  EventStatus.SUBMITTED_AWAITING_COORDINATOR,
   EventStatus.UNDER_REVIEW,
-  EventStatus.CHANGES_REQUESTED,
+  EventStatus.AWAITING_ORGANISER_REPLY,
 ]
 
 /** The Coordinator's "equipment this event needs" card.

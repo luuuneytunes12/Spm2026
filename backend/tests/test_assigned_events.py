@@ -12,6 +12,11 @@ docstrings, and docs/test-cases-coordinator-assigned-events.md).
 from app.core.roles import Role
 from app.models.events import Event
 from app.models.user import User
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 # A request with every mandatory field filled in, plus the optional ones, so
 # that "the Coordinator can see every requirement" is testable against a
@@ -187,7 +192,7 @@ def test_assigned_event_reports_its_current_status(client, db_session):
 
     body = client.get(f"/events/assigned/{event_id}", headers=coordinator_headers).json()
 
-    assert body["status"] == "submitted"
+    assert body["status"] == "submitted_awaiting_coordinator"
     assert body["submitted_at"] is not None
 
 
@@ -205,7 +210,7 @@ def test_assigned_event_includes_its_activity_log(client, db_session):
     assert len(body["activity"]) == 1
     entry = body["activity"][0]
     assert entry["from_status"] == "draft"
-    assert entry["to_status"] == "submitted"
+    assert entry["to_status"] == "submitted_awaiting_coordinator"
     assert entry["changed_by_name"] == organiser.name
     assert entry["note"] == "Submitted by organiser."
     assert entry["created_at"] is not None
@@ -221,7 +226,7 @@ def test_activity_log_is_newest_first(client, db_session):
         EventStatusHistory(
             event_id=event_id,
             changed_by=coordinator.id,
-            from_status="submitted",
+            from_status="submitted_awaiting_coordinator",
             to_status="under_review",
             note="Picked up for review.",
         )
@@ -230,7 +235,7 @@ def test_activity_log_is_newest_first(client, db_session):
 
     body = client.get(f"/events/assigned/{event_id}", headers=coordinator_headers).json()
 
-    assert [e["to_status"] for e in body["activity"]] == ["under_review", "submitted"]
+    assert [e["to_status"] for e in body["activity"]] == ["under_review", "submitted_awaiting_coordinator"]
     assert body["activity"][0]["changed_by_name"] == "Sam Tan"
 
 

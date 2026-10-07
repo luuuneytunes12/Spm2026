@@ -7,6 +7,10 @@ from app.models.events import Event, EventStatusHistory
 from app.models.notifications import Notification
 from event_review_test_helpers import review_setup, user
 
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see conftest).
+pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
+
 
 def test_rejection_requires_a_non_blank_reason(client, db_session):
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
@@ -32,10 +36,10 @@ def test_rejection_records_reason_notifies_organiser_and_logs_coordinator(
     )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "rejected"
+    assert response.json()["status"] == "event_rejected"
     decision = (
         db_session.query(EventStatusHistory)
-        .filter_by(event_id=event_id, to_status="rejected")
+        .filter_by(event_id=event_id, to_status="event_rejected")
         .one()
     )
     assert decision.note == reason
@@ -50,7 +54,7 @@ def test_rejection_records_reason_notifies_organiser_and_logs_coordinator(
 
     activity = client.get(f"/events/{event_id}/activity", headers=organiser_headers)
     assert activity.status_code == 200
-    rejection = next(entry for entry in activity.json() if entry["to_status"] == "rejected")
+    rejection = next(entry for entry in activity.json() if entry["to_status"] == "event_rejected")
     assert rejection["note"] == reason
     assert rejection["changed_by_name"] == "Coordinator"
 

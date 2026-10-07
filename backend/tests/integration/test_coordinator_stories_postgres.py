@@ -11,6 +11,11 @@ Each test name states the story and criterion it covers.
 
 from app.core.roles import Role
 from tests.integration.conftest import submit_event
+import pytest
+
+# These tests start from an event that already has a Coordinator; assignment is
+# now the Lead's job, so submit alone no longer provides one (see tests/conftest.py).
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("coordinator_auto_assign")]
 
 
 def _setup(make_user):

@@ -96,3 +96,40 @@ describe('everyone else', () => {
     },
   )
 })
+
+describe('Event Coordinator Lead', () => {
+  it('can reach the Unassigned Requests and Coordinator Assignments from the sidebar', () => {
+    signedInAs(Role.COORDINATOR_LEAD)
+
+    const nav = within(screen.getByRole('navigation', { name: 'Main' }))
+    expect(nav.getByRole('link', { name: 'Unassigned Requests' })).toHaveAttribute('href', '/coordinator-lead/queue')
+    expect(nav.getByRole('link', { name: 'Coordinator Assignments' })).toHaveAttribute('href', '/coordinator-lead/assignments')
+  })
+
+  it('does not show the Lead links to other roles', () => {
+    signedInAs(Role.COORDINATOR)
+
+    expect(screen.queryByRole('link', { name: 'Coordinator Assignments' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Unassigned Requests' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Safety Officer and Event Coordinator Lead side by side', () => {
+  it('shows the Safety Officer their own link and none of the Lead links', () => {
+    signedInAs(Role.SAFETY_OFFICER)
+
+    const nav = within(screen.getByRole('navigation', { name: 'Main' }))
+    expect(nav.getByRole('link', { name: 'Safety Checks' })).toHaveAttribute('href', '/safety-checks')
+    expect(nav.queryByRole('link', { name: 'Coordinator Assignments' })).not.toBeInTheDocument()
+    expect(nav.queryByRole('link', { name: 'Unassigned Requests' })).not.toBeInTheDocument()
+  })
+
+  it('shows the Lead their links and no Safety Checks link', () => {
+    signedInAs(Role.COORDINATOR_LEAD)
+
+    const nav = within(screen.getByRole('navigation', { name: 'Main' }))
+    expect(nav.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/coordinator-lead')
+    expect(nav.getByRole('link', { name: 'Coordinator Assignments' })).toBeInTheDocument()
+    expect(nav.queryByRole('link', { name: 'Safety Checks' })).not.toBeInTheDocument()
+  })
+})

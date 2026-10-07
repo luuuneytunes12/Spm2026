@@ -52,7 +52,7 @@ _unique = itertools.count()
 # PROVISIONAL: neither PDF says when equipment may be recorded. This is the
 # window from W4 p3 ("during the planning process") and W1 Step 8, which
 # comes after Step 5 approval. Pending the customer's answer in Q&A.
-ACTIVE = [EventStatus.approved, EventStatus.planning, EventStatus.confirmed]
+ACTIVE = [EventStatus.event_approved, EventStatus.planning_event, EventStatus.safety_check_passed]
 INACTIVE = [s for s in EventStatus if s not in ACTIVE]
 
 
@@ -101,7 +101,7 @@ def _equipment(db_session, name, category="Audio", **overrides) -> Equipment:
     return item
 
 
-def _event(db_session, organiser, coordinator=None, status=EventStatus.approved, **overrides):
+def _event(db_session, organiser, coordinator=None, status=EventStatus.event_approved, **overrides):
     event = Event(
         name=overrides.pop("name", "Regional Partner Conference"),
         organiser_id=organiser.id,
@@ -126,7 +126,7 @@ def _organiser_line(db_session, event, equipment, quantity=2) -> EquipmentReques
     return line
 
 
-def _world(client, db_session, status=EventStatus.approved):
+def _world(client, db_session, status=EventStatus.event_approved):
     """An Organiser, the Coordinator assigned to their event, a catalogue
     with two categories, and the event itself."""
     organiser, organiser_headers = _user(client, db_session, Role.ORGANISER, name="Organiser")
@@ -415,7 +415,7 @@ def test_er_ac1_requirements_stay_listed_once_the_event_is_outside_the_window(cl
     event's requirements are still its record."""
     w = _world(client, db_session)
     _added(client, w.headers, w.event.id)
-    w.event.status = EventStatus.completed
+    w.event.status = EventStatus.event_completed
     db_session.commit()
 
     res = client.get(f"/equipment-requirements/events/{w.event.id}", headers=w.headers)
@@ -525,7 +525,7 @@ def test_er_ac1_a_requirement_cannot_be_edited_once_the_event_leaves_the_window(
 ):
     w = _world(client, db_session)
     created = _added(client, w.headers, w.event.id)
-    w.event.status = EventStatus.cancelled
+    w.event.status = EventStatus.event_cancelled
     db_session.commit()
 
     res = client.patch(
@@ -572,7 +572,7 @@ def test_er_ac1_a_requirement_cannot_be_deleted_once_the_event_leaves_the_window
 ):
     w = _world(client, db_session)
     created = _added(client, w.headers, w.event.id)
-    w.event.status = EventStatus.completed
+    w.event.status = EventStatus.event_completed
     db_session.commit()
 
     res = client.delete(f"/equipment-requirements/{created['id']}", headers=w.headers)
@@ -697,7 +697,7 @@ def test_er_ac2_the_event_record_carries_what_is_needed_to_review_it(client, db_
     assert record["name"] == "Regional Partner Conference"
     assert record["expected_attendance"] == 120
     assert record["venue_requirements"] == "Main hall, stage, podium"
-    assert record["status"] == "approved"
+    assert record["status"] == "event_approved"
     assert record["coordinator"]["name"] == "Sam Tan"
 
 

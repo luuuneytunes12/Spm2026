@@ -6,58 +6,52 @@ import { apiFetch } from './api'
 
 export const EventStatus = {
   DRAFT: 'draft',
-  SUBMITTED: 'submitted',
+  SUBMITTED_AWAITING_COORDINATOR: 'submitted_awaiting_coordinator',
   UNDER_REVIEW: 'under_review',
-  CHANGES_REQUESTED: 'changes_requested',
-  APPROVED: 'approved',
-  REJECTED: 'rejected',
-  PLANNING: 'planning',
+  AWAITING_ORGANISER_REPLY: 'awaiting_organiser_reply',
+  EVENT_APPROVED: 'event_approved',
+  PLANNING_EVENT: 'planning_event',
   AWAITING_SAFETY_CHECK: 'awaiting_safety_check',
-  CONFIRMED: 'confirmed',
-  COMPLETED: 'completed',
-  CANCELLED: 'cancelled',
+  SAFETY_CHECK_PASSED: 'safety_check_passed',
+  EVENT_COMPLETED: 'event_completed',
+  EVENT_REJECTED: 'event_rejected',
+  EVENT_CANCELLED: 'event_cancelled',
 } as const
 export type EventStatus = (typeof EventStatus)[keyof typeof EventStatus]
 
+/** The ONLY wording for an Event's status anywhere in the UI, for every role.
+ *  These are the names in dod.md section 11a, spelled exactly as written there.
+ *  The stored slugs (the keys) are the database's own and differ for a few
+ *  (`changes_requested` is "Awaiting Organiser Reply", `confirmed` is "Safety
+ *  Check Passed (Event Confirmed)"). Add no label here that dod.md lacks. */
 export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   [EventStatus.DRAFT]: 'Draft',
-  [EventStatus.SUBMITTED]: 'Submitted',
-  [EventStatus.UNDER_REVIEW]: 'Under review',
-  [EventStatus.CHANGES_REQUESTED]: 'Changes requested',
-  [EventStatus.APPROVED]: 'Approved',
-  [EventStatus.REJECTED]: 'Rejected',
-  [EventStatus.PLANNING]: 'Planning',
+  [EventStatus.SUBMITTED_AWAITING_COORDINATOR]: 'Submitted – Awaiting Coordinator',
+  [EventStatus.UNDER_REVIEW]: 'Under Review',
+  [EventStatus.AWAITING_ORGANISER_REPLY]: 'Awaiting Organiser Reply',
+  [EventStatus.EVENT_APPROVED]: 'Event Approved',
+  [EventStatus.PLANNING_EVENT]: 'Planning Event',
   [EventStatus.AWAITING_SAFETY_CHECK]: 'Awaiting Safety Check',
-  [EventStatus.CONFIRMED]: 'Confirmed',
-  [EventStatus.COMPLETED]: 'Completed',
-  [EventStatus.CANCELLED]: 'Cancelled',
-}
-
-/** Wording for the Coordinator's progress timeline where the plain status
- *  name is ambiguous there. On a row of stages, "Confirmed" and "Completed"
- *  read as near-twins; "Event Confirmed" / "Event Completed" say what
- *  actually happened. Everywhere else (badges, lists) the plain labels above
- *  stay. */
-export const EVENT_TIMELINE_LABELS: Partial<Record<EventStatus, string>> = {
-  [EventStatus.PLANNING]: 'Planning Event',
-  [EventStatus.CONFIRMED]: 'Safety Check Passed (Event Confirmed)',
-  [EventStatus.COMPLETED]: 'Event Completed',
+  [EventStatus.SAFETY_CHECK_PASSED]: 'Safety Check Passed (Event Confirmed)',
+  [EventStatus.EVENT_COMPLETED]: 'Event Completed',
+  [EventStatus.EVENT_REJECTED]: 'Event Rejected',
+  [EventStatus.EVENT_CANCELLED]: 'Event Cancelled',
 }
 
 /** One line explaining what a status actually means -- shown next to the
  *  badge so "Submitted" reads as a stage in a process, not just a word. */
 export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
   [EventStatus.DRAFT]: 'The Organiser is still filling this request in. It has not been submitted yet.',
-  [EventStatus.SUBMITTED]: 'Submitted by the Organiser and waiting for a Coordinator to begin reviewing it.',
+  [EventStatus.SUBMITTED_AWAITING_COORDINATOR]: 'Submitted by the Organiser and waiting for a Coordinator to begin reviewing it.',
   [EventStatus.UNDER_REVIEW]: 'A Coordinator is reviewing the request against venue, equipment and accessibility requirements.',
-  [EventStatus.CHANGES_REQUESTED]: 'A Coordinator has asked the Organiser to revise the request before it can proceed.',
-  [EventStatus.APPROVED]: 'The request has been approved and is ready to move into planning.',
-  [EventStatus.REJECTED]: 'The request was not approved. It will not proceed.',
-  [EventStatus.PLANNING]: 'Approved and being planned -- venue, equipment and other logistics are being arranged.',
-  [EventStatus.AWAITING_SAFETY_CHECK]: 'Venue and equipment are arranged. A Safety Officer is checking the arrangement.',
-  [EventStatus.CONFIRMED]: 'The event passed its Safety Check and is confirmed to go ahead.',
-  [EventStatus.COMPLETED]: 'The event has taken place.',
-  [EventStatus.CANCELLED]: 'The event has been cancelled and will not proceed.',
+  [EventStatus.AWAITING_ORGANISER_REPLY]: 'A Coordinator has asked the Organiser to revise the request before it can proceed.',
+  [EventStatus.EVENT_APPROVED]: 'The request has been approved and is ready to move into planning.',
+  [EventStatus.PLANNING_EVENT]: 'Approved and being planned -- venue, equipment and other logistics are being arranged.',
+  [EventStatus.AWAITING_SAFETY_CHECK]: 'Submitted to the Safety Officer. Waiting for the safety check before the event can be confirmed.',
+  [EventStatus.SAFETY_CHECK_PASSED]: 'The Safety Officer approved the event. It is confirmed to go ahead and registration can open.',
+  [EventStatus.EVENT_COMPLETED]: 'The event has taken place.',
+  [EventStatus.EVENT_REJECTED]: 'The request was not approved. It will not proceed.',
+  [EventStatus.EVENT_CANCELLED]: 'The event has been cancelled and will not proceed.',
 }
 
 /** The lifecycle a request moves through from a Coordinator's point of view,
@@ -83,21 +77,21 @@ export const EVENT_STATUS_DESCRIPTIONS: Record<EventStatus, string> = {
  *  StatusTimeline, which instead reads where a branch departed from off the
  *  event's own activity log. */
 export const EVENT_STATUS_PIPELINE: readonly EventStatus[] = [
-  EventStatus.SUBMITTED,
+  EventStatus.SUBMITTED_AWAITING_COORDINATOR,
   EventStatus.UNDER_REVIEW,
-  EventStatus.APPROVED,
-  EventStatus.PLANNING,
+  EventStatus.EVENT_APPROVED,
+  EventStatus.PLANNING_EVENT,
   EventStatus.AWAITING_SAFETY_CHECK,
-  EventStatus.CONFIRMED,
-  EventStatus.COMPLETED,
+  EventStatus.SAFETY_CHECK_PASSED,
+  EventStatus.EVENT_COMPLETED,
 ]
 
 /** Visual severity for a status that leaves the main pipeline rather than
  *  advancing along it. Absent for every status that IS on the pipeline. */
 export const EVENT_STATUS_BRANCH_TONE: Partial<Record<EventStatus, 'warning' | 'danger'>> = {
-  [EventStatus.CHANGES_REQUESTED]: 'warning',
-  [EventStatus.REJECTED]: 'danger',
-  [EventStatus.CANCELLED]: 'danger',
+  [EventStatus.AWAITING_ORGANISER_REPLY]: 'warning',
+  [EventStatus.EVENT_REJECTED]: 'danger',
+  [EventStatus.EVENT_CANCELLED]: 'danger',
 }
 
 /** Row shape for the Drafts / Submitted Requests lists. `name` is nullable

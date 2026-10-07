@@ -21,7 +21,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
 
 /** Event statuses from which a venue can be requested. Mirrors
  *  BOOKABLE_EVENT_STATUSES on the server. */
-export const BOOKABLE_EVENT_STATUSES: readonly string[] = ['approved', 'planning', 'confirmed']
+export const BOOKABLE_EVENT_STATUSES: readonly string[] = ['event_approved', 'planning_event', 'safety_check_passed']
 
 export interface VenueBooking {
   id: number

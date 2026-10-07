@@ -90,7 +90,7 @@ const RECORD: SupportEventRecord = {
   proposed_end: '2026-11-02T17:00:00Z',
   expected_attendance: 120,
   venue_requirements: 'Main hall, stage, podium',
-  status: 'approved',
+  status: 'event_approved',
   coordinator: { id: 2, name: 'Sam Tan', email: 'sam@connectsphere.test' },
   requirements: [
     {
@@ -148,7 +148,7 @@ describe('ER AC2 - the event record', () => {
     ]) {
       expect(screen.getByText(label).parentElement).toHaveTextContent(value)
     }
-    expect(screen.getByText('Approved')).toBeInTheDocument()
+    expect(screen.getByText('Event Approved')).toBeInTheDocument()
   })
 
   it('names the Coordinator to ask about it', async () => {

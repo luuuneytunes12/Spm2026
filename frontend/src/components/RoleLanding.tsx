@@ -46,13 +46,13 @@ function TileCount({ tile }: { tile: LandingTile }) {
 export function RoleLanding({ role, children }: { role: Role; children?: ReactNode }) {
   const { user } = useAuth()
   const config = ROLE_LANDING[role]
-  const firstName = user?.name?.split(/\s+/)[0]
+  const fullName = user?.name?.trim()
 
   return (
     <div className="landing">
       <section className="landing-hero">
         <span className="badge badge-accent">{ROLE_LABELS[role]}</span>
-        <h1>{firstName ? `Welcome back, ${firstName}` : 'Welcome back'}</h1>
+        <h1>{fullName ? `Welcome back, ${fullName}` : 'Welcome back'}</h1>
         <p>{config.tagline}</p>
       </section>
 

@@ -36,7 +36,7 @@ def registration_open(event: Event) -> bool:
     open and close dates. An event with no window (registration switched on
     before windows existed) falls back to the old rule: open until it starts.
     """
-    if event.status != EventStatus.confirmed or not event.registration_enabled:
+    if event.status != EventStatus.safety_check_passed or not event.registration_enabled:
         return False
     now = datetime.now(timezone.utc)
     if event.registration_opens_at is not None and event.registration_closes_at is not None:
@@ -83,7 +83,7 @@ def list_registrable_events(
         )
         .filter(
             or_(
-                and_(Event.status == EventStatus.confirmed, Event.registration_enabled.is_(True)),
+                and_(Event.status == EventStatus.safety_check_passed, Event.registration_enabled.is_(True)),
                 Registration.id.is_not(None),
             )
         )
@@ -133,7 +133,7 @@ def register(
     # same principle as _get_own_event: this must not probe draft ids.
     if event is None or (
         registration is None
-        and (event.status != EventStatus.confirmed or not event.registration_enabled)
+        and (event.status != EventStatus.safety_check_passed or not event.registration_enabled)
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 

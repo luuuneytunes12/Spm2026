@@ -52,6 +52,16 @@ export function Sidebar({ id, open }: SidebarProps) {
               My Event Requests
             </Item>
           )}
+          {user.role === Role.COORDINATOR_LEAD && (
+            <>
+              <Item to="/coordinator-lead/queue" icon="inbox">
+                Unassigned Requests
+              </Item>
+              <Item to="/coordinator-lead/assignments" icon="list">
+                Coordinator Assignments
+              </Item>
+            </>
+          )}
           {user.role === Role.COORDINATOR && (
             <Item to="/coordinator/events" icon="list">
               My Assigned Events

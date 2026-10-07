@@ -115,7 +115,7 @@ def _send_back(
     re-review. Nothing is cancelled or released."""
     for item in [*bookings, *lines]:
         item.safety_recheck_reason = reason
-    _record(db, event, officer, EventStatus.planning, note)
+    _record(db, event, officer, EventStatus.planning_event, note)
     _notify_all(db, event, {item.reviewed_by for item in [*bookings, *lines]}, type, message)
     db.commit()
     db.refresh(event)
@@ -197,7 +197,7 @@ def approve_safety_check(
 
     booking = _approved_booking(db, event)
     staff = {booking.reviewed_by if booking else None, *(line.reviewed_by for line in _reserved_lines(event))}
-    _record(db, event, user, EventStatus.confirmed, "Safety Check passed by the Safety Officer.")
+    _record(db, event, user, EventStatus.safety_check_passed, "Safety Check passed by the Safety Officer.")
     _notify_all(
         db,
         event,

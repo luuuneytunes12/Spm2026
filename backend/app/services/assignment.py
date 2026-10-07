@@ -28,13 +28,13 @@ from app.services.notifications import notify
 # event there does not need reassigning just because its (former)
 # Coordinator has gone unavailable.
 ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.submitted,
+    EventStatus.submitted_awaiting_coordinator,
     EventStatus.under_review,
-    EventStatus.changes_requested,
-    EventStatus.approved,
-    EventStatus.planning,
+    EventStatus.awaiting_organiser_reply,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
     EventStatus.awaiting_safety_check,
-    EventStatus.confirmed,
+    EventStatus.safety_check_passed,
 )
 
 
@@ -45,7 +45,9 @@ def available_coordinators(db: Session):
     chooses from it and the Organiser-facing count reports its size, so the
     two can never disagree about who is in the pool.
     """
-    return db.query(User).filter(User.role == Role.COORDINATOR.value, User.is_available.is_(True))
+    return db.query(User).filter(
+        User.role == Role.COORDINATOR.value, User.is_available.is_(True)
+    )
 
 
 def _pick_coordinator(db: Session, *, exclude_id: int | None = None) -> User | None:
@@ -155,7 +157,7 @@ def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
 
     event.coordinator_id = coordinator.id
     previous_status = event.status
-    if event.status == EventStatus.submitted:
+    if event.status == EventStatus.submitted_awaiting_coordinator:
         event.status = EventStatus.under_review
 
     db.add(

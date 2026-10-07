@@ -52,7 +52,7 @@ def _user(db_session, role: Role) -> User:
     return user
 
 
-def _event(db_session, organiser, coordinator, status=EventStatus.approved) -> Event:
+def _event(db_session, organiser, coordinator, status=EventStatus.event_approved) -> Event:
     event = Event(
         name="An event", organiser_id=organiser.id, coordinator_id=coordinator.id, status=status
     )
@@ -113,9 +113,9 @@ def test_equipment_is_recordable_exactly_while_approved_planning_or_confirmed():
     """One constant, used by the Coordinator's side and Technical Support's
     side alike, so they can never disagree about where requirements live."""
     assert set(EQUIPMENT_ACTIVE_STATUSES) == {
-        EventStatus.approved,
-        EventStatus.planning,
-        EventStatus.confirmed,
+        EventStatus.event_approved,
+        EventStatus.planning_event,
+        EventStatus.safety_check_passed,
     }
 
 

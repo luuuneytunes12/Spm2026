@@ -27,7 +27,7 @@ function python(script: string, payload: unknown): string {
 export interface SeedUser {
   email: string
   name: string
-  role: 'organiser' | 'coordinator' | 'venue_staff'
+  role: 'organiser' | 'coordinator' | 'venue_staff' | 'event_coordinator_lead'
   password: string
 }
 
@@ -158,4 +158,26 @@ db.close()
  *  a venue with bookings cannot be deleted. */
 export function removeVenue(name: string): void {
   python(REMOVE_VENUE, name)
+}
+
+const AUTO_ASSIGN = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.events import Event
+from app.services.assignment import assign_coordinator
+
+db = SessionLocal()
+event = db.get(Event, json.loads(sys.argv[1]))
+assign_coordinator(db, event, actor_id=event.organiser_id)
+db.commit()
+db.close()
+`
+
+/** Give a submitted event the Coordinator the old auto-assignment would have
+ *  chosen (the available one with the lightest load), by running the real
+ *  assign_coordinator. Submitting no longer assigns -- only the Coordinator
+ *  Lead does -- so the specs that need an assigned event as their starting
+ *  point call this after submitting. A no-op when nobody is available. */
+export function autoAssign(eventId: number): void {
+  python(AUTO_ASSIGN, eventId)
 }

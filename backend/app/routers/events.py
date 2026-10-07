@@ -2,18 +2,29 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
-from app.models.enums import BookingStatus, ChangeRequestStatus, EquipmentStatus, EventStatus, NotificationType
+from app.models.enums import (
+    BookingStatus,
+    ChangeRequestStatus,
+    EquipmentStatus,
+    EventStatus,
+    NotificationType,
+)
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import VenueBooking
-from app.domain.event_readiness import PLANNING_STATUSES, can_enter_preparation, outstanding_arrangements
+from app.domain.event_readiness import (
+    PLANNING_STATUSES,
+    can_enter_preparation,
+    outstanding_arrangements,
+)
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
     MANDATORY_FIELDS,
@@ -29,12 +40,15 @@ from app.schemas.event import (
     OrganiserContact,
     RegistrationSettingsIn,
 )
-from app.services.assignment import assign_coordinator
 from app.services.notifications import notify
+from app.services.submission_notice import SubmissionNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
 
-REVIEWABLE_STATUSES = (EventStatus.submitted, EventStatus.under_review)
+REVIEWABLE_STATUSES = (
+    EventStatus.submitted_awaiting_coordinator,
+    EventStatus.under_review,
+)
 IMPORTANT_CHANGE_FIELDS = {
     "proposed_start",
     "proposed_end",
@@ -47,7 +61,9 @@ IMPORTANT_CHANGE_FIELDS = {
 }
 
 
-def _get_own_event(event_id: int, user: User, db: Session, *, lock: bool = False) -> Event:
+def _get_own_event(
+    event_id: int, user: User, db: Session, *, lock: bool = False
+) -> Event:
     """Fetch an event the caller owns, or raise.
 
     `lock=True` takes a row lock (SELECT ... FOR UPDATE) for the rest of the
@@ -68,11 +84,15 @@ def _get_own_event(event_id: int, user: User, db: Session, *, lock: bool = False
     """
     event = db.get(Event, event_id, with_for_update=lock)
     if event is None or event.organiser_id != user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+        )
     return event
 
 
-def _get_assigned_event(event_id: int, user: User, db: Session, *, lock: bool = False) -> Event:
+def _get_assigned_event(
+    event_id: int, user: User, db: Session, *, lock: bool = False
+) -> Event:
     """Fetch an event ASSIGNED to the caller, or raise.
 
     `lock=True` locks the row -- see `_get_own_event`. A caller that goes on
@@ -91,8 +111,26 @@ def _get_assigned_event(event_id: int, user: User, db: Session, *, lock: bool = 
     """
     event = db.get(Event, event_id, with_for_update=lock)
     if event is None or event.coordinator_id != user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+        )
     return event
+
+
+def _was_reassigned_from(db: Session, event: Event, user: User) -> bool:
+    """True if the Lead moved `event` away from `user` (they were told so)."""
+    return (
+        db.scalar(
+            select(Notification.id)
+            .where(
+                Notification.user_id == user.id,
+                Notification.event_id == event.id,
+                Notification.type == NotificationType.event_reassigned_away,
+            )
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def _get_reviewable_event(event_id: int, user: User, db: Session) -> Event:
@@ -163,14 +201,18 @@ def _event_activity(db: Session, event_id: int) -> list[ActivityEntry]:
             from_status=entry.from_status,
             to_status=entry.to_status,
             note=entry.note,
-            changed_by_name=entry.changed_by_user.name if entry.changed_by_user else None,
+            changed_by_name=entry.changed_by_user.name
+            if entry.changed_by_user
+            else None,
             created_at=entry.created_at,
         )
         for entry in history
     ]
 
 
-def _change_request_out(db: Session, request: EventChangeRequest) -> EventChangeRequestOut:
+def _change_request_out(
+    db: Session, request: EventChangeRequest
+) -> EventChangeRequestOut:
     changes = dict(request.proposed_changes or {})
     proposed_equipment = changes.get("equipment_items")
     if proposed_equipment:
@@ -198,7 +240,9 @@ def _change_request_out(db: Session, request: EventChangeRequest) -> EventChange
             .options(joinedload(VenueBooking.venue))
             .filter(
                 VenueBooking.event_id == request.event_id,
-                VenueBooking.status.in_((BookingStatus.pending, BookingStatus.approved)),
+                VenueBooking.status.in_(
+                    (BookingStatus.pending, BookingStatus.approved)
+                ),
             )
             .order_by(VenueBooking.id)
             .all()
@@ -250,12 +294,20 @@ def _get_change_request_for_coordinator(
 ) -> tuple[EventChangeRequest, Event]:
     change_request = db.get(EventChangeRequest, request_id)
     if change_request is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found"
+        )
     event = _get_assigned_event(change_request.event_id, user, db)
     if change_request.status != ChangeRequestStatus.pending:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Change request is no longer pending.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Change request is no longer pending.",
+        )
     if event.status not in REVIEWABLE_STATUSES:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This event can no longer be changed.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This event can no longer be changed.",
+        )
     return change_request, event
 
 
@@ -308,7 +360,7 @@ def list_my_events(
 
     Scoped to `organiser_id == user.id`, which is what backs both the
     "Drafts" and "Submitted Requests" tabs -- the caller passes
-    ?status=draft or ?status=submitted.
+    ?status=draft or ?status=submitted_awaiting_coordinator.
     """
     query = db.query(Event).filter(Event.organiser_id == user.id)
     if status_filter is not None:
@@ -338,7 +390,9 @@ def list_my_events(
 @router.get("/queue", response_model=list[EventSummary])
 def review_queue(
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission(Permission.EVENT_READ, Permission.EVENT_WRITE)),
+    user: User = Depends(
+        require_permission(Permission.EVENT_READ, Permission.EVENT_WRITE)
+    ),
 ) -> list[EventSummary]:
     """The reviewer-facing queue of SUBMITTED requests.
 
@@ -352,7 +406,7 @@ def review_queue(
     """
     events = (
         db.query(Event)
-        .filter(Event.status == EventStatus.submitted)
+        .filter(Event.status == EventStatus.submitted_awaiting_coordinator)
         .order_by(Event.submitted_at.desc())
         .all()
     )
@@ -418,6 +472,21 @@ def get_assigned_event(
     returning 404 for anybody else's; this one answers "the request I am
     responsible for", and returns a different shape with it.
     """
+    event = db.get(Event, event_id)
+    if (
+        event is not None
+        and event.coordinator_id not in (None, user.id)
+        and _was_reassigned_from(db, event, user)
+    ):
+        # Only the Coordinator the Lead took it from learns who has it now;
+        # everyone else still gets the indistinguishable 404 below.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{event.name or 'This event'}' that was initially assigned to you by the "
+                f"Event Coordinator Lead has been reassigned to {event.coordinator.name}."
+            ),
+        )
     event = _get_assigned_event(event_id, user, db)
 
     return AssignedEventDetail(
@@ -425,19 +494,27 @@ def get_assigned_event(
         organiser=OrganiserContact.model_validate(event.organiser),
         activity=_event_activity(db, event.id),
         confirmation_outstanding=(
-            outstanding_arrangements(db, event) if event.status in PLANNING_STATUSES else []
+            outstanding_arrangements(db, event)
+            if event.status in PLANNING_STATUSES
+            else []
         ),
         change_requests=[
             _change_request_out(db, request)
             for request in db.query(EventChangeRequest)
             .filter(EventChangeRequest.event_id == event.id)
-            .order_by(EventChangeRequest.created_at.desc(), EventChangeRequest.id.desc())
+            .order_by(
+                EventChangeRequest.created_at.desc(), EventChangeRequest.id.desc()
+            )
             .all()
         ],
     )
 
 
-@router.post("/{event_id}/change-requests", response_model=EventChangeRequestOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{event_id}/change-requests",
+    response_model=EventChangeRequestOut,
+    status_code=status.HTTP_201_CREATED,
+)
 def request_event_changes(
     event_id: int,
     body: EventChangeRequestIn,
@@ -446,13 +523,23 @@ def request_event_changes(
 ) -> EventChangeRequestOut:
     event = _get_own_event(event_id, user, db)
     if event.status not in REVIEWABLE_STATUSES:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This event can no longer be changed.")
-    pending = db.query(EventChangeRequest).filter(
-        EventChangeRequest.event_id == event.id,
-        EventChangeRequest.status == ChangeRequestStatus.pending,
-    ).first()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This event can no longer be changed.",
+        )
+    pending = (
+        db.query(EventChangeRequest)
+        .filter(
+            EventChangeRequest.event_id == event.id,
+            EventChangeRequest.status == ChangeRequestStatus.pending,
+        )
+        .first()
+    )
     if pending is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A change request is already pending.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A change request is already pending.",
+        )
 
     proposed = body.proposed_changes
     proposed_start = (
@@ -489,7 +576,9 @@ def request_event_changes(
         event_id=event.id,
         requested_by=user.id,
         description=body.description.strip(),
-        proposed_changes=body.proposed_changes.model_dump(mode="json", exclude_unset=True),
+        proposed_changes=body.proposed_changes.model_dump(
+            mode="json", exclude_unset=True
+        ),
     )
     db.add(change_request)
     db.flush()
@@ -514,7 +603,9 @@ def list_own_change_requests(
     return [_change_request_out(db, request) for request in requests]
 
 
-@router.post("/change-requests/{request_id}/approve", response_model=EventChangeRequestOut)
+@router.post(
+    "/change-requests/{request_id}/approve", response_model=EventChangeRequestOut
+)
 def approve_change_request(
     request_id: int,
     body: EventChangeDecisionIn,
@@ -525,26 +616,36 @@ def approve_change_request(
     changes = dict(change_request.proposed_changes or {})
     equipment_items = changes.pop("equipment_items", None)
     if equipment_items is not None:
-        replace_equipment_lines(db, event, [EquipmentLineIn.model_validate(line) for line in equipment_items])
+        replace_equipment_lines(
+            db,
+            event,
+            [EquipmentLineIn.model_validate(line) for line in equipment_items],
+        )
     for field, value in changes.items():
         setattr(event, field, value)
 
     change_request.status = ChangeRequestStatus.approved
     change_request.reviewed_by = user.id
     change_request.reviewed_at = datetime.now(timezone.utc)
-    change_request.review_notes = body.review_notes.strip() if body.review_notes else None
-    db.add(Notification(
-        user_id=event.organiser_id,
-        event_id=event.id,
-        type="event_change_approved",
-        message=f"Your requested changes for '{event.name or 'your event'}' were approved.",
-    ))
+    change_request.review_notes = (
+        body.review_notes.strip() if body.review_notes else None
+    )
+    db.add(
+        Notification(
+            user_id=event.organiser_id,
+            event_id=event.id,
+            type="event_change_approved",
+            message=f"Your requested changes for '{event.name or 'your event'}' were approved.",
+        )
+    )
     db.commit()
     db.refresh(change_request)
     return _change_request_out(db, change_request)
 
 
-@router.post("/change-requests/{request_id}/reject", response_model=EventChangeRequestOut)
+@router.post(
+    "/change-requests/{request_id}/reject", response_model=EventChangeRequestOut
+)
 def reject_change_request(
     request_id: int,
     body: EventChangeDecisionIn,
@@ -555,16 +656,24 @@ def reject_change_request(
     change_request.status = ChangeRequestStatus.rejected
     change_request.reviewed_by = user.id
     change_request.reviewed_at = datetime.now(timezone.utc)
-    change_request.review_notes = body.review_notes.strip() if body.review_notes else None
-    db.add(Notification(
-        user_id=event.organiser_id,
-        event_id=event.id,
-        type="event_change_rejected",
-        message=(
-            f"Your requested changes for '{event.name or 'your event'}' were rejected."
-            + (f" Reason: {change_request.review_notes}" if change_request.review_notes else "")
-        ),
-    ))
+    change_request.review_notes = (
+        body.review_notes.strip() if body.review_notes else None
+    )
+    db.add(
+        Notification(
+            user_id=event.organiser_id,
+            event_id=event.id,
+            type="event_change_rejected",
+            message=(
+                f"Your requested changes for '{event.name or 'your event'}' were rejected."
+                + (
+                    f" Reason: {change_request.review_notes}"
+                    if change_request.review_notes
+                    else ""
+                )
+            ),
+        )
+    )
     db.commit()
     db.refresh(change_request)
     return _change_request_out(db, change_request)
@@ -584,8 +693,8 @@ def submit_for_safety_check(
     still flagged for safety re-review. The event is confirmed only when a
     Safety Officer passes it (routers/safety_checks.py).
     """
-    # Locked: two overlapping submits must not both see a planning status
-    # and both log the transition.
+    # Locked: two overlapping confirms must not both see "approved" and both
+    # log a transition and notify the Organiser.
     event = _get_assigned_event(event_id, user, db, lock=True)
     if event.status not in PLANNING_STATUSES:
         raise HTTPException(
@@ -633,18 +742,20 @@ def set_event_registration(
     event = _get_assigned_event(event_id, user, db, lock=True)
 
     if body.registration_enabled:
-        # Opening registration is the first step of preparation: only an
-        # event that has passed its Safety Check may take it.
-        if not can_enter_preparation(event):
+        if event.status != EventStatus.safety_check_passed:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Registration can only be opened for a confirmed event.",
             )
         problems = []
         if body.registration_opens_at is None:
-            problems.append(("registration_opens_at", "Registration open date is required."))
+            problems.append(
+                ("registration_opens_at", "Registration open date is required.")
+            )
         if body.registration_closes_at is None:
-            problems.append(("registration_closes_at", "Registration close date is required."))
+            problems.append(
+                ("registration_closes_at", "Registration close date is required.")
+            )
         if (
             body.registration_opens_at is not None
             and body.registration_closes_at is not None
@@ -664,7 +775,9 @@ def set_event_registration(
         if problems:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=[{"loc": ["body", field], "msg": msg} for field, msg in problems],
+                detail=[
+                    {"loc": ["body", field], "msg": msg} for field, msg in problems
+                ],
             )
         event.registration_opens_at = body.registration_opens_at
         event.registration_closes_at = body.registration_closes_at
@@ -684,7 +797,7 @@ def approve_event(
     """Approve a request assigned to the current Coordinator."""
     event = _get_reviewable_event(event_id, user, db)
     previous_status = event.status
-    event.status = EventStatus.approved
+    event.status = EventStatus.event_approved
     db.add(
         EventStatusHistory(
             event_id=event.id,
@@ -716,7 +829,7 @@ def reject_event(
     """Reject an assigned request and retain the Coordinator's reason."""
     event = _get_reviewable_event(event_id, user, db)
     previous_status = event.status
-    event.status = EventStatus.rejected
+    event.status = EventStatus.event_rejected
     db.add(
         EventStatusHistory(
             event_id=event.id,
@@ -796,6 +909,18 @@ def update_event(
     return EventOut.model_validate(event)
 
 
+def _after_submit(db: Session, event: Event, user: User) -> None:
+    """Runs inside the submit transaction, after the status change is logged.
+
+    Deliberately does nothing: a submitted request is NOT auto-assigned. It
+    waits in the Event Coordinator Lead's Unassigned Queue as "submitted_awaiting_coordinator"
+    with no Coordinator, and only the Lead assigns one (see
+    app/services/assignment_overview.py). Older coordinator-workflow tests
+    swap this for `assign_coordinator` -- see `coordinator_auto_assign` in
+    tests/conftest.py -- because they need an already-assigned event.
+    """
+
+
 @router.post("/{event_id}/submit", response_model=EventOut)
 def submit_event(
     event_id: int,
@@ -825,13 +950,16 @@ def submit_event(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=[
-                {"loc": ["body", field], "msg": f"{label} is required before submitting."}
+                {
+                    "loc": ["body", field],
+                    "msg": f"{label} is required before submitting.",
+                }
                 for field, label in missing
             ],
         )
 
     previous = event.status
-    event.status = EventStatus.submitted
+    event.status = EventStatus.submitted_awaiting_coordinator
     event.submitted_at = datetime.now(timezone.utc)
 
     # Record the transition. Cheap to do now, and it is what makes "who
@@ -842,15 +970,15 @@ def submit_event(
             event_id=event.id,
             changed_by=user.id,
             from_status=previous,
-            to_status=EventStatus.submitted,
+            to_status=EventStatus.submitted_awaiting_coordinator,
             note="Submitted by organiser.",
         )
     )
 
-    # AC1 of "Mark myself unavailable": a submitted request is handed to an
-    # available Coordinator automatically. Left unassigned (silently) if
-    # nobody is available right now -- see assign_coordinator.
-    assign_coordinator(db, event, actor_id=user.id)
+    _after_submit(db, event, user)
+    # Outside _after_submit on purpose: tests swap that hook out, and the Lead
+    # must be told whatever it does.
+    SubmissionNotice().send(db, event)
 
     db.commit()
     db.refresh(event)
