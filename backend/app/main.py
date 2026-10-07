@@ -14,6 +14,7 @@ from app.routers import (
     health,
     notifications,
     registrations,
+    safety_checks,
     users,
     venue_bookings,
     venues,
@@ -46,3 +47,4 @@ app.include_router(users.router)
 app.include_router(registrations.router)
 app.include_router(venues.router)
 app.include_router(venue_bookings.router)
+app.include_router(safety_checks.router)

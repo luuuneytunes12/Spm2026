@@ -80,5 +80,8 @@ class VenueBookingOut(BaseModel):
     requested_by: BookingPerson
     decision_notes: str | None
     suggested_alternative: str | None
+    # A Safety Officer's reason for sending an approved booking back for
+    # review; null when nothing is outstanding.
+    safety_recheck_reason: str | None = None
     reviewed_by: BookingPerson | None
     reviewed_at: datetime | None

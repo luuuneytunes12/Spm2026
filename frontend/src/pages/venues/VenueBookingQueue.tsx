@@ -98,6 +98,12 @@ function BookingCard({
   return (
     <section className="card" aria-label={`Booking request for ${b.event.name ?? 'an event'}`}>
       <h2>{b.event.name ?? 'Untitled event'}</h2>
+      {b.safety_recheck_reason && (
+        <p className="notice" role="note">
+          <span className="badge">Safety re-review</span> Already approved and still
+          held. The Safety Officer asked for another look: {b.safety_recheck_reason}
+        </p>
+      )}
       <dl className="detail-list">
         {(
           [

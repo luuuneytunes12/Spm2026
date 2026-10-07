@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
@@ -45,6 +45,7 @@ def _out(booking: VenueBooking) -> VenueBookingOut:
         requested_by=booking.requested_by_user,
         decision_notes=booking.decision_notes,
         suggested_alternative=booking.suggested_alternative,
+        safety_recheck_reason=booking.safety_recheck_reason,
         reviewed_by=booking.reviewed_by_user,
         reviewed_at=booking.reviewed_at,
     )
@@ -59,16 +60,31 @@ def _with_relations(stmt):
     )
 
 
+# Awaiting a Venue Staff decision: a new request, or an approved booking a
+# Safety Officer has sent back for another look (still holding the venue).
+_AWAITING_DECISION = or_(
+    VenueBooking.status == BookingStatus.pending,
+    and_(
+        VenueBooking.status == BookingStatus.approved,
+        VenueBooking.safety_recheck_reason.is_not(None),
+    ),
+)
+
+
 def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
     """The request Venue Staff are about to decide on, row-locked.
 
     The lock is what makes a decision final: two overlapping decisions (a
     double-click, or two staff on the same request) cannot both find it
     pending, so the second is refused instead of overwriting the first.
+    An approved booking flagged for safety re-review is decided again the
+    same way; either decision clears the flag.
     """
     booking = db.get(VenueBooking, booking_id, with_for_update=True)
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    if booking.status == BookingStatus.approved and booking.safety_recheck_reason:
+        return booking
     if booking.status != BookingStatus.pending:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -80,6 +96,7 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
 def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Session) -> VenueBookingOut:
     """Record the outcome with who decided and when, and return it."""
     booking.status = decision
+    booking.safety_recheck_reason = None
     booking.reviewed_by = staff.id
     booking.reviewed_at = datetime.now(timezone.utc)
     db.commit()
@@ -188,11 +205,12 @@ def venue_booking_queue(
     db: Session = Depends(get_db),
     _: User = Depends(_venue_staff),
 ) -> list[VenueBookingOut]:
-    """Pending booking requests for Venue Staff to review, oldest first."""
+    """Booking requests for Venue Staff to review, oldest first: pending
+    ones, and approved ones a Safety Officer has sent back."""
     bookings = db.scalars(
         _with_relations(
             select(VenueBooking)
-            .where(VenueBooking.status == BookingStatus.pending)
+            .where(_AWAITING_DECISION)
             .order_by(VenueBooking.created_at, VenueBooking.id)
         )
     ).unique()

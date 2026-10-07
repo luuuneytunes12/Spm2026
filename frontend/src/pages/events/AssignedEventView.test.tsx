@@ -401,6 +401,7 @@ describe('AC3 - the current status', () => {
       'Under Review',
       'Event Approved',
       'Planning Event',
+      'Awaiting Safety Check',
       'Safety Check Passed (Event Confirmed)',
       'Event Completed',
     ]

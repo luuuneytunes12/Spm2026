@@ -27,6 +27,10 @@ class Venue(Base):
         ARRAY(Text).with_variant(JSON, "sqlite"), default=list
     )
     operating_hours: Mapped[str | None] = mapped_column(Text)
+    # Shown to the Safety Officer when judging an event's arrangement
+    # (see sql/017_safety_check.sql).
+    emergency_access: Mapped[str | None] = mapped_column(Text)
+    known_restrictions: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(default=True)
 
 
@@ -67,6 +71,10 @@ class VenueBooking(Base):
     # What Venue Staff offer instead when rejecting -- another venue, another
     # time (see sql/014_venue_bookings_suggested_alternative.sql).
     suggested_alternative: Mapped[str | None] = mapped_column(Text)
+    # Set by a Safety Officer who wants this booking looked at again. The
+    # booking stays approved -- and keeps the venue held -- until Venue Staff
+    # re-approve (clearing it) or reject it. Null means nothing outstanding.
+    safety_recheck_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]
 

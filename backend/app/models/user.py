@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Integer, String, func
+from sqlalchemy import BigInteger, DateTime, Integer, String, TypeDecorator, cast, func
 from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +26,34 @@ from app.core.roles import DEFAULT_ROLE, Role
 # All four are nullable: every existing user row predates them.
 
 
+# The native postgres `user_role` type, for writes. SQLite (tests) has no
+# enum type, so it falls back to a plain string.
+_USER_ROLE = PGEnum(*(r.value for r in Role), name="user_role", create_type=False).with_variant(
+    String(32), "sqlite"
+)
+
+
+class _RoleColumn(TypeDecorator):
+    """`users.role`: written as the native `user_role` enum, read as text.
+
+    Writes are cast to `user_role`, since binding a plain string makes
+    postgres reject the INSERT ("column role is of type user_role but
+    expression is of type character varying").
+
+    Reads are NOT checked against `Role`. The database owns the type, and a
+    label added there before the code knows it (e.g. a role created for
+    another branch) must not crash every query that loads that user -- an
+    event's activity log, a booking's reviewer. `deps.permissions_for`
+    already treats an unrecognised role as "no permissions".
+    """
+
+    impl = String(32)
+    cache_ok = True
+
+    def bind_expression(self, bindvalue):
+        return cast(bindvalue, _USER_ROLE)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -41,16 +69,11 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     # `role` is a NATIVE postgres enum type (`user_role`), not a varchar --
-    # binding a plain string makes postgres reject the INSERT with
-    # "column role is of type user_role but expression is of type character
-    # varying". create_type=False because the type already exists and is
-    # owned by the database, not by this model; adding a role means
-    # `ALTER TYPE user_role ADD VALUE ...` (see sql/001_role_enum.sql).
-    # SQLite (tests) has no enum type, so it falls back to a plain string.
+    # see _RoleColumn. The type is owned by the database, not by this model;
+    # adding a role means `ALTER TYPE user_role ADD VALUE ...` (see
+    # sql/001_role_enum.sql).
     role: Mapped[str] = mapped_column(
-        PGEnum(*(r.value for r in Role), name="user_role", create_type=False).with_variant(
-            String(32), "sqlite"
-        ),
+        _RoleColumn(),
         nullable=False,
         default=DEFAULT_ROLE.value,
     )

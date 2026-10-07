@@ -13,7 +13,7 @@ import {
   EventStatus,
   approveEvent,
   approveEventChangeRequest,
-  confirmEvent,
+  submitForSafetyCheck,
   formatRange,
   formatTimestamp,
   fromDateTimeLocal,
@@ -259,10 +259,10 @@ export function AssignedEventView() {
     setConfirming(true)
     setConfirmError(null)
     try {
-      await confirmEvent(event.id)
+      await submitForSafetyCheck(event.id)
       setEvent(await getAssignedEvent(event.id))
     } catch (err) {
-      setConfirmError(err instanceof ApiError ? err.message : 'Could not confirm this event.')
+      setConfirmError(err instanceof ApiError ? err.message : 'Could not submit this event for its safety check.')
       // The outstanding list may have changed since the page loaded.
       const refreshed = await getAssignedEvent(event.id).catch(() => null)
       if (refreshed) setEvent(refreshed)
@@ -426,12 +426,13 @@ export function AssignedEventView() {
             )}
           </div>
         )}
-        {event.status === EventStatus.EVENT_APPROVED && (
+        {(event.status === EventStatus.EVENT_APPROVED || event.status === EventStatus.PLANNING_EVENT) && (
           <div className="status-actions">
-            <h3>Confirm event</h3>
+            <h3>Submit for Safety Check</h3>
             <p className="page-subtitle">
-              Confirm once the venue booking is approved and every equipment requirement is
-              reserved. Confirming lets you open registration and tells the Organiser.
+              Submit once the venue booking is approved and every equipment requirement is
+              reserved. A Safety Officer then checks the arrangement; the event is confirmed
+              when it passes.
             </p>
             {(event.confirmation_outstanding ?? []).length > 0 && (
               <div role="status">
@@ -450,7 +451,7 @@ export function AssignedEventView() {
                 onClick={() => void confirm()}
                 disabled={confirming}
               >
-                {confirming ? 'Confirming…' : 'Confirm'}
+                {confirming ? 'Submitting…' : 'Submit for Safety Check'}
               </button>
             </div>
             {confirmError && (

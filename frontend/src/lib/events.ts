@@ -189,7 +189,8 @@ export interface AssignedEventDetail extends EventDetail {
   organiser: OrganiserContact
   activity: ActivityEntry[]
   change_requests: EventChangeRequest[]
-  /** What still blocks confirming an Approved event; empty when it is ready. */
+  /** What still blocks submitting a planned event for its Safety Check;
+   *  empty when it is ready. */
   confirmation_outstanding?: string[]
 }
 
@@ -273,9 +274,10 @@ export function approveEvent(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}/approve`, { method: 'POST' }) as Promise<EventDetail>
 }
 
-/** Confirm an approved event whose venue and equipment are arranged. Rejects
- *  with a 409 ApiError naming the outstanding items when it is not ready. */
-export function confirmEvent(id: number): Promise<EventDetail> {
+/** Submit a planned event whose venue and equipment are arranged for its
+ *  Safety Check. Rejects with a 409 ApiError naming the outstanding items
+ *  when it is not ready. */
+export function submitForSafetyCheck(id: number): Promise<EventDetail> {
   return apiFetch(`/events/${id}/confirm`, { method: 'POST' }) as Promise<EventDetail>
 }
 

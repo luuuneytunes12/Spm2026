@@ -33,6 +33,7 @@ ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
     EventStatus.awaiting_organiser_reply,
     EventStatus.event_approved,
     EventStatus.planning_event,
+    EventStatus.awaiting_safety_check,
     EventStatus.safety_check_passed,
 )
 
@@ -44,7 +45,9 @@ def available_coordinators(db: Session):
     chooses from it and the Organiser-facing count reports its size, so the
     two can never disagree about who is in the pool.
     """
-    return db.query(User).filter(User.role == Role.COORDINATOR.value, User.is_available.is_(True))
+    return db.query(User).filter(
+        User.role == Role.COORDINATOR.value, User.is_available.is_(True)
+    )
 
 
 def _pick_coordinator(db: Session, *, exclude_id: int | None = None) -> User | None:

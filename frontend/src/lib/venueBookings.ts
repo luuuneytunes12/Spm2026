@@ -41,6 +41,9 @@ export interface VenueBooking {
    *  offer instead. A rejection carries one or both. */
   decision_notes: string | null
   suggested_alternative: string | null
+  /** Set when a Safety Officer sent an approved booking back for review.
+   *  The venue stays held; deciding again clears it. */
+  safety_recheck_reason?: string | null
   reviewed_by: { name: string; email: string } | null
   reviewed_at: string | null
 }
