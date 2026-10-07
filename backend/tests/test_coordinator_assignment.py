@@ -9,11 +9,9 @@ here as numbered):
     AC3 - The assignment is recorded in the event's activity log with a
           timestamp.
 
-"An available Event Coordinator is automatically assigned when a request
-is submitted" is a SEPARATE backlog item ("Get Coordinator Assigned") that
-shares this file and its picker (app/services/assignment.py). Those tests
-are still here (test_submitting_with_*, test_an_unavailable_coordinator_*,
-test_assignment_picks_*) but are not numbered against the ACs above.
+The app does not auto-assign: the Event Coordinator Lead assigns manually
+(see test_lead_assign_event.py). The `coordinator_auto_assign` fixture only
+gives these tests an already-assigned event to start from.
 
 There is no longer a way for a Coordinator to mark themselves unavailable.
 `users.is_available` still exists and the assignment pool still honours it,
@@ -93,61 +91,6 @@ def _submit(client, organiser_headers, **overrides) -> int:
     ).json()["id"]
     assert client.post(f"/events/{event_id}/submit", headers=organiser_headers).status_code == 200
     return event_id
-
-
-# --------------------------------------------------------------------------
-# AC1 -- automatic assignment on submission
-# --------------------------------------------------------------------------
-
-
-def test_submitting_with_an_available_coordinator_assigns_them(client, db_session):
-    """AC1: a submitted request is handed to the one available Coordinator."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    coordinator, _ = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-
-    event_id = _submit(client, organiser_headers)
-
-    assert db_session.get(Event, event_id).coordinator_id == coordinator.id
-
-
-def test_submitting_with_no_coordinator_leaves_it_unassigned(client, db_session):
-    """AC1's flip side: no available Coordinator means the request still
-    goes through, just without one -- it is not blocked or errored."""
-    organiser, organiser_headers = _organiser(client, db_session)
-
-    event_id = _submit(client, organiser_headers)
-
-    res = client.get(f"/events/{event_id}", headers=organiser_headers)
-    assert res.status_code == 200
-    assert res.json()["coordinator_id"] is None
-
-
-def test_an_unavailable_coordinator_is_never_assigned(client, db_session):
-    """"Available" is load-bearing -- a Coordinator who is not available must
-    not receive new work."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    unavailable, unavailable_headers = _coordinator(
-        client, db_session, "busy@connectsphere.test", "Busy Coordinator"
-    )
-    _mark_unavailable(db_session, unavailable)
-
-    event_id = _submit(client, organiser_headers)
-
-    assert db_session.get(Event, event_id).coordinator_id is None
-
-
-def test_assignment_picks_the_least_loaded_available_coordinator(client, db_session):
-    """AC1: distributes fairly rather than always picking the same one."""
-    organiser, organiser_headers = _organiser(client, db_session)
-    busy, _ = _coordinator(client, db_session, "busy@connectsphere.test", "Busy Coordinator")
-    idle, _ = _coordinator(client, db_session, "idle@connectsphere.test", "Idle Coordinator")
-
-    first_id = _submit(client, organiser_headers, name="First event")
-    assert db_session.get(Event, first_id).coordinator_id == busy.id
-
-    second_id = _submit(client, organiser_headers, name="Second event")
-
-    assert db_session.get(Event, second_id).coordinator_id == idle.id
 
 
 # --------------------------------------------------------------------------
@@ -251,20 +194,6 @@ def test_an_unavailable_coordinator_can_still_work_the_events_they_hold(client, 
 
     assert client.get(f"/events/assigned/{event_id}", headers=holder_headers).status_code == 200
     assert client.post(f"/events/{event_id}/approve", headers=holder_headers).status_code == 200
-
-
-def test_new_events_skip_the_unavailable_coordinator_but_old_ones_stay(client, db_session):
-    organiser, organiser_headers = _organiser(client, db_session)
-    holder, holder_headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-    other, _ = _coordinator(client, db_session, "priya@connectsphere.test", "Priya Nair")
-    first_id = _submit(client, organiser_headers, name="Already assigned")
-    assert db_session.get(Event, first_id).coordinator_id == holder.id
-    _mark_unavailable(db_session, holder)
-
-    second_id = _submit(client, organiser_headers, name="Submitted afterwards")
-
-    assert db_session.get(Event, first_id).coordinator_id == holder.id  # unchanged
-    assert db_session.get(Event, second_id).coordinator_id == other.id  # skipped Sam
 
 
 def test_anonymous_cannot_list_notifications(client):

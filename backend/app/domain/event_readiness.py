@@ -12,9 +12,9 @@ from app.models.events import Event
 from app.models.venues import VenueBooking
 
 # The planning stage an event is in while its venue and equipment are being
-# arranged -- `approved` on first pass, `planning` once a Safety Officer has
+# arranged -- `event_approved` on first pass, `planning_event` once a Safety Officer has
 # sent it back.
-PLANNING_STATUSES = (EventStatus.approved, EventStatus.planning)
+PLANNING_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
 
 
 def outstanding_arrangements(db: Session, event: Event) -> list[str]:
@@ -55,4 +55,4 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
 
 def can_enter_preparation(event: Event) -> bool:
     """Only an event that has passed its Safety Check may move to preparation."""
-    return event.status == EventStatus.confirmed
+    return event.status == EventStatus.safety_check_passed

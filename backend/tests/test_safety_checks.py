@@ -16,16 +16,20 @@ from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.venues import VenueBooking
-from tests.event_review_test_helpers import review_setup, user
+from tests.event_review_test_helpers import submitted_event, user
 from tests.test_venue_booking_request import _submit, _venue
 
 
 def _setup(client, db_session):
     """An event awaiting its safety check: venue approved by Venue Staff and a
     projector reserved by Technical Support, then submitted by its Coordinator."""
-    organiser, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
+    organiser, org_h = user(client, db_session, Role.ORGANISER, "organiser@example.com", "Organiser")
+    coordinator, coord_h = user(client, db_session, Role.COORDINATOR, "coordinator@example.com", "Coordinator")
+    event_id = submitted_event(client, org_h)
     event = db_session.get(Event, event_id)
-    event.status = EventStatus.approved
+    # The Event Coordinator Lead assigns manually; stand in for that here.
+    event.coordinator_id = coordinator.id
+    event.status = EventStatus.event_approved
     event.room_layout_preference = "Theatre"
     projector = Equipment(name="Projector", category="Projection", total_quantity=10)
     db_session.add(projector)
@@ -151,8 +155,8 @@ def test_s2_ac1_approving_makes_the_event_safety_check_passed_confirmed(client, 
     s = _setup(client, db_session)
     res = _post(client, s, "approve")
     assert res.status_code == 200
-    assert res.json()["status"] == EventStatus.confirmed
-    assert _status(db_session, s) == EventStatus.confirmed
+    assert res.json()["status"] == EventStatus.safety_check_passed
+    assert _status(db_session, s) == EventStatus.safety_check_passed
 
 
 # --- S2 AC2: approval notifies Organiser, Coordinator and preparing staff -------
@@ -177,7 +181,7 @@ def test_s2_ac3_approval_is_recorded_with_the_officers_name_and_time(client, db_
     _post(client, s, "approve")
     entry = client.get(f"/safety-checks/{s['event_id']}", headers=s["officer_h"]).json()["activity"][0]
     assert entry["from_status"] == EventStatus.awaiting_safety_check
-    assert entry["to_status"] == EventStatus.confirmed
+    assert entry["to_status"] == EventStatus.safety_check_passed
     assert entry["changed_by_name"] == "Sam Safety"
     assert entry["created_at"]
 
@@ -262,7 +266,7 @@ def test_s3_ac2_requesting_changes_returns_to_planning_with_only_marked_items_to
     res = _post(client, s, "request-changes", reason="Projector blocks a fire exit",
                 equipment_request_ids=[s["line_id"]])
     assert res.status_code == 200
-    assert _status(db_session, s) == EventStatus.planning
+    assert _status(db_session, s) == EventStatus.planning_event
 
     line = db_session.get(EquipmentRequest, s["line_id"])
     booking = db_session.get(VenueBooking, s["booking_id"])
@@ -290,7 +294,7 @@ def test_s3_ac3_rejecting_returns_to_planning_with_every_arrangement_to_review_u
 ):
     s = _setup(client, db_session)
     assert _post(client, s, "reject", reason="Capacity too tight for the layout").status_code == 200
-    assert _status(db_session, s) == EventStatus.planning
+    assert _status(db_session, s) == EventStatus.planning_event
 
     booking = db_session.get(VenueBooking, s["booking_id"])
     line = db_session.get(EquipmentRequest, s["line_id"])
@@ -331,7 +335,7 @@ def test_s3_ac5_decision_and_reason_are_recorded_with_name_and_time(client, db_s
     s = _setup(client, db_session)
     _post(client, s, action, reason="Blocked exit", venue_booking_ids=[s["booking_id"]])
     entry = _last_log(db_session, s)
-    assert entry.to_status == EventStatus.planning
+    assert entry.to_status == EventStatus.planning_event
     assert "Blocked exit" in entry.note
     assert entry.changed_by == s["officer"].id
     assert entry.created_at is not None
@@ -346,5 +350,5 @@ def test_s3_ac6_deciding_an_event_not_awaiting_a_check_is_refused(client, db_ses
     _post(client, s, "approve")
     res = _post(client, s, action, reason="Too late", venue_booking_ids=[s["booking_id"]])
     assert res.status_code == 409
-    assert _status(db_session, s) == EventStatus.confirmed
+    assert _status(db_session, s) == EventStatus.safety_check_passed
     assert db_session.get(VenueBooking, s["booking_id"]).safety_recheck_reason is None

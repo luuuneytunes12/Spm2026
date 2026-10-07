@@ -134,17 +134,6 @@ def test_ac2_organiser_notified_with_assigned_coordinators_details(client, db_se
     assert "sam@connectsphere.test" in assigned[0]["message"]
 
 
-def test_ac2_no_notification_when_nobody_is_available_to_assign(client, db_session):
-    """No assignment happened, so there is nothing to notify the Organiser
-    about -- submitting still succeeds, just silently unassigned."""
-    organiser, organiser_headers = _organiser(client, db_session)
-
-    _submit(client, organiser_headers)
-
-    notifications = client.get("/notifications", headers=organiser_headers).json()
-    assert [n for n in notifications if n["type"] == "event_coordinator_assigned"] == []
-
-
 # --------------------------------------------------------------------------
 # AC2 / AC4 -- what the notification carries, and that it is well formed
 # --------------------------------------------------------------------------
