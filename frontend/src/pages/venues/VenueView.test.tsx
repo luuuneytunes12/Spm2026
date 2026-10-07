@@ -12,12 +12,21 @@ import { ApiError } from '../../lib/api'
 import { VenueView } from './VenueView'
 import { Venues } from './Venues'
 
+const auth = vi.hoisted(() => ({ role: 'venue_staff' }))
+vi.mock('../../auth/useAuth', () => ({
+  useAuth: () => ({ user: { role: auth.role } }),
+}))
+vi.mock('../../lib/events', () => ({
+  fromDateTimeLocal: (value: string) => (value ? new Date(value).toISOString() : null),
+}))
+
 // listVenueFilterOptions: the list page also loads its filter choices
 // (Search and Filter Venues). Without it in the mock the page would call
 // undefined on mount.
 vi.mock('../../lib/venues', () => ({
   listVenues: vi.fn(),
   getVenue: vi.fn(),
+  getVenueAvailability: vi.fn(),
   listVenueFilterOptions: vi.fn().mockResolvedValue({
     layouts: [],
     facilities: [],
@@ -55,6 +64,7 @@ function renderDetail() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  auth.role = 'venue_staff'
 })
 
 describe('venue list', () => {
@@ -128,5 +138,15 @@ describe('venue details', () => {
     renderDetail()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Venue not found.')
+  })
+
+  it('does not offer event suitability to Venue Staff', async () => {
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+
+    expect(await screen.findByRole('heading', { name: 'Marina Grand Ballroom' }))
+      .toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Check event suitability' }))
+      .not.toBeInTheDocument()
   })
 })

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { useAuth } from '../../auth/useAuth'
 import { ApiError } from '../../lib/api'
+import { Role } from '../../lib/roles'
 import { getVenue } from '../../lib/venues'
 import type { VenueDetail } from '../../lib/venues'
+import { VenueSuitability } from './VenueSuitability'
 
 /** A list field as chips, or an explicit "None recorded" -- an empty list
  *  must read as "nothing recorded", not as a missing row. */
@@ -37,6 +40,7 @@ function OperatingHours({ value }: { value: string | null }) {
  *  event. Read-only by design. */
 export function VenueView() {
   const { id } = useParams()
+  const { user } = useAuth()
   const [venue, setVenue] = useState<VenueDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -140,6 +144,13 @@ export function VenueView() {
         </dl>
       </section>
 
+      {user?.role === Role.COORDINATOR && (
+        <VenueSuitability venueId={venue.id} />
+      )}
+
+      <p>
+        <Link to={`/venues/${venue.id}/availability`}>View availability calendar →</Link>
+      </p>
       {back}
     </div>
   )

@@ -4,6 +4,9 @@ Read-only: this module describes what an internal user *sees* about a
 venue. Creating and editing venues is VENUE_MANAGE and a separate story.
 """
 
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -48,3 +51,35 @@ class VenueFilterOptions(BaseModel):
     layouts: list[str]
     facilities: list[str]
     accessibility_features: list[str]
+
+
+class VenueAvailabilityItem(BaseModel):
+    id: int
+    kind: Literal["confirmed_booking", "unavailability"]
+    start_time: datetime
+    end_time: datetime
+    event_name: str | None = None
+    reason: str | None = None
+
+
+class VenueAvailabilityOut(BaseModel):
+    venue_id: int
+    start: datetime
+    end: datetime
+    items: list[VenueAvailabilityItem]
+
+
+class VenueSuitabilityCheck(BaseModel):
+    category: Literal["capacity", "layout", "accessibility", "facility"]
+    requirement: str
+    available: str
+    met: bool
+    message: str
+
+
+class VenueSuitabilityOut(BaseModel):
+    venue_id: int
+    event_id: int
+    event_name: str | None
+    suitable: bool
+    checks: list[VenueSuitabilityCheck]

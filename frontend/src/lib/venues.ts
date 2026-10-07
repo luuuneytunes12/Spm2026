@@ -55,6 +55,38 @@ export interface VenueFilterOptions {
   accessibility_features: string[]
 }
 
+export interface VenueAvailabilityItem {
+  id: number
+  kind: 'confirmed_booking' | 'unavailability'
+  start_time: string
+  end_time: string
+  event_name: string | null
+  reason: string | null
+}
+
+export interface VenueAvailability {
+  venue_id: number
+  start: string
+  end: string
+  items: VenueAvailabilityItem[]
+}
+
+export interface VenueSuitabilityCheck {
+  category: 'capacity' | 'layout' | 'accessibility' | 'facility'
+  requirement: string
+  available: string
+  met: boolean
+  message: string
+}
+
+export interface VenueSuitability {
+  venue_id: number
+  event_id: number
+  event_name: string | null
+  suitable: boolean
+  checks: VenueSuitabilityCheck[]
+}
+
 /** The query string for a search. Empty criteria are left out entirely, so
  *  a cleared filter means "no filter" rather than "match the empty string".
  *  Lists become repeated parameters (`facilities=a&facilities=b`), which is
@@ -83,4 +115,17 @@ export function listVenueFilterOptions(): Promise<VenueFilterOptions> {
 /** Rejects with a 404 ApiError when the venue does not exist. */
 export function getVenue(id: number): Promise<VenueDetail> {
   return apiFetch(`/venues/${id}`) as Promise<VenueDetail>
+}
+
+export function getVenueAvailability(
+  id: number,
+  start: string,
+  end: string,
+): Promise<VenueAvailability> {
+  const params = new URLSearchParams({ start, end })
+  return apiFetch(`/venues/${id}/availability?${params.toString()}`) as Promise<VenueAvailability>
+}
+
+export function checkVenueSuitability(id: number, eventId: number): Promise<VenueSuitability> {
+  return apiFetch(`/venues/${id}/suitability/${eventId}`) as Promise<VenueSuitability>
 }
