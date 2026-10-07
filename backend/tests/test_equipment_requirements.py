@@ -697,7 +697,8 @@ def test_er_ac2_the_event_record_carries_what_is_needed_to_review_it(client, db_
     assert record["name"] == "Regional Partner Conference"
     assert record["expected_attendance"] == 120
     assert record["venue_requirements"] == "Main hall, stage, podium"
-    assert record["status"] == "event_approved"
+    # Recording the first requirement moved the approved event into planning.
+    assert record["status"] == "planning_event"
     assert record["coordinator"]["name"] == "Sam Tan"
 
 

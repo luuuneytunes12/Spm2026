@@ -28,7 +28,7 @@ from app.domain.errors import Conflict, InvalidInput, NotFound
 from app.domain.requirement_progress import RequirementReservationLinks, checked_quantity
 from app.models.enums import EventStatus
 from app.models.equipment import CoordinatorEquipmentRequirement, Equipment, EquipmentRequest
-from app.models.events import Event
+from app.models.events import Event, EventStatusHistory
 
 # The statuses in which equipment is recorded, and in which Technical
 # Support looks. ONE list for both sides, so a requirement can never sit
@@ -137,6 +137,7 @@ class EquipmentRequirementService:
             created_by=coordinator_id,
         )
         self._db.add(requirement)
+        self._start_planning(event, coordinator_id)
         self._db.flush()
         return requirement
 
@@ -230,6 +231,24 @@ class EquipmentRequirementService:
         if event is None or event.coordinator_id != coordinator_id:
             raise NotFound("Requirement not found")
         return requirement, event
+
+    def _start_planning(self, event: Event, coordinator_id: int) -> None:
+        """The first equipment requirement on an 'Event Approved' event moves
+        it to 'Planning Event' -- the same step the first venue booking makes
+        -- and the Activity Log records who and when. An event already in
+        planning, or later, is left where it is."""
+        if event.status != EventStatus.event_approved:
+            return
+        event.status = EventStatus.planning_event
+        self._db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=coordinator_id,
+                from_status=EventStatus.event_approved,
+                to_status=EventStatus.planning_event,
+                note="First equipment requirement recorded by the Event Coordinator.",
+            )
+        )
 
     @staticmethod
     def _ensure_recordable(event: Event) -> None:

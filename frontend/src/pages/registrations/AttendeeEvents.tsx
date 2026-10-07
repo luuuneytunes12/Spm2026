@@ -94,6 +94,7 @@ export function AttendeeEvents() {
           ) : event.registration_open ? (
             <button
               type="button"
+              className="btn-primary"
               onClick={() => void act(event.id, registerForEvent)}
               disabled={busyId === event.id}
             >

@@ -13,6 +13,7 @@ from app.models.events import Event
 from app.models.venues import Venue, VenueBooking
 from tests.integration.conftest import submit_event
 from tests.integration.test_coordinator_concurrency_postgres import THREADS, race
+from tests.test_venue_booking_request import _FirstBooking
 import pytest
 
 # These tests start from an event that already has a Coordinator; assignment is
@@ -41,9 +42,11 @@ def _setup(client, make_user, db, events=1):
 
 
 def _submit(client, headers, event_id, venue_id):
-    res = client.post(f"/venue-bookings/events/{event_id}", json={"venue_id": venue_id}, headers=headers)
+    res = client.post(
+        f"/venue-bookings/events/{event_id}", json={"venues": [{"venue_id": venue_id}]}, headers=headers
+    )
     assert res.status_code == 201, res.text
-    return res
+    return _FirstBooking(res)
 
 
 def _approve(client, headers, booking_id):

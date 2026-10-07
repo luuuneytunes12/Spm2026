@@ -51,7 +51,7 @@ export const ROLE_LANDING: Record<Role, RoleLandingConfig> = {
         icon: 'plus',
       },
       {
-        title: 'Draft Requests',
+        title: 'Drafted Requests',
         description: 'Requests you have not submitted yet.',
         to: '/organiser/events',
         icon: 'draft',

@@ -36,11 +36,11 @@ async function pendingRequest(request: APIRequestContext, name: string) {
   expect((await request.post(`${API}/events/${eventId}/approve`, { headers })).ok()).toBe(true)
   const venues: { id: number; name: string }[] = await (await request.get(`${API}/venues`, { headers })).json()
   const booked = await request.post(`${API}/venue-bookings/events/${eventId}`, {
-    data: { venue_id: venues.find((v) => v.name === VENUE)!.id },
+    data: { venues: [{ venue_id: venues.find((v) => v.name === VENUE)!.id }] },
     headers,
   })
   expect(booked.ok()).toBe(true)
-  return { eventId, bookingId: (await booked.json()).id as number }
+  return { eventId, bookingId: (await booked.json())[0].id as number }
 }
 
 test('AC1 + AC2 + AC4: Venue Staff approve a queued request and the Coordinator sees the outcome', async ({ browser, request }) => {
@@ -59,10 +59,10 @@ test('AC1 + AC2 + AC4: Venue Staff approve a queued request and the Coordinator 
   await expect(vera.getByText('No pending booking requests.')).toBeVisible()
 
   await sam.goto(`/coordinator/events/${eventId}`) // AC4
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText(VENUE)
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Approved')
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Vera Staff')
-  await expect(sam.getByRole('button', { name: 'Submit booking request' })).toHaveCount(0)
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText(VENUE)
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Approved')
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Vera Staff')
+  await expect(sam.getByRole('checkbox', { name: /already requested/ })).toBeDisabled()
 })
 
 test('AC2 + AC3 + AC4 + AC5: a rejection carries a reason and an alternative, and the request can be resubmitted again and again', async ({ browser, request }) => {
@@ -72,10 +72,9 @@ test('AC2 + AC3 + AC4 + AC5: a rejection carries a reason and an alternative, an
   const card = vera.getByRole('region', { name: /Reject me/ })
 
   const resubmit = async () => {
-    const value = await sam.locator('option', { hasText: VENUE }).getAttribute('value')
-    await sam.getByRole('combobox', { name: /^Venue/ }).selectOption(value!)
+    await sam.getByRole('checkbox', { name: new RegExp(VENUE) }).check()
     await sam.getByRole('button', { name: 'Submit booking request' }).click()
-    await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Pending review')
+    await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Pending review')
   }
 
   // Round 1: rejected with both a reason and an alternative.
@@ -88,10 +87,10 @@ test('AC2 + AC3 + AC4 + AC5: a rejection carries a reason and an alternative, an
   await expect(card).toHaveCount(0)
 
   await sam.goto(`/coordinator/events/${eventId}`)
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Rejected') // AC4
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Closed for repairs that week.') // AC3
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('The Annex is free on the same day.')
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Vera Staff')
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Rejected') // AC4
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Closed for repairs that week.') // AC3
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('The Annex is free on the same day.')
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Vera Staff')
   await resubmit() // AC5
 
   // Round 2: back in the queue; rejected with an alternative alone.
@@ -103,8 +102,8 @@ test('AC2 + AC3 + AC4 + AC5: a rejection carries a reason and an alternative, an
   await expect(card).toHaveCount(0)
 
   await sam.reload()
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Try the following Monday.')
-  await expect(sam.getByRole('listitem').filter({ hasText: 'Closed for repairs that week.' })).toBeVisible() // history kept
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Try the following Monday.')
+  await expect(sam.getByRole('region', { name: 'Venue bookings' }).getByRole('listitem').filter({ hasText: 'Closed for repairs that week.' })).toBeVisible() // history kept
   await resubmit() // AC5, a second time
 
   // Round 3: back in the queue once more, and this time approved.
@@ -112,8 +111,8 @@ test('AC2 + AC3 + AC4 + AC5: a rejection carries a reason and an alternative, an
   await card.getByRole('button', { name: 'Approve' }).click()
   await expect(vera.getByRole('status')).toContainText(`Approved: ${VENUE}`)
   await sam.reload()
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Approved')
-  await expect(sam.getByRole('listitem').filter({ hasText: 'Rejected' })).toHaveCount(2)
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Approved')
+  await expect(sam.getByRole('region', { name: 'Venue bookings' }).getByRole('listitem').filter({ hasText: 'Rejected' })).toHaveCount(2)
 })
 
 test('negative: a Coordinator cannot decide on a booking request', async ({ browser, request }) => {

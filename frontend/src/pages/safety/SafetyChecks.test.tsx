@@ -1,7 +1,7 @@
 /** Safety Officer stories, UI side. Whether the API accepts each decision
  *  is backend/tests/test_safety_checks.py; these cover what the pages show
  *  and send. */
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -122,6 +122,21 @@ describe('S1 - Safety Checks queue and detail', () => {
     ]) {
       expect((await screen.findAllByText(text)).length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('the Safety Officer sees the event status and a consistent set of decision buttons', () => {
+  it('shows the status timeline with the current stage marked', async () => {
+    renderView()
+    const timeline = await screen.findByRole('list', { name: 'Status timeline' })
+    expect(within(timeline).getByRole('listitem', { current: 'step' })).toHaveTextContent('Awaiting Safety Check')
+  })
+
+  it('styles Approve as primary, Request changes as secondary and Reject as the danger choice', async () => {
+    renderView()
+    expect(await screen.findByRole('button', { name: 'Approve' })).toHaveClass('btn-primary')
+    expect(screen.getByRole('button', { name: 'Request changes' })).toHaveClass('btn-secondary')
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveClass('btn-danger')
   })
 })
 

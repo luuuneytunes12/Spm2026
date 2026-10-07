@@ -128,7 +128,7 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
 
     renderView()
 
-    await screen.findByText('Event Approved')
+    await screen.findByRole('list', { name: 'Status timeline' })
     expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
   })
 
@@ -197,6 +197,24 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
       await screen.findByText('The requested venue is unavailable on that date.'),
     ).toBeInTheDocument()
     expect(screen.getByText(/Sam Tan/)).toBeInTheDocument()
+  })
+})
+
+describe('the Organiser sees where the request is in its lifecycle', () => {
+  it('shows the status timeline for a submitted request, with the current stage marked', async () => {
+    mockGet.mockResolvedValue({ ...BASE, status: 'planning_event' })
+    renderView()
+
+    const timeline = await screen.findByRole('list', { name: 'Status timeline' })
+    expect(within(timeline).getByRole('listitem', { current: 'step' })).toHaveTextContent('Planning Event')
+  })
+
+  it('shows no timeline for a draft, which has not entered the process yet', async () => {
+    mockGet.mockResolvedValue({ ...BASE, status: 'draft', submitted_at: null })
+    renderView()
+
+    await screen.findByRole('heading', { name: 'Robotics Summit' })
+    expect(screen.queryByRole('list', { name: 'Status timeline' })).not.toBeInTheDocument()
   })
 })
 

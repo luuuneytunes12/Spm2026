@@ -50,6 +50,12 @@ describe('registering', () => {
     expect(screen.queryByRole('button', { name: /^Register/ })).not.toBeInTheDocument()
   })
 
+  it('renders Register as a primary button, not an unstyled one', async () => {
+    mockList.mockResolvedValue([OPEN])
+    render(<AttendeeEvents />)
+    expect(await screen.findByRole('button', { name: 'Register' })).toHaveClass('btn-primary')
+  })
+
   it('offers no way to register once registration has closed', async () => {
     mockList.mockResolvedValue([{ ...OPEN, registration_open: false }])
     render(<AttendeeEvents />)

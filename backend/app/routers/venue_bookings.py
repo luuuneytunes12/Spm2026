@@ -7,21 +7,22 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
-from app.models.enums import PLANNED_EVENT_STATUSES, BookingStatus
-from app.models.events import Event
+from app.models.enums import BookingStatus, EventStatus
+from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
 from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut, VenueBookingRejection
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
-# A venue is requested once the event has been approved: the story sits
-# between approval and event day.
-BOOKABLE_EVENT_STATUSES = PLANNED_EVENT_STATUSES
+# Venues are requested while the event is being planned: once approved, and
+# for as long as it stays in planning. After it goes to the Safety Officer
+# the arrangement is judged as it stands.
+BOOKABLE_EVENT_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
 
-# A request that is still live: a second one for the same event would be a
-# double-click or a misunderstanding. A rejected or cancelled one is history,
-# so the Coordinator may try another venue.
+# A request that is still live: a second one for the same venue and event
+# would be a double-click or a misunderstanding. A rejected or cancelled one
+# is history, so the Coordinator may try that venue again.
 LIVE_BOOKING_STATUSES = (BookingStatus.pending, BookingStatus.approved)
 
 _coordinator = require_role(Role.COORDINATOR)
@@ -39,8 +40,9 @@ def _out(booking: VenueBooking) -> VenueBookingOut:
         start_time=booking.start_time,
         end_time=booking.end_time,
         expected_attendance=event.expected_attendance,
-        room_layout_preference=event.room_layout_preference,
-        accessibility_needs=event.accessibility_needs,
+        room_layout_preference=booking.room_layout_preference or event.room_layout_preference,
+        accessibility_needs=booking.accessibility_needs or event.accessibility_needs,
+        facilities_needs=booking.facilities_needs or event.venue_requirements,
         venue_requirements=event.venue_requirements,
         requested_by=booking.requested_by_user,
         decision_notes=booking.decision_notes,
@@ -106,7 +108,7 @@ def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Ses
 
 @router.post(
     "/events/{event_id}",
-    response_model=VenueBookingOut,
+    response_model=list[VenueBookingOut],
     status_code=status.HTTP_201_CREATED,
 )
 def submit_venue_booking(
@@ -114,18 +116,29 @@ def submit_venue_booking(
     body: VenueBookingCreate,
     db: Session = Depends(get_db),
     user: User = Depends(_coordinator),
-) -> VenueBookingOut:
-    """Ask for a venue for an event the caller coordinates.
+) -> list[VenueBookingOut]:
+    """Ask for one or more venues for an event the caller coordinates.
+
+    A separate booking is made for each venue, all under the same event, each
+    waiting for Venue Staff. The first request on an approved event moves it
+    to Planning Event, and that is logged. All or nothing: if any venue is
+    refused, none are created.
 
     404 for an event that is not assigned to the caller, the same as
     GET /events/assigned/{id}: "not yours" and "does not exist" are
     indistinguishable. The event row is locked so two overlapping submits
     (a double-clicked button) cannot both pass the duplicate check.
     """
-    if body.venue_id is None:
+    if not body.venues:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Select a venue before submitting the booking request.",
+        )
+    venue_ids = [v.venue_id for v in body.venues]
+    if len(set(venue_ids)) != len(venue_ids):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Each venue can only be selected once.",
         )
 
     event = db.get(Event, event_id, with_for_update=True)
@@ -134,7 +147,10 @@ def submit_venue_booking(
     if event.status not in BOOKABLE_EVENT_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"A venue can only be requested once the event is approved; it is '{event.status}'.",
+            detail=(
+                "A venue can only be requested while the event is 'Event Approved' or "
+                f"'Planning Event'; it is '{event.status}'."
+            ),
         )
     if event.proposed_start is None or event.proposed_end is None:
         raise HTTPException(
@@ -142,41 +158,67 @@ def submit_venue_booking(
             detail="The event has no date and time to book the venue for.",
         )
 
-    venue = db.get(Venue, body.venue_id)
-    if venue is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="That venue does not exist."
-        )
-    if not venue.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="That venue is inactive and cannot be booked.",
-        )
+    venues = {v.id: v for v in db.scalars(select(Venue).where(Venue.id.in_(venue_ids)))}
+    for venue_id in venue_ids:
+        venue = venues.get(venue_id)
+        if venue is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="That venue does not exist."
+            )
+        if not venue.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{venue.name} is inactive and cannot be booked.",
+            )
 
     already = db.scalar(
-        select(VenueBooking.id).where(
+        select(VenueBooking.venue_id).where(
             VenueBooking.event_id == event.id,
+            VenueBooking.venue_id.in_(venue_ids),
             VenueBooking.status.in_(LIVE_BOOKING_STATUSES),
         )
     )
     if already is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This event already has a venue booking request.",
+            detail=f"This event already has a venue booking request for {venues[already].name}.",
         )
 
-    booking = VenueBooking(
-        event_id=event.id,
-        venue_id=venue.id,
-        requested_by=user.id,
-        start_time=event.proposed_start,
-        end_time=event.proposed_end,
-        status=BookingStatus.pending,
-    )
-    db.add(booking)
+    created = []
+    for request in body.venues:
+        booking = VenueBooking(
+            event_id=event.id,
+            venue_id=request.venue_id,
+            requested_by=user.id,
+            start_time=event.proposed_start,
+            end_time=event.proposed_end,
+            status=BookingStatus.pending,
+            room_layout_preference=request.room_layout_preference,
+            accessibility_needs=request.accessibility_needs,
+            facilities_needs=request.facilities_needs,
+        )
+        db.add(booking)
+        created.append(booking)
+
+    if event.status == EventStatus.event_approved:
+        previous = event.status
+        event.status = EventStatus.planning_event
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=previous,
+                to_status=event.status,
+                note="First venue booking requested by the Event Coordinator.",
+            )
+        )
+    db.flush()
+    ids = [b.id for b in created]
     db.commit()
-    booking = db.scalars(_with_relations(select(VenueBooking).where(VenueBooking.id == booking.id))).one()
-    return _out(booking)
+    rows = db.scalars(
+        _with_relations(select(VenueBooking).where(VenueBooking.id.in_(ids)).order_by(VenueBooking.id))
+    ).unique()
+    return [_out(b) for b in rows]
 
 
 @router.get("/events/{event_id}", response_model=list[VenueBookingOut])
