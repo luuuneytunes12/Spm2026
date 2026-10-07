@@ -3,10 +3,9 @@
 Both actions are the same shape -- load and lock the Event, check it may be
 changed, change who coordinates it, leave a trail, tell the people involved,
 commit -- so `LeadAssignmentAction` holds those steps once and a subclass
-supplies the two that differ (`check` and `change`). Nothing in
-`app.services.assignment` is modified: this reuses its activity-log and
-notification helpers, and the automatic assignment there stays for the
-Coordinator "release" flow.
+supplies the two that differ (`check` and `change`). The Lead explicitly
+chooses each Coordinator; the legacy automatic selector is not part of this
+workflow.
 """
 
 from fastapi import status as http
@@ -83,7 +82,7 @@ class LeadAssignmentAction:
 
 class AssignEvent(LeadAssignmentAction):
     """Assign a request from the Unassigned Queue: it leaves the queue and
-    becomes Under Review with the chosen Coordinator."""
+    remains Submitted with the chosen Coordinator."""
 
     def check(self, event: Event, coordinator: User) -> None:
         if UnassignedQueue().find(self.db, event.id) is None:
@@ -94,7 +93,6 @@ class AssignEvent(LeadAssignmentAction):
     def change(self, event: Event, coordinator: User) -> None:
         previous = event.status
         event.coordinator_id = coordinator.id
-        event.status = EventStatus.under_review
         self.db.add(
             EventStatusHistory(
                 event_id=event.id,

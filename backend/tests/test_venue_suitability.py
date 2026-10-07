@@ -1,9 +1,11 @@
 """Unit cases for the Check Venue Suitability for an Event user story."""
 
 from app.core.roles import Role
+from app.models.enums import BookingStatus
 from app.models.events import Event
 from app.models.user import User
-from test_venue_search import _coordinator, _venue
+from app.models.venues import VenueBooking
+from test_venue_search import _at, _coordinator, _venue
 
 
 def _assigned_event(db_session, coordinator: User, **overrides) -> Event:
@@ -143,3 +145,57 @@ def test_suitability_rejects_non_coordinator_roles(client, db_session):
     )
 
     assert response.status_code == 403
+
+
+def test_event_suitability_checks_each_venue_and_combines_capacity(client, db_session):
+    headers = _coordinator(client, db_session)
+    coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
+    suitable_venue = _venue(
+        db_session,
+        "Large Theatre",
+        capacity=100,
+        supported_layouts=["Theatre"],
+        accessibility_features=["Wheelchair access", "Hearing loop"],
+        facilities=["Projector", "Stage"],
+    )
+    unsuitable_venue = _venue(
+        db_session,
+        "Small Boardroom",
+        capacity=10,
+        supported_layouts=["Boardroom"],
+        accessibility_features=["Wheelchair access"],
+        facilities=["Projector"],
+    )
+    event = _assigned_event(db_session, coordinator)
+    db_session.add_all([
+        VenueBooking(
+            event_id=event.id,
+            venue_id=venue.id,
+            requested_by=coordinator.id,
+            start_time=_at(10),
+            end_time=_at(11),
+            status=BookingStatus.approved,
+        )
+        for venue in (suitable_venue, unsuitable_venue)
+    ])
+    db_session.commit()
+
+    response = client.get(f"/venues/events/{event.id}/suitability", headers=headers)
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert [(venue["venue_name"], venue["suitable"]) for venue in result["venues"]] == [
+        ("Large Theatre", True),
+        ("Small Boardroom", False),
+    ]
+    assert any(
+        check["category"] == "layout" and not check["met"]
+        for check in result["venues"][1]["checks"]
+    )
+    assert result["combined_capacity"] == {
+        "required_capacity": 80,
+        "available_capacity": 110,
+        "met": True,
+        "message": "Combined capacity is 110; it must exceed 80 attendees.",
+    }
+    assert result["suitable"] is False

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { useAuth } from '../../auth/useAuth'
 import { ApiError } from '../../lib/api'
 import { fromDateTimeLocal } from '../../lib/events'
+import { Role } from '../../lib/roles'
 import { getVenue, getVenueAvailability } from '../../lib/venues'
 import type { VenueAvailability as VenueAvailabilityData, VenueDetail } from '../../lib/venues'
 
@@ -32,8 +34,18 @@ function timeLabel(value: string): string {
   return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
+function timestampLabel(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function VenueAvailability() {
   const { id } = useParams()
+  const { user } = useAuth()
   const venueId = Number(id)
   const [venue, setVenue] = useState<VenueDetail | null>(null)
   const [[from, until], setRange] = useState(initialRange)
@@ -122,8 +134,8 @@ export function VenueAvailability() {
       <header className="page-header">
         <h1>{venue.name}: availability calendar</h1>
         <p className="page-subtitle">
-          Confirmed bookings and recorded periods of unavailability are shown for the selected
-          date and time range.
+          Confirmed bookings, active tentative holds, and recorded periods of unavailability
+          are shown for the selected date and time range.
         </p>
       </header>
 
@@ -178,7 +190,9 @@ export function VenueAvailability() {
             {dateLabel(availability.start)} – {dateLabel(availability.end)}
           </h2>
           {availability.items.length === 0 ? (
-            <p className="card notice-empty">No confirmed bookings or closures in this period.</p>
+            <p className="card notice-empty">
+              No confirmed bookings, active holds, or closures in this period.
+            </p>
           ) : (
             [...grouped.entries()].map(([day, items]) => (
               <section className="card stack" key={day} aria-label={day}>
@@ -187,20 +201,46 @@ export function VenueAvailability() {
                   {items.map((item) => (
                     <li className="card request" key={`${item.kind}-${item.id}`}>
                       <div className="request-main">
-                        <span className="request-title">
-                          {item.kind === 'confirmed_booking'
-                            ? item.event_name || 'Confirmed booking'
-                            : 'Unavailable'}
-                        </span>
+                        {item.event_id !== null && user?.role === Role.COORDINATOR ? (
+                          <Link className="request-title" to={`/coordinator/events/${item.event_id}`}>
+                            {item.event_name || 'Event booking'}
+                          </Link>
+                        ) : item.event_id !== null ? (
+                          <span className="request-title">
+                            {item.event_name || 'Event booking'} · Event #{item.event_id}
+                          </span>
+                        ) : (
+                          <span className="request-title">
+                            {item.kind === 'unavailability' ? 'Unavailable' : 'Tentative hold'}
+                          </span>
+                        )}
                         <span className="request-meta">
                           {timeLabel(item.start_time)} – {timeLabel(item.end_time)}
                         </span>
+                        {item.kind === 'tentative_hold' && item.expires_at && (
+                          <span className="request-meta">
+                            Tentative hold expires {timestampLabel(item.expires_at)}
+                          </span>
+                        )}
                         {item.kind === 'unavailability' && item.reason && (
                           <span className="request-meta">Reason: {item.reason}</span>
                         )}
+                        {item.conflicts_with_unavailability && (
+                          <span className="form-error" role="status">
+                            This booking overlaps a recorded unavailability period.
+                          </span>
+                        )}
                       </div>
-                      <span className="badge badge-muted">
-                        {item.kind === 'confirmed_booking' ? 'Confirmed booking' : 'Unavailable'}
+                      <span
+                        className={`badge ${
+                          item.kind === 'tentative_hold' ? 'badge-accent' : 'badge-muted'
+                        }`}
+                      >
+                        {item.kind === 'confirmed_booking'
+                          ? 'Confirmed booking'
+                          : item.kind === 'tentative_hold'
+                            ? 'Tentative hold'
+                            : 'Unavailable'}
                       </span>
                     </li>
                   ))}

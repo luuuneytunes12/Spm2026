@@ -1,10 +1,9 @@
-"""The Event Coordinator Lead's two read-only views of Event Requests.
+"""The Event Coordinator Lead's queue and assignment overview.
 
 Each view is a small class: `EventListing` holds the shared behaviour (what
 "active" means, ordering, running the query) and a subclass narrows it with
 one filter. Nothing here changes an event -- assigning and reassigning are
-separate stories -- and nothing existing is touched: the active statuses are
-read from `app.services.assignment`.
+separate actions; the active statuses are shared with the assignment workload.
 """
 
 from dataclasses import dataclass
@@ -67,16 +66,15 @@ class UnassignedQueue(UnassignedRequests):
         return self.query(db).filter(Event.id == event_id).first()
 
 
-# What the Lead's overview calls an "active" Event: Under Review, Awaiting
-# Organiser Reply (`changes_requested`), Event Approved, Planning Event and
-# Safety Check Passed (`confirmed`). "Awaiting Safety Check" has no status in
-# code yet; add it here when it does. `submitted` is not active here -- a
-# submitted request has no Coordinator and sits in the Unassigned Queue.
+# What the Lead's overview calls an "active" Event. Submitted requests only
+# appear here once assigned; unassigned submitted requests stay in the queue.
 LEAD_ACTIVE_STATUSES: tuple[EventStatus, ...] = (
+    EventStatus.submitted_awaiting_coordinator,
     EventStatus.under_review,
     EventStatus.awaiting_organiser_reply,
     EventStatus.event_approved,
     EventStatus.planning_event,
+    EventStatus.awaiting_safety_check,
     EventStatus.safety_check_passed,
 )
 

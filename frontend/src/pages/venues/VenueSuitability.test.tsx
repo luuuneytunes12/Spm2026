@@ -6,16 +6,16 @@ vi.mock('../../lib/events', () => ({
   listAssignedEvents: vi.fn(),
 }))
 vi.mock('../../lib/venues', () => ({
-  checkVenueSuitability: vi.fn(),
+  checkEventVenueSuitability: vi.fn(),
 }))
 
 import { listAssignedEvents } from '../../lib/events'
-import { checkVenueSuitability } from '../../lib/venues'
+import { checkEventVenueSuitability } from '../../lib/venues'
 import type { EventSummary } from '../../lib/events'
-import type { VenueSuitability as SuitabilityResult } from '../../lib/venues'
+import type { EventVenueSuitability } from '../../lib/venues'
 
 const mockListAssignedEvents = vi.mocked(listAssignedEvents)
-const mockCheck = vi.mocked(checkVenueSuitability)
+const mockCheck = vi.mocked(checkEventVenueSuitability)
 
 const EVENT: EventSummary = {
   id: 18,
@@ -29,20 +29,29 @@ const EVENT: EventSummary = {
   updated_at: '2026-10-01T09:00:00Z',
 }
 
-const SUITABLE: SuitabilityResult = {
-  venue_id: 4,
+const SUITABLE: EventVenueSuitability = {
   event_id: 18,
   event_name: 'Access Workshop',
   suitable: true,
-  checks: [
-    {
+  venues: [{
+    booking_id: 23,
+    venue_id: 4,
+    venue_name: 'Harbour Room',
+    suitable: true,
+    checks: [{
       category: 'capacity',
       requirement: '80 people',
       available: '100 people',
       met: true,
       message: 'Capacity is sufficient.',
-    },
-  ],
+    }],
+  }],
+  combined_capacity: {
+    required_capacity: 80,
+    available_capacity: 100,
+    met: true,
+    message: 'Combined venue capacity is sufficient.',
+  },
 }
 
 function renderSuitability() {
@@ -54,12 +63,55 @@ beforeEach(() => {
   mockListAssignedEvents.mockResolvedValue([EVENT])
 })
 
+it('shows each venue result and the independent combined capacity result', async () => {
+  mockCheck.mockResolvedValue({
+    ...SUITABLE,
+    suitable: false,
+    venues: [
+      SUITABLE.venues[0],
+      {
+        ...SUITABLE.venues[0],
+        booking_id: 24,
+        venue_id: 5,
+        venue_name: 'Studio B',
+        suitable: false,
+        checks: [{
+          category: 'layout',
+          requirement: 'Theatre',
+          available: 'Boardroom',
+          met: false,
+          message: 'Unsupported layout.',
+        }],
+      },
+    ],
+    combined_capacity: {
+      required_capacity: 80,
+      available_capacity: 150,
+      met: true,
+      message: 'Combined venue capacity is sufficient.',
+    },
+  })
+  renderSuitability()
+  fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
+    target: { value: '18' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
+
+  expect(await screen.findByRole('heading', { name: 'Harbour Room: Suitable' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Studio B: Not suitable' })).toBeInTheDocument()
+  expect(screen.getByText(/Combined capacity: 150 \/ 80 required/)).toBeInTheDocument()
+  expect(screen.getByText(/Meets requirement/)).toBeInTheDocument()
+})
+
 describe('Check Venue Suitability for an Event', () => {
   it('AC1-AC3: checks the selected event and displays detailed mismatches', async () => {
     mockCheck.mockResolvedValue({
       ...SUITABLE,
       suitable: false,
-      checks: [
+      venues: [{
+        ...SUITABLE.venues[0],
+        suitable: false,
+        checks: [
         {
           category: 'capacity',
           requirement: '80 people',
@@ -74,7 +126,13 @@ describe('Check Venue Suitability for an Event', () => {
           met: false,
           message: "Unsupported layout: 'Theatre' is not offered by this venue.",
         },
-      ],
+        ],
+      }],
+      combined_capacity: {
+        ...SUITABLE.combined_capacity,
+        available_capacity: 40,
+        met: false,
+      },
     })
     renderSuitability()
 
@@ -87,7 +145,7 @@ describe('Check Venue Suitability for an Event', () => {
       .toBeInTheDocument()
     expect(screen.getByText(/Insufficient capacity/)).toBeInTheDocument()
     expect(screen.getByText(/Unsupported layout/)).toBeInTheDocument()
-    expect(mockCheck).toHaveBeenCalledWith(4, 18)
+    expect(mockCheck).toHaveBeenCalledWith(18)
   })
 
   it('keeps the workflow active and offers retry after a check request fails', async () => {

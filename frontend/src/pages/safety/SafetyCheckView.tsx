@@ -34,7 +34,7 @@ export function SafetyCheckView() {
   const [error, setError] = useState<string | null>(null)
   const [decision, setDecision] = useState<Decision | null>(null)
   const [reason, setReason] = useState('')
-  const [markedBooking, setMarkedBooking] = useState(false)
+  const [markedBookings, setMarkedBookings] = useState<number[]>([])
   const [markedLines, setMarkedLines] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -80,9 +80,9 @@ export function SafetyCheckView() {
       void decide(() => rejectSafetyCheck(event.id, reason), 'Safety arrangement rejected.')
       return
     }
-    const bookingIds = markedBooking && event.venue_booking ? [event.venue_booking.id] : []
+    const bookingIds = markedBookings
     if (bookingIds.length === 0 && markedLines.length === 0) {
-      setSaveError('Mark the venue booking or equipment that needs changing.')
+      setSaveError('Mark at least one venue booking or equipment item that needs changing.')
       return
     }
     void decide(
@@ -101,7 +101,6 @@ export function SafetyCheckView() {
   if (!event) return <p>Loading…</p>
 
   const awaiting = event.status === EventStatus.AWAITING_SAFETY_CHECK
-  const booking = event.venue_booking
   const marking = decision === 'request-changes'
 
   return (
@@ -143,41 +142,49 @@ export function SafetyCheckView() {
 
       <section className="card" aria-labelledby="venue-heading">
         <h2 id="venue-heading">Venue</h2>
-        {booking ? (
-          <>
-            <dl className="detail-list">
-              {(
-                [
-                  ['Venue', `${booking.venue.name} — ${booking.venue.location}`],
-                  ['Capacity', booking.venue.capacity.toString()],
-                  ['Supported layouts', listOrNone(booking.venue.supported_layouts)],
-                  ['Accessibility features', listOrNone(booking.venue.accessibility_features)],
-                  ['Emergency access', booking.venue.emergency_access ?? 'None recorded'],
-                  ['Known restrictions', booking.venue.known_restrictions ?? 'None recorded'],
-                ] as const
-              ).map(([label, value]) => (
-                <div key={label} className="detail-row">
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-            {booking.safety_recheck_reason && (
-              <p>
-                <span className="badge">Awaiting re-review</span> {booking.safety_recheck_reason}
-              </p>
-            )}
-            {marking && (
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={markedBooking}
-                  onChange={(e) => setMarkedBooking(e.target.checked)}
-                />{' '}
-                Venue booking needs changes
-              </label>
-            )}
-          </>
+        {event.venue_bookings.length > 0 ? (
+          event.venue_bookings.map((booking) => (
+            <div key={booking.id} className="card stack">
+              <h3>{booking.venue.name} — {booking.venue.location}</h3>
+              <dl className="detail-list">
+                {(
+                  [
+                    ['Capacity', booking.venue.capacity.toString()],
+                    ['Supported layouts', listOrNone(booking.venue.supported_layouts)],
+                    ['Accessibility features', listOrNone(booking.venue.accessibility_features)],
+                    ['Emergency access', booking.venue.emergency_access ?? 'None recorded'],
+                    ['Known restrictions', booking.venue.known_restrictions ?? 'None recorded'],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="detail-row">
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {booking.safety_recheck_reason && (
+                <p>
+                  <span className="badge">Awaiting re-review</span> {booking.safety_recheck_reason}
+                </p>
+              )}
+              {marking && (
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={markedBookings.includes(booking.id)}
+                    onChange={(e) =>
+                      setMarkedBookings((current) =>
+                        e.target.checked
+                          ? [...current, booking.id]
+                          : current.filter((id) => id !== booking.id),
+                      )
+                    }
+                  />{' '}
+                  Venue booking needs changes
+                </label>
+              )}
+            </div>
+          ))
         ) : (
           <p className="text-muted">No approved venue booking.</p>
         )}

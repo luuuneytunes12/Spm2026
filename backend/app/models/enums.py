@@ -33,6 +33,7 @@ PLANNED_EVENT_STATUSES = (
 
 class BookingStatus(enum.StrEnum):
     pending = "pending"
+    tentative_hold = "tentative_hold"
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
@@ -79,6 +80,9 @@ class NotificationType(enum.StrEnum):
     safety_check_passed = "safety_check_passed"
     safety_changes_requested = "safety_changes_requested"
     safety_check_rejected = "safety_check_rejected"
+    venue_unavailability_recorded = "venue_unavailability_recorded"
+    venue_hold_expiring = "venue_hold_expiring"
+    venue_hold_expired = "venue_hold_expired"
 
 
 class ChangeRequestStatus(enum.StrEnum):

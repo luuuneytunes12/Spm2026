@@ -57,11 +57,14 @@ export interface VenueFilterOptions {
 
 export interface VenueAvailabilityItem {
   id: number
-  kind: 'confirmed_booking' | 'unavailability'
+  kind: 'confirmed_booking' | 'tentative_hold' | 'unavailability'
   start_time: string
   end_time: string
+  event_id: number | null
   event_name: string | null
   reason: string | null
+  expires_at: string | null
+  conflicts_with_unavailability: boolean
 }
 
 export interface VenueAvailability {
@@ -85,6 +88,41 @@ export interface VenueSuitability {
   event_name: string | null
   suitable: boolean
   checks: VenueSuitabilityCheck[]
+}
+
+export interface EventVenueSuitability {
+  event_id: number
+  event_name: string | null
+  suitable: boolean
+  venues: {
+    booking_id: number
+    venue_id: number
+    venue_name: string
+    suitable: boolean
+    checks: VenueSuitabilityCheck[]
+  }[]
+  combined_capacity: {
+    required_capacity: number | null
+    available_capacity: number
+    met: boolean
+    message: string
+  }
+}
+
+export interface VenueUnavailabilityInput {
+  start_time: string
+  end_time: string
+  reason: string
+}
+
+export interface VenueUnavailabilityResult {
+  id: number
+  venue_id: number
+  start_time: string
+  end_time: string
+  reason: string
+  affected_booking_ids: number[]
+  affected_event_ids: number[]
 }
 
 /** The query string for a search. Empty criteria are left out entirely, so
@@ -128,4 +166,19 @@ export function getVenueAvailability(
 
 export function checkVenueSuitability(id: number, eventId: number): Promise<VenueSuitability> {
   return apiFetch(`/venues/${id}/suitability/${eventId}`) as Promise<VenueSuitability>
+}
+
+export function checkEventVenueSuitability(eventId: number): Promise<EventVenueSuitability> {
+  return apiFetch(`/venues/events/${eventId}/suitability`) as Promise<EventVenueSuitability>
+}
+
+export function recordVenueUnavailability(
+  venueId: number,
+  input: VenueUnavailabilityInput,
+): Promise<VenueUnavailabilityResult> {
+  return apiFetch(`/venues/${venueId}/unavailability`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  }) as Promise<VenueUnavailabilityResult>
 }

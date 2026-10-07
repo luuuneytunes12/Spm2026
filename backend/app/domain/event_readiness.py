@@ -5,6 +5,9 @@ Officer's approval, so both refuse for the same reasons and name the same
 outstanding items.
 """
 
+from datetime import datetime, timezone
+
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models.enums import BookingStatus, EquipmentStatus, EventStatus
@@ -28,18 +31,41 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
     """
     outstanding: list[str] = []
 
-    booking = (
+    now = datetime.now(timezone.utc)
+    bookings = (
         db.query(VenueBooking)
         .filter(
             VenueBooking.event_id == event.id,
-            VenueBooking.status == BookingStatus.approved,
+            VenueBooking.status.in_(
+                (
+                    BookingStatus.pending,
+                    BookingStatus.tentative_hold,
+                    BookingStatus.approved,
+                )
+            ),
+            or_(
+                VenueBooking.status != BookingStatus.tentative_hold,
+                and_(
+                    VenueBooking.expires_at.is_not(None),
+                    VenueBooking.expires_at > now,
+                ),
+            ),
         )
-        .first()
+        .order_by(VenueBooking.id)
+        .all()
     )
-    if booking is None:
+    if not bookings:
         outstanding.append("Venue booking is not approved")
-    elif booking.safety_recheck_reason:
-        outstanding.append("Venue booking is awaiting safety re-review by Venue Staff")
+    for booking in bookings:
+        if booking.status is not BookingStatus.approved:
+            outstanding.append(
+                f"Venue booking for '{booking.venue.name}' is not approved "
+                f"(status: {booking.status})"
+            )
+        elif booking.safety_recheck_reason:
+            outstanding.append(
+                f"Venue booking for '{booking.venue.name}' is awaiting safety re-review by Venue Staff"
+            )
 
     for line in event.equipment_items:
         if line.status is EquipmentStatus.cancelled:

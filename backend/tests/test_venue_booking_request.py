@@ -154,12 +154,16 @@ def test_a_venue_cannot_be_requested_before_the_event_is_approved(client, db_ses
     assert db_session.query(VenueBooking).count() == 0
 
 
-def test_a_second_request_for_the_same_event_is_refused(client, db_session):
+def test_an_event_can_request_multiple_venues_but_not_duplicate_a_live_venue(
+    client, db_session
+):
     _, coord_h, _, event_id = _approved(client, db_session)
     venue = _venue(db_session)
+    other_venue = _venue(db_session, "Hall B")
     assert _submit(client, coord_h, event_id, venue.id).status_code == 201
+    assert _submit(client, coord_h, event_id, other_venue.id).status_code == 201
     assert _submit(client, coord_h, event_id, venue.id).status_code == 409
-    assert db_session.query(VenueBooking).count() == 1
+    assert db_session.query(VenueBooking).count() == 2
 
 
 def test_after_a_rejection_the_coordinator_may_request_another_venue(client, db_session):

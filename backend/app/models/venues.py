@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ARRAY, JSON, BigInteger, Enum, ForeignKey, Index, Text, text
+from sqlalchemy import ARRAY, JSON, BigInteger, CheckConstraint, Enum, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -37,14 +37,9 @@ class Venue(Base):
 class VenueBooking(Base):
     __tablename__ = "venue_bookings"
     __table_args__ = (
-        # One live request per event, enforced by the database as well as the
-        # API (see sql/013_venue_bookings_one_live_per_event.sql).
-        Index(
-            "uq_venue_bookings_one_live_per_event",
-            "event_id",
-            unique=True,
-            postgresql_where=text("status IN ('pending', 'approved')"),
-            sqlite_where=text("status IN ('pending', 'approved')"),
+        CheckConstraint(
+            "status != 'tentative_hold' OR expires_at IS NOT NULL",
+            name="ck_venue_booking_hold_requires_expiry",
         ),
     )
 
@@ -67,6 +62,7 @@ class VenueBooking(Base):
         Enum(BookingStatus, name="booking_status", create_type=False),
         default=BookingStatus.pending,
     )
+    expires_at: Mapped[datetime | None]
     decision_notes: Mapped[str | None] = mapped_column(Text)
     # What Venue Staff offer instead when rejecting -- another venue, another
     # time (see sql/014_venue_bookings_suggested_alternative.sql).

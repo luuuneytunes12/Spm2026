@@ -35,6 +35,7 @@ class SafetyVenueBooking(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    event_id: int
     status: BookingStatus
     start_time: datetime
     end_time: datetime
@@ -68,7 +69,7 @@ class SafetyCheckDetail(BaseModel):
     special_arrangements: str | None
     organiser: OrganiserContact
     coordinator: OrganiserContact | None
-    venue_booking: SafetyVenueBooking | None
+    venue_bookings: list[SafetyVenueBooking]
     equipment: list[SafetyEquipmentLine]
     activity: list[ActivityEntry]
 

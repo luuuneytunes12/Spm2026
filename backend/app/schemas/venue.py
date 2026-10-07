@@ -7,7 +7,7 @@ venue. Creating and editing venues is VENUE_MANAGE and a separate story.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class VenueSummary(BaseModel):
@@ -55,11 +55,14 @@ class VenueFilterOptions(BaseModel):
 
 class VenueAvailabilityItem(BaseModel):
     id: int
-    kind: Literal["confirmed_booking", "unavailability"]
+    kind: Literal["confirmed_booking", "tentative_hold", "unavailability"]
     start_time: datetime
     end_time: datetime
+    event_id: int | None = None
     event_name: str | None = None
     reason: str | None = None
+    expires_at: datetime | None = None
+    conflicts_with_unavailability: bool = False
 
 
 class VenueAvailabilityOut(BaseModel):
@@ -83,3 +86,55 @@ class VenueSuitabilityOut(BaseModel):
     event_name: str | None
     suitable: bool
     checks: list[VenueSuitabilityCheck]
+
+
+class EventVenueSuitabilityItem(BaseModel):
+    booking_id: int
+    venue_id: int
+    venue_name: str
+    suitable: bool
+    checks: list[VenueSuitabilityCheck]
+
+
+class CombinedVenueCapacityCheck(BaseModel):
+    required_capacity: int | None
+    available_capacity: int
+    met: bool
+    message: str
+
+
+class EventVenueSuitabilityOut(BaseModel):
+    event_id: int
+    event_name: str | None
+    suitable: bool
+    venues: list[EventVenueSuitabilityItem]
+    combined_capacity: CombinedVenueCapacityCheck
+
+
+class VenueUnavailabilityCreate(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A reason is required.")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def end_after_start(self) -> "VenueUnavailabilityCreate":
+        if self.end_time <= self.start_time:
+            raise ValueError("The end must be after the start.")
+        return self
+
+
+class VenueUnavailabilityOut(BaseModel):
+    id: int
+    venue_id: int
+    start_time: datetime
+    end_time: datetime
+    reason: str
+    affected_booking_ids: list[int]
+    affected_event_ids: list[int]

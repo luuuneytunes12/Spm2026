@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useAuth } from '../../auth/useAuth'
 import { ApiError } from '../../lib/api'
+import { fromDateTimeLocal } from '../../lib/events'
 import { Role } from '../../lib/roles'
-import { getVenue } from '../../lib/venues'
+import { getVenue, recordVenueUnavailability } from '../../lib/venues'
 import type { VenueDetail } from '../../lib/venues'
 import { VenueSuitability } from './VenueSuitability'
 
@@ -44,6 +45,42 @@ export function VenueView() {
   const [venue, setVenue] = useState<VenueDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [unavailableFrom, setUnavailableFrom] = useState('')
+  const [unavailableUntil, setUnavailableUntil] = useState('')
+  const [unavailableReason, setUnavailableReason] = useState('')
+  const [savingUnavailability, setSavingUnavailability] = useState(false)
+  const [unavailabilityError, setUnavailabilityError] = useState<string | null>(null)
+  const [unavailabilityNotice, setUnavailabilityNotice] = useState<string | null>(null)
+
+  async function markUnavailable(event: import('react').FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const start = fromDateTimeLocal(unavailableFrom)
+    const end = fromDateTimeLocal(unavailableUntil)
+    if (!start || !end || new Date(end) <= new Date(start)) {
+      setUnavailabilityError('Enter a valid period with an end after the start.')
+      return
+    }
+    setSavingUnavailability(true)
+    setUnavailabilityError(null)
+    setUnavailabilityNotice(null)
+    try {
+      const result = await recordVenueUnavailability(Number(id), {
+        start_time: start,
+        end_time: end,
+        reason: unavailableReason,
+      })
+      setUnavailabilityNotice(
+        `Unavailable period recorded. ${result.affected_booking_ids.length} existing booking(s) are affected; they were not cancelled.`,
+      )
+      setUnavailableReason('')
+    } catch (err: unknown) {
+      setUnavailabilityError(
+        err instanceof ApiError ? err.message : 'Could not record venue unavailability.',
+      )
+    } finally {
+      setSavingUnavailability(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -146,6 +183,47 @@ export function VenueView() {
 
       {user?.role === Role.COORDINATOR && (
         <VenueSuitability venueId={venue.id} />
+      )}
+
+      {user?.role === Role.VENUE_STAFF && (
+        <section className="card stack" aria-label="Mark venue unavailable">
+          <h2>Mark venue unavailable</h2>
+          <p>Existing bookings are preserved and affected coordinators are notified.</p>
+          <form className="stack" onSubmit={(event) => void markUnavailable(event)}>
+            <label className="field">
+              <span>From</span>
+              <input
+                type="datetime-local"
+                required
+                value={unavailableFrom}
+                onChange={(event) => setUnavailableFrom(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Until</span>
+              <input
+                type="datetime-local"
+                required
+                value={unavailableUntil}
+                onChange={(event) => setUnavailableUntil(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Reason</span>
+              <input
+                required
+                maxLength={2000}
+                value={unavailableReason}
+                onChange={(event) => setUnavailableReason(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="btn-primary" disabled={savingUnavailability}>
+              {savingUnavailability ? 'Recording…' : 'Record unavailability'}
+            </button>
+          </form>
+          {unavailabilityError && <p className="form-error" role="alert">{unavailabilityError}</p>}
+          {unavailabilityNotice && <p className="notice" role="status">{unavailabilityNotice}</p>}
+        </section>
       )}
 
       <p>

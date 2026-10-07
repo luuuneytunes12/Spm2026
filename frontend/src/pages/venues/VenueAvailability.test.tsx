@@ -7,6 +7,9 @@ vi.mock('../../lib/venues', () => ({
   getVenue: vi.fn(),
   getVenueAvailability: vi.fn(),
 }))
+vi.mock('../../auth/useAuth', () => ({
+  useAuth: () => ({ user: null }),
+}))
 
 import { getVenue, getVenueAvailability } from '../../lib/venues'
 import type { VenueAvailability as VenueAvailabilityData, VenueDetail } from '../../lib/venues'
@@ -37,7 +40,10 @@ const CALENDAR: VenueAvailabilityData = {
       start_time: '2026-11-02T10:00:00Z',
       end_time: '2026-11-02T11:00:00Z',
       event_name: 'Planning Workshop',
+      event_id: 18,
       reason: null,
+      expires_at: null,
+      conflicts_with_unavailability: false,
     },
     {
       id: 12,
@@ -45,7 +51,10 @@ const CALENDAR: VenueAvailabilityData = {
       start_time: '2026-11-02T14:00:00Z',
       end_time: '2026-11-02T15:00:00Z',
       event_name: null,
+      event_id: null,
       reason: 'Maintenance',
+      expires_at: null,
+      conflicts_with_unavailability: false,
     },
   ],
 }
@@ -78,7 +87,7 @@ describe('View Venue Availability Calendar', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Check availability' }))
 
-    expect(await screen.findByText('Planning Workshop')).toBeInTheDocument()
+    expect(await screen.findByText(/Planning Workshop/)).toBeInTheDocument()
     expect(screen.getByText('Confirmed booking')).toBeInTheDocument()
     expect(screen.getAllByText('Unavailable')).toHaveLength(2)
     expect(screen.getByText('Reason: Maintenance')).toBeInTheDocument()
@@ -99,7 +108,7 @@ describe('View Venue Availability Calendar', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load venue availability')
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByText('No confirmed bookings or closures in this period.'))
+    expect(await screen.findByText('No confirmed bookings, active holds, or closures in this period.'))
       .toBeInTheDocument()
     expect(mockGetAvailability).toHaveBeenCalledTimes(2)
   })

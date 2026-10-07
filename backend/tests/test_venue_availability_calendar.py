@@ -1,8 +1,11 @@
 """Unit cases for the View Venue Availability Calendar user story."""
 
+from datetime import datetime, timedelta, timezone
+
 from app.core.roles import Role
-from app.models.enums import BookingStatus
+from app.models.enums import BookingStatus, NotificationType
 from app.models.events import Event
+from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import VenueBooking
 from test_venue_search import _at, _block, _coordinator, _headers, _venue
@@ -72,6 +75,67 @@ def test_calendar_excludes_unconfirmed_bookings_and_records_outside_the_range(
 
     assert response.status_code == 200, response.text
     assert response.json()["items"] == []
+
+
+def test_calendar_shows_active_holds_for_each_venue_and_excludes_expired_holds(
+    client, db_session
+):
+    headers = _coordinator(client, db_session)
+    first_venue = _venue(db_session, "Calendar Hall")
+    second_venue = _venue(db_session, "Second Hall")
+    user = db_session.query(User).filter(User.email == "coord@example.com").one()
+    event = Event(
+        name="Multi-venue Workshop",
+        organiser_id=user.id,
+        coordinator_id=user.id,
+    )
+    db_session.add(event)
+    db_session.flush()
+    active_hold = VenueBooking(
+        event_id=event.id,
+        venue_id=first_venue.id,
+        requested_by=user.id,
+        start_time=_at(10),
+        end_time=_at(11),
+        status=BookingStatus.tentative_hold,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
+    )
+    expired_hold = VenueBooking(
+        event_id=event.id,
+        venue_id=second_venue.id,
+        requested_by=user.id,
+        start_time=_at(12),
+        end_time=_at(13),
+        status=BookingStatus.tentative_hold,
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    db_session.add_all([active_hold, expired_hold])
+    db_session.commit()
+
+    first_calendar = client.get(
+        f"/venues/{first_venue.id}/availability", params=_window(), headers=headers
+    )
+    second_calendar = client.get(
+        f"/venues/{second_venue.id}/availability", params=_window(), headers=headers
+    )
+
+    assert first_calendar.status_code == second_calendar.status_code == 200
+    first_item = first_calendar.json()["items"][0]
+    assert first_item["kind"] == "tentative_hold"
+    assert first_item["event_id"] == event.id
+    assert first_item["expires_at"] is not None
+    assert second_calendar.json()["items"] == []
+    assert db_session.get(VenueBooking, expired_hold.id).status == BookingStatus.cancelled
+    expiry_notification = (
+        db_session.query(Notification)
+        .filter_by(
+            event_id=event.id,
+            user_id=user.id,
+            type=NotificationType.venue_hold_expired,
+        )
+        .one()
+    )
+    assert "expired" in expiry_notification.message.lower()
 
 
 def test_calendar_rejects_a_date_range_that_ends_before_it_starts(client, db_session):

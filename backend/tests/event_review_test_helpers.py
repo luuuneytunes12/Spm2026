@@ -1,5 +1,6 @@
 from app.core.roles import Role
-from app.models.events import Event
+from app.models.enums import EventStatus
+from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 
 COMPLETE = {
@@ -43,6 +44,18 @@ def review_setup(client, db_session):
     )
     event_id = submitted_event(client, organiser_headers)
     event = db_session.get(Event, event_id)
+    event.coordinator_id = coordinator.id
+    event.status = EventStatus.submitted_awaiting_coordinator
+    assignment_log = (
+        db_session.query(EventStatusHistory)
+        .filter_by(event_id=event_id)
+        .order_by(EventStatusHistory.id.desc())
+        .first()
+    )
+    if assignment_log is not None:
+        assignment_log.from_status = EventStatus.submitted_awaiting_coordinator
+        assignment_log.to_status = EventStatus.submitted_awaiting_coordinator
+    db_session.commit()
     assert event.coordinator_id == coordinator.id
-    assert event.status == "under_review"
+    assert event.status == EventStatus.submitted_awaiting_coordinator
     return organiser, organiser_headers, coordinator, coordinator_headers, event_id

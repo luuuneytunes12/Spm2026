@@ -2,15 +2,15 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '../../lib/api'
 import { listAssignedEvents } from '../../lib/events'
 import type { EventSummary } from '../../lib/events'
-import { checkVenueSuitability } from '../../lib/venues'
-import type { VenueSuitability as VenueSuitabilityResult } from '../../lib/venues'
+import { checkEventVenueSuitability } from '../../lib/venues'
+import type { EventVenueSuitability } from '../../lib/venues'
 
-export function VenueSuitability({ venueId }: { venueId: number }) {
+export function VenueSuitability(_props: { venueId: number }) {
   const [events, setEvents] = useState<EventSummary[]>([])
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [eventsError, setEventsError] = useState<string | null>(null)
   const [selectedEventId, setSelectedEventId] = useState('')
-  const [result, setResult] = useState<VenueSuitabilityResult | null>(null)
+  const [result, setResult] = useState<EventVenueSuitability | null>(null)
   const [checkError, setCheckError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
 
@@ -58,7 +58,7 @@ export function VenueSuitability({ venueId }: { venueId: number }) {
     setCheckError(null)
     setResult(null)
     try {
-      setResult(await checkVenueSuitability(venueId, Number(selectedEventId)))
+      setResult(await checkEventVenueSuitability(Number(selectedEventId)))
     } catch (err: unknown) {
       setCheckError(
         err instanceof ApiError ? err.message : 'Could not check suitability. Please try again.',
@@ -151,19 +151,36 @@ export function VenueSuitability({ venueId }: { venueId: number }) {
             {result.suitable ? 'Suitable' : 'Not suitable'}
             {result.event_name ? ` for ${result.event_name}` : ''}
           </h3>
-          <ul className="detail-value-list" aria-label="Suitability check results">
-            {result.checks.map((check, index) => (
-              <li key={`${check.category}-${check.requirement}-${index}`}>
-                <strong>{check.category}:</strong> {check.message}{' '}
-                <span className="text-muted">
-                  (Required: {check.requirement}; available: {check.available})
-                </span>
-              </li>
-            ))}
-          </ul>
-          {result.checks.length === 0 && (
-            <p className="text-muted">No event requirements have been recorded.</p>
+          {result.venues.length === 0 ? (
+            <p className="text-muted">No active venue bookings are attached to this event.</p>
+          ) : (
+            result.venues.map((venue) => (
+              <section className="card stack" key={venue.booking_id}>
+                <h4>
+                  {venue.venue_name}: {venue.suitable ? 'Suitable' : 'Not suitable'}
+                </h4>
+                <ul className="detail-value-list" aria-label={`Suitability results for ${venue.venue_name}`}>
+                  {venue.checks.map((check, index) => (
+                    <li key={`${check.category}-${check.requirement}-${index}`}>
+                      <strong>{check.category}:</strong> {check.message}{' '}
+                      <span className="text-muted">
+                        (Required: {check.requirement}; available: {check.available})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
           )}
+          <p>
+            Combined capacity: {result.combined_capacity.available_capacity}
+            {result.combined_capacity.required_capacity === null
+              ? ' (required attendance not recorded)'
+              : ` / ${result.combined_capacity.required_capacity} required`}
+            {' · '}
+            {result.combined_capacity.met ? 'Meets requirement' : 'Does not meet requirement'}
+          </p>
+          <p className="text-muted">{result.combined_capacity.message}</p>
         </div>
       )}
     </section>

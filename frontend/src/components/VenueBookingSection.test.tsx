@@ -33,6 +33,7 @@ const BOOKING: VenueBooking = {
   venue: { id: 3, name: 'Marina Hall', location: '10 Bayfront Ave', capacity: 250 },
   start_time: '2026-11-02T09:00:00Z',
   end_time: '2026-11-02T17:00:00Z',
+  expires_at: null,
   expected_attendance: 120,
   room_layout_preference: 'Theatre',
   accessibility_needs: 'Step-free access',

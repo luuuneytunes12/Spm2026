@@ -6,6 +6,7 @@ import { apiFetch } from './api'
 
 export const BookingStatus = {
   PENDING: 'pending',
+  TENTATIVE_HOLD: 'tentative_hold',
   APPROVED: 'approved',
   REJECTED: 'rejected',
   CANCELLED: 'cancelled',
@@ -14,6 +15,7 @@ export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   pending: 'Pending review',
+  tentative_hold: 'Tentative hold',
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
@@ -31,6 +33,7 @@ export interface VenueBooking {
   venue: { id: number; name: string; location: string; capacity: number }
   start_time: string
   end_time: string
+  expires_at: string | null
   expected_attendance: number | null
   room_layout_preference: string | null
   accessibility_needs: string | null
@@ -90,5 +93,14 @@ export function rejectVenueBooking(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rejection),
+  }) as Promise<VenueBooking>
+}
+
+/** Place a pending request on the server's default 24-hour tentative hold. */
+export function holdVenueBooking(id: number): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}/hold`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   }) as Promise<VenueBooking>
 }
