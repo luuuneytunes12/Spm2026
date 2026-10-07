@@ -112,7 +112,7 @@ function BookingCard({
             ['Expected attendance', b.expected_attendance?.toString() ?? 'Not given'],
             ['Layout requirements', b.room_layout_preference ?? 'None given'],
             ['Accessibility needs', b.accessibility_needs ?? 'None given'],
-            ['Facility needs', b.venue_requirements ?? 'None given'],
+            ['Facility needs', b.facilities_needs ?? b.venue_requirements ?? 'None given'],
             ['Requested by', `${b.requested_by.name} (${b.requested_by.email})`],
             ['Requested on', formatTimestamp(b.created_at) ?? ''],
           ] as const

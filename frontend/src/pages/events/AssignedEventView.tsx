@@ -2,14 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
+import { StatusTimeline } from '../../components/StatusTimeline'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
 import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
 import { ApiError } from '../../lib/api'
 import {
-  EVENT_STATUS_BRANCH_TONE,
-  EVENT_STATUS_DESCRIPTIONS,
   EVENT_STATUS_LABELS,
-  EVENT_STATUS_PIPELINE,
   EventStatus,
   approveEvent,
   approveEventChangeRequest,
@@ -44,69 +42,6 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   equipment_requirements: 'Other equipment notes',
   equipment_items: 'Equipment requirements',
   registration_enabled: 'Registration required',
-}
-
-/** Where on the pipeline the event has actually reached, or -1 if it has not
- *  entered the Coordinator-facing pipeline yet (a Draft, in the rare case
- *  one is visible here at all -- see EVENT_STATUS_PIPELINE).
- *
- *  If the current status IS a pipeline stage, that is the answer. If it is
- *  a branch (Awaiting Organiser Reply / Event Rejected / Event Cancelled), the answer comes
- *  from the event's own activity log -- the `from_status` of its most
- *  recent transition is the stage it was AT when it branched off, and a
- *  branch can leave the path from more than one stage, so this is read
- *  from what actually happened rather than assumed. */
-function reachedPipelineIndex(event: AssignedEventDetail): number {
-  const own = EVENT_STATUS_PIPELINE.indexOf(event.status)
-  if (own !== -1) return own
-  const departedFrom = event.activity[0]?.from_status
-  return departedFrom ? EVENT_STATUS_PIPELINE.indexOf(departedFrom as EventStatus) : -1
-}
-
-/** The full lifecycle a request moves through, with the event's actual
- *  progress marked on it -- not just the single word "Submitted", but where
- *  that sits between Draft and Completed.
- *
- *  A status that branches off the main path (Awaiting Organiser Reply / Event Rejected /
- *  Event Cancelled) is drawn as an extra node after the stage it departed from,
- *  rather than forced into the fixed sequence -- it isn't the 8th step of
- *  a 7-step process, it's an exit from one of the earlier steps. */
-function StatusTimeline({ event }: { event: AssignedEventDetail }) {
-  const onPipeline = EVENT_STATUS_PIPELINE.includes(event.status)
-  const reached = reachedPipelineIndex(event)
-  const branchTone = !onPipeline ? EVENT_STATUS_BRANCH_TONE[event.status] : undefined
-
-  return (
-    <div>
-      <ol className="status-timeline" aria-label="Status timeline">
-        {EVENT_STATUS_PIPELINE.map((step, i) => {
-          const state = i < reached ? 'done' : i === reached ? (onPipeline ? 'current' : 'done') : 'upcoming'
-          return (
-            <li
-              key={step}
-              className={`status-step status-step-${state}`}
-              aria-current={state === 'current' ? 'step' : undefined}
-            >
-              <span className="status-step-dot" aria-hidden="true" />
-              <span className="status-step-label">
-                {EVENT_STATUS_LABELS[step]}
-              </span>
-            </li>
-          )
-        })}
-        {branchTone && (
-          <li
-            className={`status-step status-step-branch status-step-branch-${branchTone}`}
-            aria-current="step"
-          >
-            <span className="status-step-dot" aria-hidden="true" />
-            <span className="status-step-label">{statusLabel(event.status)}</span>
-          </li>
-        )}
-      </ol>
-      <p className="page-subtitle status-description">{EVENT_STATUS_DESCRIPTIONS[event.status]}</p>
-    </div>
-  )
 }
 
 /** Render a detail field as prose, or as a bulleted list, based on how the
@@ -254,6 +189,15 @@ export function AssignedEventView() {
     }
   }
 
+  /** Reload the event after something that can move its status (the first
+   *  venue booking or equipment requirement moves an approved event into
+   *  planning). A failed reload leaves what is on screen as it was. */
+  async function refreshEvent() {
+    if (!event) return
+    const refreshed = await getAssignedEvent(event.id).catch(() => null)
+    if (refreshed) setEvent(refreshed)
+  }
+
   async function confirm() {
     if (!event) return
     setConfirming(true)
@@ -383,7 +327,7 @@ export function AssignedEventView() {
 
       <section className="card">
         <h2>Status</h2>
-        <StatusTimeline event={event} />
+        <StatusTimeline status={event.status} activity={event.activity} />
         {(event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR ||
           event.status === EventStatus.UNDER_REVIEW) && (
           <div className="status-actions">
@@ -435,7 +379,7 @@ export function AssignedEventView() {
               when it passes.
             </p>
             {(event.confirmation_outstanding ?? []).length > 0 && (
-              <div role="status">
+              <div role="status" className="form-error form-error-stack">
                 <p>Still outstanding:</p>
                 <ul className="detail-value-list">
                   {(event.confirmation_outstanding ?? []).map((item) => (
@@ -464,7 +408,25 @@ export function AssignedEventView() {
       </section>
 
       {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
-        <VenueBookingSection eventId={event.id} expectedAttendance={event.expected_attendance} />
+        <VenueBookingSection
+          eventId={event.id}
+          expectedAttendance={event.expected_attendance}
+          onChanged={() => void refreshEvent()}
+        />
+      )}
+
+      {(event.status === EventStatus.EVENT_APPROVED ||
+        event.status === EventStatus.PLANNING_EVENT ||
+        event.status === EventStatus.AWAITING_SAFETY_CHECK) && (
+        <section className="card" aria-labelledby="registration-locked-heading">
+          <h2 id="registration-locked-heading">Registration</h2>
+          <p className="page-subtitle" role="note">
+            Registration can be opened once the Safety Officer has approved this event. It is
+            {event.status === EventStatus.AWAITING_SAFETY_CHECK
+              ? ' waiting for that check now.'
+              : ' not yet submitted for it.'}
+          </p>
+        </section>
       )}
 
       {event.status === EventStatus.SAFETY_CHECK_PASSED && (
@@ -537,6 +499,7 @@ export function AssignedEventView() {
         eventStatus={event.status}
         organiserLines={event.equipment_items}
         organiserNotes={event.equipment_requirements}
+        onChanged={() => void refreshEvent()}
       />
 
       <section className="card">

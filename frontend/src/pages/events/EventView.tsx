@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
+import { StatusTimeline } from '../../components/StatusTimeline'
 import { ApiError } from '../../lib/api'
 import {
   EVENT_STATUS_LABELS,
@@ -155,6 +156,13 @@ export function EventView() {
               </li>
             ))}
           </ol>
+        </section>
+      )}
+
+      {event.status !== EventStatus.DRAFT && (
+        <section className="card" aria-labelledby="status-heading">
+          <h2 id="status-heading">Status</h2>
+          <StatusTimeline status={event.status} activity={activity} />
         </section>
       )}
 

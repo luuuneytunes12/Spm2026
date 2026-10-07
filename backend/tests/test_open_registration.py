@@ -6,13 +6,17 @@
 
 Each test name states the acceptance criterion it covers. Who moves an event
 to "confirmed" is not this story's job, so the tests set that status directly.
+The tests of the story's own Jira ACs (SCRUM-66 AC1-AC6) are in
+test_schedule_registration.py; this file keeps the registration-window rules
+and the Attendee's side.
 """
 
 from datetime import datetime, timedelta, timezone
 
 from app.core.roles import Role
-from app.models.enums import EventStatus
+from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event
+from app.models.venues import Venue, VenueBooking
 from tests.event_review_test_helpers import user
 
 
@@ -37,6 +41,21 @@ def _setup(client, db_session, *, status=EventStatus.safety_check_passed):
         status=status,
     )
     db_session.add(event)
+    db_session.flush()
+    # A confirmed event still has its venue: enabling registration checks that.
+    venue = Venue(name="Marina Hall", location="Block A", capacity=300)
+    db_session.add(venue)
+    db_session.flush()
+    db_session.add(
+        VenueBooking(
+            event_id=event.id,
+            venue_id=venue.id,
+            requested_by=coordinator.id,
+            start_time=event.proposed_start,
+            end_time=event.proposed_end,
+            status=BookingStatus.approved,
+        )
+    )
     db_session.commit()
     return event, organiser_h, coordinator_h, attendee_h
 

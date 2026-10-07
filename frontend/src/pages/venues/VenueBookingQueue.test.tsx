@@ -30,6 +30,7 @@ const BOOKING: VenueBooking = {
   expected_attendance: 120,
   room_layout_preference: 'Theatre',
   accessibility_needs: 'Step-free access',
+  facilities_needs: 'Main hall',
   venue_requirements: 'Main hall',
   requested_by: { name: 'Sam Tan', email: 'sam@connectsphere.test' },
   decision_notes: null,

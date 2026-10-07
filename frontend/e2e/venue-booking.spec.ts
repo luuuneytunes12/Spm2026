@@ -41,7 +41,7 @@ test('SCRUM-39: no venue card while the event is still awaiting review', async (
   const sam = await openAs(browser, SAM)
   await sam.goto(`/coordinator/events/${eventId}`)
   await expect(sam.getByRole('heading', { name: 'Event Details' })).toBeVisible()
-  await expect(sam.getByRole('heading', { name: 'Venue booking' })).toHaveCount(0)
+  await expect(sam.getByRole('heading', { name: 'Venue bookings' })).toHaveCount(0)
 })
 
 test('SCRUM-39 AC1: submitting with no venue selected shows an error and creates nothing', async ({ browser, request }) => {
@@ -63,14 +63,17 @@ test('SCRUM-39 AC2 + AC3: a submitted request appears in the Venue Staff queue c
   const vera = await openAs(browser, VERA)
 
   await sam.goto(`/coordinator/events/${eventId}`)
-  const value = await sam.locator('option', { hasText: VENUE }).getAttribute('value')
-  await sam.getByRole('combobox', { name: /^Venue/ }).selectOption(value!)
+  await sam.getByRole('checkbox', { name: new RegExp(VENUE) }).check()
+  await sam.getByLabel(`Facilities for ${VENUE}`).fill('Two radio microphones') // needs entered for that venue
   await sam.getByRole('button', { name: 'Submit booking request' }).click()
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText(VENUE) // AC2 (coordinator side)
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText('Pending review')
+  const bookings = sam.getByRole('region', { name: 'Venue bookings' })
+  await expect(bookings).toContainText(VENUE) // AC2 (coordinator side)
+  await expect(bookings).toContainText('Pending review')
+  // SCRUM-39 AC3: the first booking moves the event on, and the page shows it without a reload.
+  await expect(sam.getByRole('heading', { level: 1 }).locator('..').locator('.badge')).toHaveText('Planning Event')
   await sam.reload() // persisted, not just on screen
-  await expect(sam.getByRole('region', { name: 'Venue booking' }).getByRole('status')).toContainText(VENUE)
-  await expect(sam.getByRole('button', { name: 'Submit booking request' })).toHaveCount(0) // no duplicate
+  await expect(bookings).toContainText(VENUE)
+  await expect(sam.getByRole('checkbox', { name: /already requested/ })).toBeDisabled() // no duplicate
 
   await vera.goto('/venue-staff/bookings')
   const card = vera.getByRole('region', { name: /AC2 event/ })
@@ -78,7 +81,7 @@ test('SCRUM-39 AC2 + AC3: a submitted request appears in the Venue Staff queue c
   await expect(card).toContainText(VENUE) // AC3
   await expect(card).toContainText('120')
   await expect(card).toContainText('Step-free access, hearing loop')
-  await expect(card).toContainText('Main hall, stage, podium')
+  await expect(card).toContainText('Two radio microphones') // the facilities entered for this venue
   await expect(card).toContainText('Sam Tan')
 })
 
@@ -88,16 +91,22 @@ test('SCRUM-39 negative: a Coordinator cannot open the Venue Staff queue', async
   await expect(sam).toHaveURL(/forbidden/)
 })
 
-test('SCRUM-39 accessibility: the booking card has no serious axe violations and its field is labelled', async ({ browser, request }) => {
+test('SCRUM-39 accessibility: the booking card has no serious axe violations and its fields are labelled', async ({ browser, request }) => {
   const eventId = await approvedEvent(request, 'A11y event')
   const sam = await openAs(browser, SAM)
   await sam.goto(`/coordinator/events/${eventId}`)
-  await expect(sam.getByRole('combobox', { name: /^Venue/ })).toBeVisible()
+  await expect(sam.getByRole('checkbox', { name: new RegExp(VENUE) })).toBeVisible()
+  await sam.getByRole('checkbox', { name: new RegExp(VENUE) }).check()
+  await expect(sam.getByLabel(`Room layout for ${VENUE}`)).toBeVisible() // fields are labelled
   await sam.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))))
   const { violations } = await new AxeBuilder({ page: sam }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
   expect(violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([])
 
-  await sam.getByRole('combobox', { name: /^Venue/ }).focus()
-  await sam.keyboard.press('Tab')
+  // Keyboard: a venue is chosen with Space, and the submit button is reachable.
+  await sam.getByRole('checkbox', { name: new RegExp(VENUE) }).uncheck()
+  await sam.getByRole('checkbox', { name: new RegExp(VENUE) }).focus()
+  await sam.keyboard.press('Space')
+  await expect(sam.getByRole('checkbox', { name: new RegExp(VENUE) })).toBeChecked()
+  await sam.getByRole('button', { name: 'Submit booking request' }).focus()
   await expect(sam.getByRole('button', { name: 'Submit booking request' })).toBeFocused()
 })

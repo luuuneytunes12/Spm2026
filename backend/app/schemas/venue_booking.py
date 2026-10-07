@@ -7,16 +7,34 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.enums import BookingStatus
 
 
-class VenueBookingCreate(BaseModel):
-    """What a Coordinator sends. The venue is the only choice they make: the
-    timing and requirements come from the event itself, so the request can
-    never disagree with what the Organiser asked for.
+class VenueRequest(BaseModel):
+    """One venue a Coordinator is asking for, and what they need of it.
 
-    `venue_id` is optional here so that "no venue selected" reaches the
+    The three needs are optional: left out, the booking shows the Event's own
+    layout, accessibility and facilities needs. Blank counts as left out.
+    """
+
+    venue_id: int
+    room_layout_preference: str | None = Field(default=None, max_length=2000)
+    accessibility_needs: str | None = Field(default=None, max_length=2000)
+    facilities_needs: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("room_layout_preference", "accessibility_needs", "facilities_needs")
+    @classmethod
+    def blank_is_not_given(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
+
+
+class VenueBookingCreate(BaseModel):
+    """What a Coordinator sends: one or more venues, each with its own needs.
+    The event's timing comes from the event itself, so the request can never
+    disagree with what the Organiser asked for.
+
+    `venues` may be empty or missing so that "no venue selected" reaches the
     router and is refused with a message, rather than as a bare schema error.
     """
 
-    venue_id: int | None = None
+    venues: list[VenueRequest] = []
 
 
 class VenueBookingRejection(BaseModel):
@@ -74,8 +92,11 @@ class VenueBookingOut(BaseModel):
     start_time: datetime
     end_time: datetime
     expected_attendance: int | None
+    # What was asked of THIS venue; where the Coordinator gave nothing, the
+    # Event's own needs.
     room_layout_preference: str | None
     accessibility_needs: str | None
+    facilities_needs: str | None
     venue_requirements: str | None
     requested_by: BookingPerson
     decision_notes: str | None

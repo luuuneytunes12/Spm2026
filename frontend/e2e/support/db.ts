@@ -27,7 +27,7 @@ function python(script: string, payload: unknown): string {
 export interface SeedUser {
   email: string
   name: string
-  role: 'organiser' | 'coordinator' | 'venue_staff' | 'event_coordinator_lead'
+  role: 'organiser' | 'coordinator' | 'venue_staff' | 'tech_support' | 'safety_officer' | 'event_coordinator_lead'
   password: string
 }
 
@@ -180,4 +180,108 @@ db.close()
  *  point call this after submitting. A no-op when nobody is available. */
 export function autoAssign(eventId: number): void {
   python(AUTO_ASSIGN, eventId)
+}
+
+const ADD_NOTIFICATIONS = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.notifications import Notification
+from app.models.user import User
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+user = db.query(User).filter(User.email == spec["email"]).one()
+for i in range(spec["count"]):
+    db.add(Notification(user_id=user.id, type="event_approved", message=f"Seeded notification {i + 1}"))
+db.commit()
+db.close()
+`
+
+/** Give a user `count` unread notifications. The app creates these as a side
+ *  effect of other people's actions; a landing-page spec only needs them to
+ *  exist. resetUsers clears them. */
+export function addNotifications(email: string, count: number): void {
+  python(ADD_NOTIFICATIONS, { email, count })
+}
+
+const ASSIGN_TO = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.enums import EventStatus
+from app.models.events import Event
+from app.models.user import User
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+event = db.get(Event, spec["event_id"])
+event.coordinator_id = db.query(User).filter(User.email == spec["email"]).one().id
+event.status = EventStatus.under_review
+db.commit()
+db.close()
+`
+
+/** Hand a submitted event to one named Coordinator, as the Lead would. Unlike
+ *  autoAssign it does not pick: a spec that counts a Coordinator's events
+ *  must know exactly whose they are. */
+export function assignEventTo(eventId: number, email: string): void {
+  python(ASSIGN_TO, { event_id: eventId, email })
+}
+
+const SEED_EQUIPMENT = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.equipment import Equipment
+
+e = json.loads(sys.argv[1])
+db = SessionLocal()
+row = db.query(Equipment).filter(Equipment.name == e["name"]).first()
+if row is None:
+    row = Equipment(name=e["name"], category=e["category"], total_quantity=e["total_quantity"])
+    db.add(row)
+    db.commit()
+print(row.id)
+db.close()
+`
+
+/** Make sure an equipment item with this name exists; returns its id. */
+export function seedEquipment(item: { name: string; category: string; total_quantity: number }): number {
+  return Number(python(SEED_EQUIPMENT, item).trim())
+}
+
+const REMOVE_EQUIPMENT = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.equipment import Equipment
+
+db = SessionLocal()
+db.query(Equipment).filter(Equipment.name == json.loads(sys.argv[1])).delete(synchronize_session=False)
+db.commit()
+db.close()
+`
+
+/** Delete an item seeded by seedEquipment. Remove the users' events first --
+ *  an item with reservations cannot be deleted. */
+export function removeEquipment(name: string): void {
+  python(REMOVE_EQUIPMENT, name)
+}
+
+const SET_BOOKING_STATUS = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.venues import VenueBooking
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+db.query(VenueBooking).filter(VenueBooking.event_id == spec["event_id"]).update(
+    {VenueBooking.status: spec["status"]}, synchronize_session=False
+)
+db.commit()
+db.close()
+`
+
+/** Put every venue booking of an event into `status`, straight on the row --
+ *  how a spec stands in for "the venue became unavailable" without a
+ *  screen for it. */
+export function setBookingStatus(eventId: number, status: 'pending' | 'approved' | 'rejected' | 'cancelled'): void {
+  python(SET_BOOKING_STATUS, { event_id: eventId, status })
 }

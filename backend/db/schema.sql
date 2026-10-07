@@ -183,6 +183,11 @@ create table venue_bookings (
     -- Set by a Safety Officer to send the booking back for review without
     -- releasing it; see sql/017_safety_check.sql.
     safety_recheck_reason text,
+    -- What the Coordinator asked of THIS venue; null means as the Event says.
+    -- See sql/019.
+    room_layout_preference text,
+    accessibility_needs text,
+    facilities_needs text,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time)
@@ -191,9 +196,10 @@ create table venue_bookings (
 create index idx_venue_bookings_event on venue_bookings (event_id);
 create index idx_venue_bookings_venue_time on venue_bookings (venue_id, start_time, end_time);
 
--- One live (pending or approved) request per event; see sql/013.
-create unique index uq_venue_bookings_one_live_per_event
-    on venue_bookings (event_id) where status in ('pending', 'approved');
+-- An event may hold several live (pending or approved) requests, but only one
+-- per venue; see sql/019 (which replaced sql/013).
+create unique index uq_venue_bookings_one_live_per_event_venue
+    on venue_bookings (event_id, venue_id) where status in ('pending', 'approved');
 
 create table venue_unavailability (
     id bigint generated always as identity primary key,

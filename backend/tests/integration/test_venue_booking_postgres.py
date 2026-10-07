@@ -2,7 +2,7 @@
 
 The SQLite unit tests (tests/test_venue_booking_request.py) prove the rules;
 these prove they hold on the production engine -- its enum and timestamp
-handling, the one-live-request-per-event index -- and when the same request
+handling, the one-live-request-per-event-and-venue index -- and when the same request
 arrives many times at once.
 """
 
@@ -15,6 +15,7 @@ from app.models.events import Event
 from app.models.venues import Venue, VenueBooking
 from tests.integration.conftest import submit_event
 from tests.integration.test_coordinator_concurrency_postgres import THREADS, race
+from tests.test_venue_booking_request import _FirstBooking
 
 # These tests start from an event that already has a Coordinator; assignment is
 # now the Lead's job, so submit alone no longer provides one (see tests/conftest.py).
@@ -36,7 +37,11 @@ def _setup(client, make_user, db):
 
 
 def _post(client, headers, event_id, venue_id):
-    return client.post(f"/venue-bookings/events/{event_id}", json={"venue_id": venue_id}, headers=headers)
+    return _FirstBooking(
+        client.post(
+            f"/venue-bookings/events/{event_id}", json={"venues": [{"venue_id": venue_id}]}, headers=headers
+        )
+    )
 
 
 def test_scrum39_ac1_to_ac3_a_request_reaches_the_queue_carrying_everything(client, make_user, db):
@@ -67,7 +72,7 @@ def test_scrum39_a_submit_fired_many_times_at_once_creates_exactly_one_request(
     assert db.query(VenueBooking).count() == 1
 
 
-def test_scrum39_the_database_itself_refuses_a_second_live_request_for_an_event(client, make_user, db):
+def test_scrum39_the_database_itself_refuses_a_second_live_request_for_the_same_venue(client, make_user, db):
     sam, _h, _s, event_id, venue_id = _setup(client, make_user, db)
     event = db.get(Event, event_id)
     row = lambda status: VenueBooking(  # noqa: E731
@@ -86,6 +91,26 @@ def test_scrum39_the_database_itself_refuses_a_second_live_request_for_an_event(
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
+
+
+def test_scrum39_several_venues_for_one_event_are_stored_and_each_reaches_the_queue(client, make_user, db):
+    _sam, sam_h, staff_h, event_id, venue_id = _setup(client, make_user, db)
+    other = Venue(name="Bay Room", location="Level 2", capacity=100)
+    db.add(other)
+    db.commit()
+
+    res = client.post(
+        f"/venue-bookings/events/{event_id}",
+        json={"venues": [{"venue_id": venue_id, "facilities_needs": "Two microphones"}, {"venue_id": other.id}]},
+        headers=sam_h,
+    )
+
+    assert res.status_code == 201
+    assert db.query(VenueBooking).count() == 2
+    assert db.get(Event, event_id).status == EventStatus.planning_event
+    queue = client.get("/venue-bookings/queue", headers=staff_h).json()
+    assert {b["venue"]["name"] for b in queue} == {"Marina Hall", "Bay Room"}
+    assert {b["venue"]["name"]: b["facilities_needs"] for b in queue}["Marina Hall"] == "Two microphones"
 
 
 def test_scrum39_the_request_persists_across_separate_sessions(client, make_user, db):
