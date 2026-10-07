@@ -65,6 +65,12 @@ class EquipmentRequest(Base):
         default=EquipmentStatus.requested,
     )
     notes: Mapped[str | None] = mapped_column(Text)
+    # Where the item will be set up at the venue, recorded by Technical
+    # Support and read by the Safety Officer.
+    placement_notes: Mapped[str | None] = mapped_column(Text)
+    # Same meaning as VenueBooking.safety_recheck_reason: the line stays
+    # reserved (stock held) until Technical Support confirm it again.
+    safety_recheck_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]
 

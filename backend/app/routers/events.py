@@ -13,6 +13,7 @@ from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import VenueBooking
+from app.domain.event_readiness import PLANNING_STATUSES, can_enter_preparation, outstanding_arrangements
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
     MANDATORY_FIELDS,
@@ -115,35 +116,6 @@ def _get_reviewable_event(event_id: int, user: User, db: Session) -> Event:
             detail="Resolve the pending change request before deciding this event.",
         )
     return event
-
-
-def _confirmation_outstanding(db: Session, event: Event) -> list[str]:
-    """What still stands between this event and "Confirmed".
-
-    An event may be confirmed once it has an APPROVED venue booking and every
-    equipment requirement is RESERVED. Cancelled lines are ignored -- the
-    Organiser withdrew them, so there is nothing left to arrange. An event
-    that asked for no equipment has no equipment to wait on.
-    """
-    outstanding: list[str] = []
-
-    has_approved_venue = (
-        db.query(VenueBooking.id)
-        .filter(
-            VenueBooking.event_id == event.id,
-            VenueBooking.status == BookingStatus.approved,
-        )
-        .first()
-        is not None
-    )
-    if not has_approved_venue:
-        outstanding.append("Venue booking is not approved")
-
-    for line in event.equipment_items:
-        if line.status in (EquipmentStatus.reserved, EquipmentStatus.cancelled):
-            continue
-        outstanding.append(f"Equipment '{line.equipment.name}' is not reserved (status: {line.status})")
-    return outstanding
 
 
 def _utc(value: datetime) -> datetime:
@@ -453,7 +425,7 @@ def get_assigned_event(
         organiser=OrganiserContact.model_validate(event.organiser),
         activity=_event_activity(db, event.id),
         confirmation_outstanding=(
-            _confirmation_outstanding(db, event) if event.status == EventStatus.approved else []
+            outstanding_arrangements(db, event) if event.status in PLANNING_STATUSES else []
         ),
         change_requests=[
             _change_request_out(db, request)
@@ -599,50 +571,45 @@ def reject_change_request(
 
 
 @router.post("/{event_id}/confirm", response_model=EventOut)
-def confirm_event(
+def submit_for_safety_check(
     event_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.COORDINATOR)),
 ) -> EventOut:
-    """Confirm an Approved event once its venue and equipment are arranged.
+    """Send a planned event to the Safety Officer once its venue and
+    equipment are arranged.
 
     Blocked -- with the outstanding items named -- while the venue booking
-    is not approved or any equipment requirement is not reserved. Records
-    who confirmed it and when in the activity log, and tells the Organiser.
+    is not approved, any equipment line is not reserved, or anything is
+    still flagged for safety re-review. The event is confirmed only when a
+    Safety Officer passes it (routers/safety_checks.py).
     """
-    # Locked: two overlapping confirms must not both see "approved" and both
-    # log a transition and notify the Organiser.
+    # Locked: two overlapping submits must not both see a planning status
+    # and both log the transition.
     event = _get_assigned_event(event_id, user, db, lock=True)
-    if event.status != EventStatus.approved:
+    if event.status not in PLANNING_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Only an approved event can be confirmed; this one is '{event.status}'.",
+            detail=f"Only an event in planning can be sent for a safety check; this one is '{event.status}'.",
         )
 
-    outstanding = _confirmation_outstanding(db, event)
+    outstanding = outstanding_arrangements(db, event)
     if outstanding:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot confirm yet. Outstanding: " + "; ".join(outstanding) + ".",
+            detail="Cannot submit yet. Outstanding: " + "; ".join(outstanding) + ".",
         )
 
     previous_status = event.status
-    event.status = EventStatus.confirmed
+    event.status = EventStatus.awaiting_safety_check
     db.add(
         EventStatusHistory(
             event_id=event.id,
             changed_by=user.id,
             from_status=previous_status,
             to_status=event.status,
-            note="Confirmed by the Event Coordinator.",
+            note="Submitted for safety check by the Event Coordinator.",
         )
-    )
-    notify(
-        db,
-        user_id=event.organiser_id,
-        type=NotificationType.event_confirmed,
-        message=f"Your event '{event.name or 'request'}' has been confirmed.",
-        event_id=event.id,
     )
     db.commit()
     db.refresh(event)
@@ -666,7 +633,9 @@ def set_event_registration(
     event = _get_assigned_event(event_id, user, db, lock=True)
 
     if body.registration_enabled:
-        if event.status != EventStatus.confirmed:
+        # Opening registration is the first step of preparation: only an
+        # event that has passed its Safety Check may take it.
+        if not can_enter_preparation(event):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Registration can only be opened for a confirmed event.",

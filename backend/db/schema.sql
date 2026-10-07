@@ -10,7 +10,8 @@ create type user_role as enum (
 
 create type event_status as enum (
     'draft', 'submitted', 'under_review', 'changes_requested',
-    'approved', 'rejected', 'planning', 'confirmed', 'completed', 'cancelled'
+    'approved', 'rejected', 'planning', 'awaiting_safety_check',
+    'confirmed', 'completed', 'cancelled'
 );
 
 create type booking_status as enum (
@@ -155,6 +156,9 @@ create table venues (
     accessibility_features text[] not null default '{}',
     supported_layouts text[] not null default '{}',
     operating_hours text,
+    -- Read by the Safety Officer; see sql/017_safety_check.sql.
+    emergency_access text,
+    known_restrictions text,
     is_active boolean not null default true
 );
 
@@ -173,6 +177,9 @@ create table venue_bookings (
     decision_notes text,
     -- What Venue Staff offer instead when rejecting; see sql/014.
     suggested_alternative text,
+    -- Set by a Safety Officer to send the booking back for review without
+    -- releasing it; see sql/017_safety_check.sql.
+    safety_recheck_reason text,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time)
@@ -226,6 +233,10 @@ create table equipment_requests (
     technical_requirements text,
     status equipment_status not null default 'requested',
     notes text,
+    -- Where the item is set up, and a Safety Officer's re-review flag; see
+    -- sql/017_safety_check.sql.
+    placement_notes text,
+    safety_recheck_reason text,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     -- One line per equipment item, per event. Quantity is how you ask for

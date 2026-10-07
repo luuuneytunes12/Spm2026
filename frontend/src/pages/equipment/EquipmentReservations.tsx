@@ -4,6 +4,7 @@ import { listEquipment } from '../../lib/equipment'
 import type { EquipmentItem } from '../../lib/equipment'
 import {
   checkAvailability,
+  confirmSafetyRecheck,
   listEventReservations,
   listReservableEvents,
   reserveEquipment,
@@ -44,6 +45,7 @@ export function EquipmentReservations() {
 
   const [reservations, setReservations] = useState<EquipmentReservation[]>([])
   const [quantity, setQuantity] = useState('')
+  const [placement, setPlacement] = useState('')
   const [reserving, setReserving] = useState(false)
   const [reserveError, setReserveError] = useState<string | null>(null)
 
@@ -120,7 +122,12 @@ export function EquipmentReservations() {
     setReserving(true)
     setReserveError(null)
     try {
-      await reserveEquipment(event.id, item.id, requested ? undefined : Number(quantity) || undefined)
+      await reserveEquipment(
+        event.id,
+        item.id,
+        requested ? undefined : Number(quantity) || undefined,
+        placement,
+      )
       const [reservable, reserved] = await Promise.all([
         listReservableEvents(),
         listEventReservations(event.id),
@@ -128,6 +135,7 @@ export function EquipmentReservations() {
       setEvents(reservable)
       setReservations(reserved)
       setQuantity('')
+      setPlacement('')
       setAvailability(null)
     } catch (err) {
       setReserveError(message(err, 'Could not reserve the equipment.'))
@@ -299,6 +307,16 @@ export function EquipmentReservations() {
             </div>
           )}
           {!alreadyReserved && (
+            <div className="field">
+              <label htmlFor="reservation-placement">Placement at the venue (optional)</label>
+              <input
+                id="reservation-placement"
+                value={placement}
+                onChange={(e) => setPlacement(e.target.value)}
+              />
+            </div>
+          )}
+          {!alreadyReserved && (
             <div>
               <button type="button" className="btn-primary" disabled={reserving} onClick={() => void reserve()}>
                 {reserving ? 'Reserving…' : 'Reserve'}
@@ -326,11 +344,71 @@ export function EquipmentReservations() {
                   {r.equipment_category ? ` (${r.equipment_category})` : ''} ·{' '}
                   {formatRange(r.start_time, r.end_time)} · reserved by {r.reserved_by.name} on{' '}
                   {formatTimestamp(r.reserved_at)}
+                  {r.placement_notes ? ` · placed: ${r.placement_notes}` : ''}
+                  {r.safety_recheck_reason && (
+                    <SafetyRecheck
+                      reservation={r}
+                      onConfirmed={(updated) =>
+                        setReservations((current) =>
+                          current.map((x) => (x.id === updated.id ? updated : x)),
+                        )
+                      }
+                    />
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </section>
+      )}
+    </div>
+  )
+}
+
+/** A reservation a Safety Officer sent back: still held, waiting for
+ *  Technical Support to look again and confirm it. */
+function SafetyRecheck({
+  reservation: r,
+  onConfirmed,
+}: {
+  reservation: EquipmentReservation
+  onConfirmed: (updated: EquipmentReservation) => void
+}) {
+  const [placement, setPlacement] = useState(r.placement_notes ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function confirm() {
+    setSaving(true)
+    setError(null)
+    try {
+      onConfirmed(await confirmSafetyRecheck(r.id, placement))
+    } catch (err) {
+      setError(message(err, 'Could not confirm the reservation.'))
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="status-actions">
+      <p>
+        <span className="badge">Safety re-review</span> {r.safety_recheck_reason}
+      </p>
+      <div className="field">
+        <label htmlFor={`recheck-placement-${r.id}`}>Placement at the venue</label>
+        <input
+          id={`recheck-placement-${r.id}`}
+          value={placement}
+          onChange={(e) => setPlacement(e.target.value)}
+        />
+      </div>
+      <button type="button" className="btn-primary" disabled={saving} onClick={() => void confirm()}>
+        {saving ? 'Confirming…' : 'Confirm reservation'}
+      </button>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
       )}
     </div>
   )

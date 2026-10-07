@@ -400,8 +400,9 @@ describe('AC3 - the current status', () => {
       'Submitted',
       'Under review',
       'Approved',
-      'Planning',
-      'Event Confirmed',
+      'Planning Event',
+      'Awaiting Safety Check',
+      'Safety Check Passed (Event Confirmed)',
       'Event Completed',
     ]
     for (const label of steps) {
