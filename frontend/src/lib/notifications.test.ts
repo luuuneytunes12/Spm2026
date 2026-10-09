@@ -44,6 +44,10 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'event_submitted' }, 'event_coordinator_lead')).toBe('/coordinator-lead/queue/7')
   })
 
+  it("sends the Safety Officer's safety check request to the event's Safety Check page", () => {
+    expect(notificationLink({ ...n, type: 'safety_check_requested' }, 'safety_officer')).toBe('/safety-checks/7')
+  })
+
   it('has no link without an event, or for roles with no event page', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
     expect(notificationLink(n, 'attendee')).toBeNull()
