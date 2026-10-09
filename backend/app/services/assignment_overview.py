@@ -11,11 +11,14 @@ from dataclasses import dataclass
 from sqlalchemy import func
 from sqlalchemy.orm import Query, Session
 
-from app.models.enums import EventStatus
 from app.core.roles import Role
+from app.models.enums import ACTIVE_ASSIGNMENT_STATUSES, EventStatus
 from app.models.events import Event
 from app.models.user import User
-from app.services.assignment import ACTIVE_ASSIGNMENT_STATUSES
+
+# Compatibility name retained for callers and tests; the shared enum module
+# now owns the single definition.
+LEAD_ACTIVE_STATUSES = ACTIVE_ASSIGNMENT_STATUSES
 
 
 class EventListing:
@@ -66,19 +69,6 @@ class UnassignedQueue(UnassignedRequests):
         return self.query(db).filter(Event.id == event_id).first()
 
 
-# What the Lead's overview calls an "active" Event. Submitted requests only
-# appear here once assigned; unassigned submitted requests stay in the queue.
-LEAD_ACTIVE_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.submitted_awaiting_coordinator,
-    EventStatus.under_review,
-    EventStatus.awaiting_organiser_reply,
-    EventStatus.event_approved,
-    EventStatus.planning_event,
-    EventStatus.awaiting_safety_check,
-    EventStatus.safety_check_passed,
-)
-
-
 class ActiveAssignments(CoordinatorAssignments):
     """The Coordinator Assignments overview: active Events that have a
     Coordinator, optionally only one Coordinator's."""
@@ -87,7 +77,7 @@ class ActiveAssignments(CoordinatorAssignments):
         self.coordinator_id = coordinator_id
 
     def narrow(self, query: Query) -> Query:
-        query = super().narrow(query).filter(Event.status.in_(LEAD_ACTIVE_STATUSES))
+        query = super().narrow(query).filter(Event.status.in_(ACTIVE_ASSIGNMENT_STATUSES))
         if self.coordinator_id is not None:
             query = query.filter(Event.coordinator_id == self.coordinator_id)
         return query
@@ -114,7 +104,7 @@ class CoordinatorWorkload:
     def rows(self, db: Session) -> list[CoordinatorLoad]:
         counts = (
             db.query(Event.coordinator_id, func.count(Event.id))
-            .filter(Event.status.in_(LEAD_ACTIVE_STATUSES), Event.coordinator_id.is_not(None))
+            .filter(Event.status.in_(ACTIVE_ASSIGNMENT_STATUSES), Event.coordinator_id.is_not(None))
             .group_by(Event.coordinator_id)
             .all()
         )

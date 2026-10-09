@@ -22,6 +22,9 @@ import { AssignedEventView } from './AssignedEventView'
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
+vi.mock('../../components/EventVenueSuitability', () => ({
+  EventVenueSuitability: () => <section aria-label="event venue suitability stub" />,
+}))
 // The card has its own tests (EquipmentRequirementsSection.test.tsx). Here
 // it only needs to show what the page hands it, so the stub echoes its props.
 vi.mock('../../components/EquipmentRequirementsSection', () => ({
@@ -152,6 +155,13 @@ beforeEach(() => {
 })
 
 describe('AC1 - the full requirements are visible', () => {
+  it('shows the event-wide venue assessment once venue planning is available', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event' })
+    renderView()
+
+    expect(await screen.findByLabelText('event venue suitability stub')).toBeInTheDocument()
+  })
+
   it('TC-S3-1b: shows every field named in the acceptance criterion', async () => {
     renderView()
 
@@ -688,6 +698,15 @@ describe('Coordinator decisions', () => {
     expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reject request' })).not.toBeInTheDocument()
   })
+
+  it('does not offer approval or rejection unless the event is Submitted', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
+    renderView()
+
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reject request' })).not.toBeInTheDocument()
+  })
 })
 
 describe('SCRUM-39 - the venue booking card follows the event status', () => {
@@ -772,4 +791,3 @@ describe('ER AC1 - the equipment requirements card', () => {
     expect(screen.getByText('Equipment requirements')).toBeInTheDocument()
   })
 })
-

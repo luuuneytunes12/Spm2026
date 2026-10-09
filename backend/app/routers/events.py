@@ -9,22 +9,20 @@ from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
 from app.models.enums import (
+    CHANGE_REQUEST_ALLOWED_STATUSES,
     BookingStatus,
     ChangeRequestStatus,
     EquipmentStatus,
     EventStatus,
     NotificationType,
+    PLANNING_STATUSES,
 )
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import VenueBooking
-from app.domain.event_readiness import (
-    PLANNING_STATUSES,
-    can_enter_preparation,
-    outstanding_arrangements,
-)
+from app.domain.event_readiness import can_enter_preparation, outstanding_arrangements
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
     MANDATORY_FIELDS,
@@ -46,19 +44,6 @@ from app.services.submission_notice import SubmissionNotice
 router = APIRouter(prefix="/events", tags=["events"])
 
 REVIEWABLE_STATUSES = (EventStatus.submitted_awaiting_coordinator,)
-CHANGE_REQUEST_TERMINAL_STATUSES = {
-    EventStatus.draft,
-    EventStatus.event_completed,
-    EventStatus.event_cancelled,
-    EventStatus.event_rejected,
-}
-CHANGE_REQUEST_ALLOWED_STATUSES = tuple(
-    event_status
-    for event_status in EventStatus
-    if event_status not in CHANGE_REQUEST_TERMINAL_STATUSES
-    and event_status != EventStatus.draft
-)
-# TODO(confirm): Organisers may request changes while an event awaits a safety check.
 IMPORTANT_CHANGE_FIELDS = {
     "proposed_start",
     "proposed_end",

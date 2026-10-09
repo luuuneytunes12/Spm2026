@@ -20,6 +20,39 @@ class EventStatus(enum.StrEnum):
     event_cancelled = "event_cancelled"
 
 
+# Shared status groups keep workflow decisions aligned across routers and
+# services. Individual Event rows still store exactly one EventStatus value.
+TERMINAL_EVENT_STATUSES = (
+    EventStatus.event_completed,
+    EventStatus.event_cancelled,
+    EventStatus.event_rejected,
+)
+
+ACTIVE_ASSIGNMENT_STATUSES = (
+    EventStatus.submitted_awaiting_coordinator,
+    EventStatus.under_review,
+    EventStatus.awaiting_organiser_reply,
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.awaiting_safety_check,
+    EventStatus.safety_check_passed,
+)
+
+PLANNING_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
+
+CHANGE_REQUEST_DISALLOWED_STATUSES = (
+    EventStatus.draft,
+    *TERMINAL_EVENT_STATUSES,
+)
+
+# TODO(confirm): Organisers may request changes while an event awaits a safety check.
+CHANGE_REQUEST_ALLOWED_STATUSES = tuple(
+    event_status
+    for event_status in EventStatus
+    if event_status not in CHANGE_REQUEST_DISALLOWED_STATUSES
+)
+
+
 # An event that has been approved and has not yet finished: the window in
 # which resources (a venue, equipment) are committed to it. Anything earlier
 # is not yet a plan, and a rejected, completed or cancelled event has nothing

@@ -182,7 +182,7 @@ export function VenueView() {
       </section>
 
       {user?.role === Role.COORDINATOR && (
-        <VenueSuitability venueId={venue.id} />
+        <VenueSuitability venueId={venue.id} venueName={venue.name} />
       )}
 
       {user?.role === Role.VENUE_STAFF && (

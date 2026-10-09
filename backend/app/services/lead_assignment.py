@@ -12,19 +12,19 @@ from fastapi import status as http
 from sqlalchemy.orm import Session
 
 from app.core.roles import Role
-from app.models.enums import EventStatus, NotificationType
+from app.models.enums import (
+    NotificationType,
+    TERMINAL_EVENT_STATUSES,
+)
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.assignment import _notify, _notify_organiser, _record
 from app.services.assignment_overview import ActiveAssignments, UnassignedQueue
 from app.services.notifications import notify
 
-# An Event in one of these states is finished and can no longer be moved.
-FINISHED_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.event_rejected,
-    EventStatus.event_cancelled,
-    EventStatus.event_completed,
-)
+# Compatibility name retained for callers and tests; the shared enum module
+# owns the single definition.
+FINISHED_STATUSES = TERMINAL_EVENT_STATUSES
 
 
 class AssignmentRefused(Exception):
@@ -111,7 +111,7 @@ class ReassignEvent(LeadAssignmentAction):
     earlier activity log are untouched; one line is added."""
 
     def check(self, event: Event, coordinator: User) -> None:
-        if event.status in FINISHED_STATUSES:
+        if event.status in TERMINAL_EVENT_STATUSES:
             raise AssignmentRefused(http.HTTP_409_CONFLICT, "A finished Event cannot be reassigned")
         if ActiveAssignments().find(self.db, event.id) is None:
             raise AssignmentRefused(http.HTTP_409_CONFLICT, "This Event is not an active assignment")

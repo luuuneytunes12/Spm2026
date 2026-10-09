@@ -3,6 +3,7 @@
 // review; nothing here is a security boundary.
 
 import { apiFetch } from './api'
+import { EventStatus } from './events'
 
 export const BookingStatus = {
   PENDING: 'pending',
@@ -23,7 +24,11 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
 
 /** Event statuses from which a venue can be requested. Mirrors
  *  BOOKABLE_EVENT_STATUSES on the server. */
-export const BOOKABLE_EVENT_STATUSES: readonly string[] = ['event_approved', 'planning_event', 'safety_check_passed']
+export const BOOKABLE_EVENT_STATUSES: readonly EventStatus[] = [
+  EventStatus.EVENT_APPROVED,
+  EventStatus.PLANNING_EVENT,
+  EventStatus.SAFETY_CHECK_PASSED,
+] as const
 
 export interface VenueBooking {
   id: number

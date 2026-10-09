@@ -10,15 +10,9 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from app.models.enums import BookingStatus, EquipmentStatus, EventStatus
+from app.models.enums import BookingStatus, EquipmentStatus, EventStatus, PLANNING_STATUSES
 from app.models.events import Event
 from app.models.venues import VenueBooking
-
-# The planning stage an event is in while its venue and equipment are being
-# arranged -- `event_approved` on first pass, `planning_event` once a Safety Officer has
-# sent it back.
-PLANNING_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
-
 
 def outstanding_arrangements(db: Session, event: Event) -> list[str]:
     """What still stands between this event and going ahead.

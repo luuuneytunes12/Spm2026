@@ -260,6 +260,7 @@ def reject_safety_check(
 ) -> EventOut:
     """Reject the safety arrangement: back to planning with every venue and
     equipment arrangement to review again. Nothing is cancelled."""
+    # TODO(confirm): A Safety Officer rejection returns the event to planning rather than cancelling it.
     event = _awaiting_decision(event_id, db)
     bookings = _approved_bookings(db, event)
     return _send_back(

@@ -1,9 +1,11 @@
 from collections.abc import Iterable
 from datetime import datetime, timezone
+import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, exists, or_, select
+from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.datetimes import as_utc
@@ -31,6 +33,7 @@ from app.schemas.venue import (
 )
 
 router = APIRouter(prefix="/venues", tags=["venues"])
+logger = logging.getLogger(__name__)
 
 # Gated on role, not on VENUE_READ. The story is for INTERNAL users
 # (Event Coordinators and Venue Staff), and VENUE_READ is also held by
@@ -361,66 +364,104 @@ def get_venue_availability(
     _: object = Depends(_internal),
 ) -> VenueAvailabilityOut:
     """Return confirmed bookings, active tentative holds and closures."""
-    venue = db.get(Venue, venue_id)
-    if venue is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
     if as_utc(end) <= as_utc(start):
         _reject("end", "The end must be after the start.")
+    try:
+        venue = db.get(Venue, venue_id)
+        if venue is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
 
-    expire_tentative_holds(db)
-    window_start, window_end = as_utc(start), as_utc(end)
-    bookings = db.scalars(
-        select(VenueBooking)
-        .options(joinedload(VenueBooking.event))
-        .where(
-            VenueBooking.venue_id == venue_id,
-            VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
-            _active_hold_filter(datetime.now(timezone.utc)),
-            VenueBooking.start_time < window_end,
-            VenueBooking.end_time > window_start,
-        )
-    ).unique().all()
-    closures = db.scalars(
-        select(VenueUnavailability).where(
-            VenueUnavailability.venue_id == venue_id,
-            VenueUnavailability.start_time < window_end,
-            VenueUnavailability.end_time > window_start,
-        )
-    ).all()
+        expire_tentative_holds(db)
+        window_start, window_end = as_utc(start), as_utc(end)
+        bookings = db.scalars(
+            select(VenueBooking)
+            .options(joinedload(VenueBooking.event))
+            .where(
+                VenueBooking.venue_id == venue_id,
+                VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
+                _active_hold_filter(datetime.now(timezone.utc)),
+                VenueBooking.start_time < window_end,
+                VenueBooking.end_time > window_start,
+            )
+        ).unique().all()
+        closures = db.scalars(
+            select(VenueUnavailability).where(
+                VenueUnavailability.venue_id == venue_id,
+                VenueUnavailability.start_time < window_end,
+                VenueUnavailability.end_time > window_start,
+            )
+        ).all()
 
-    items = [
-        VenueAvailabilityItem(
-            id=booking.id,
-            kind=(
-                "confirmed_booking"
-                if booking.status == BookingStatus.approved
-                else "tentative_hold"
-            ),
-            start_time=booking.start_time,
-            end_time=booking.end_time,
-            event_id=booking.event_id,
-            event_name=booking.event.name,
-            expires_at=booking.expires_at,
-        )
-        for booking in bookings
-    ]
-    for item in items:
-        item.conflicts_with_unavailability = any(
-            closure.start_time < item.end_time and closure.end_time > item.start_time
+        items = [
+            VenueAvailabilityItem(
+                id=booking.id,
+                kind=(
+                    "confirmed_booking"
+                    if booking.status == BookingStatus.approved
+                    else "tentative_hold"
+                ),
+                start_time=booking.start_time,
+                end_time=booking.end_time,
+                event_id=booking.event_id,
+                event_name=booking.event.name,
+                expires_at=booking.expires_at,
+            )
+            for booking in bookings
+        ]
+        for item in items:
+            item.conflicts_with_unavailability = any(
+                closure.start_time < item.end_time and closure.end_time > item.start_time
+                for closure in closures
+            )
+        items.extend(
+            VenueAvailabilityItem(
+                id=closure.id,
+                kind="unavailability",
+                start_time=closure.start_time,
+                end_time=closure.end_time,
+                reason=closure.reason,
+            )
             for closure in closures
         )
-    items.extend(
-        VenueAvailabilityItem(
-            id=closure.id,
-            kind="unavailability",
-            start_time=closure.start_time,
-            end_time=closure.end_time,
-            reason=closure.reason,
+        items.sort(key=lambda item: (as_utc(item.start_time), item.kind, item.id))
+        return VenueAvailabilityOut(venue_id=venue_id, start=start, end=end, items=items)
+    except ProgrammingError as exc:
+        logger.exception(
+            "Failed to retrieve venue availability (venue_id=%s, start=%s, end=%s)",
+            venue_id,
+            start.isoformat(),
+            end.isoformat(),
         )
-        for closure in closures
-    )
-    items.sort(key=lambda item: (as_utc(item.start_time), item.kind, item.id))
-    return VenueAvailabilityOut(venue_id=venue_id, start=start, end=end, items=items)
+        if (
+            "venue_bookings.expires_at" in str(exc.orig)
+            and "does not exist" in str(exc.orig)
+        ):
+            detail = (
+                "The database is missing venue_bookings.expires_at. Apply "
+                "backend/sql/019_multi_venue_tentative_holds.sql to the configured "
+                "database, then retry."
+            )
+        else:
+            detail = (
+                "Availability could not be retrieved because a database query failed. "
+                "Check the backend logs for the error details."
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        ) from exc
+    except SQLAlchemyError as exc:
+        logger.exception(
+            "Failed to retrieve venue availability (venue_id=%s, start=%s, end=%s)",
+            venue_id,
+            start.isoformat(),
+            end.isoformat(),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Availability could not be retrieved because a database query failed. "
+            "Check the backend logs for the error details.",
+        ) from exc
 
 
 @router.post(

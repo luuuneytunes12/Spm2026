@@ -24,9 +24,14 @@ can actually accommodate the event.
   must be separated with commas, semicolons, or newlines. Each item is compared
   against the venue's recorded values.
 - The UI shows each check's category, required value, available value, and
-  diagnostic message. A failed check is a recoverable result, not a process
+  diagnostic message and a suggested resolution. On a venue detail page the
+  check compares the selected venue with the selected event; a booking does
+  not need to exist first. A failed check is a recoverable result, not a process
   failure; the Coordinator can choose a different event or retry after
   correcting the event or venue data.
+- On an assigned event's planning view, every active venue booking is checked
+  independently, and the combined-capacity result is shown separately. This
+  does not replace the direct selected-venue check on a venue detail page.
 - The endpoint only returns a result for an event assigned to the requesting
   Coordinator. Other roles cannot run the check.
 - One venue's failed checks do not alter other bookings. Combined capacity
@@ -37,7 +42,9 @@ can actually accommodate the event.
 | AC | Test case | Automated by |
 |---|---|---|
 | AC1–AC2 | Capacity, layout, accessibility, and facilities all match; the result is suitable | `backend/tests/test_venue_suitability.py::test_suitability_marks_a_venue_suitable_when_every_requirement_is_met` |
+| AC1 | A venue with 250-person capacity is checked directly for an event without an existing venue booking | individual venue suitability endpoint; `VenueSuitability.test.tsx` |
 | AC1–AC3 | Two attached venues are checked independently; one can fail while combined capacity passes | `backend/tests/test_venue_suitability.py::test_event_suitability_checks_each_venue_and_combines_capacity`; `VenueSuitability.test.tsx` |
+| AC1–AC3 | The assigned-event view shows each attached venue's result and the separate combined-capacity result | `frontend/src/components/EventVenueSuitability.test.tsx` |
 | AC1, AC3 | Several mismatches are all reported, including insufficient capacity, unsupported layout, missing accessibility, and missing facility | `backend/tests/test_venue_suitability.py::test_suitability_reports_each_unmet_requirement` |
 | AC3 | Missing expected attendance does not produce a false suitable result | `backend/tests/test_venue_suitability.py::test_suitability_does_not_claim_success_when_attendance_is_missing` |
 | Workflow | A Coordinator can select an assigned event; mismatch details remain visible for follow-up | `frontend/src/pages/venues/VenueSuitability.test.tsx` |

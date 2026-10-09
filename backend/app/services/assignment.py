@@ -8,24 +8,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.roles import Role
-from app.models.enums import EventStatus, NotificationType
+from app.models.enums import ACTIVE_ASSIGNMENT_STATUSES, NotificationType
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.notifications import notify
-
-# Statuses under which an event still needs an active Coordinator working
-# it. COMPLETED, CANCELLED and REJECTED are exits from the pipeline -- an
-# event there does not need reassigning just because its (former)
-# Coordinator has gone unavailable.
-ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.submitted_awaiting_coordinator,
-    EventStatus.under_review,
-    EventStatus.awaiting_organiser_reply,
-    EventStatus.event_approved,
-    EventStatus.planning_event,
-    EventStatus.awaiting_safety_check,
-    EventStatus.safety_check_passed,
-)
 
 
 def available_coordinators(db: Session):

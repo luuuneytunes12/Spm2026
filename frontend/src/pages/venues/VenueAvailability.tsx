@@ -1,24 +1,44 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { useAuth } from '../../auth/useAuth'
 import { ApiError } from '../../lib/api'
 import { fromDateTimeLocal } from '../../lib/events'
-import { Role } from '../../lib/roles'
 import { getVenue, getVenueAvailability } from '../../lib/venues'
-import type { VenueAvailability as VenueAvailabilityData, VenueDetail } from '../../lib/venues'
+import type {
+  VenueAvailability as VenueAvailabilityData,
+  VenueAvailabilityItem,
+  VenueDetail,
+} from '../../lib/venues'
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function localDateTimeValue(value: Date): string {
   const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000)
   return local.toISOString().slice(0, 16)
 }
 
+function localDateKey(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function initialRange(): [string, string] {
   const start = new Date()
+  start.setDate(1)
   start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 30)
-  end.setHours(23, 59, 0, 0)
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 0, 0)
   return [localDateTimeValue(start), localDateTimeValue(end)]
+}
+
+function monthValue(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthDateRange(value: Date): [string, string] {
+  const firstDay = new Date(value.getFullYear(), value.getMonth(), 1)
+  const lastDay = new Date(value.getFullYear(), value.getMonth() + 1, 0, 23, 59)
+  return [localDateTimeValue(firstDay), localDateTimeValue(lastDay)]
 }
 
 function dateLabel(value: string): string {
@@ -34,21 +54,55 @@ function timeLabel(value: string): string {
   return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-function timestampLabel(value: string): string {
-  return new Date(value).toLocaleString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function itemStatus(item: VenueAvailabilityItem): string {
+  if (item.kind === 'unavailability' || item.conflicts_with_unavailability) return 'Unavailable'
+  if (item.kind === 'tentative_hold') return 'Tentative hold'
+  return 'Confirmed booking'
+}
+
+function itemMarkerKind(item: VenueAvailabilityItem): VenueAvailabilityItem['kind'] {
+  return item.conflicts_with_unavailability ? 'unavailability' : item.kind
+}
+
+function availabilityErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401) return 'Your session has expired. Sign in again to view availability.'
+    if (error.status === 403) return 'Your account does not have permission to view venue availability.'
+    if (error.status === 404) return 'This venue could not be found. Return to venues and select another venue.'
+    if (error.status === 422) return `The selected date range is invalid: ${error.message}`
+    if (error.status === 503 && error.message.includes('backend/sql/019_multi_venue_tentative_holds.sql')) {
+      return error.message
+    }
+    if (error.status >= 500) {
+      return 'Availability is temporarily unavailable. Please try again. If the problem continues, contact support.'
+    }
+    return `Could not retrieve availability (HTTP ${error.status}): ${error.message}`
+  }
+  if (error instanceof TypeError) {
+    return 'Could not reach the backend to retrieve availability. Check that the backend is running and try again.'
+  }
+  return 'An unexpected error prevented availability from loading. Please try again; if it continues, contact support.'
+}
+
+function monthsInRange(start: Date, end: Date): Date[] {
+  const months: Date[] = []
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
+  const lastMonth = new Date(end.getFullYear(), end.getMonth(), 1)
+  while (cursor <= lastMonth) {
+    months.push(new Date(cursor))
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+  return months
 }
 
 export function VenueAvailability() {
   const { id } = useParams()
-  const { user } = useAuth()
   const venueId = Number(id)
   const [venue, setVenue] = useState<VenueDetail | null>(null)
-  const [[from, until], setRange] = useState(initialRange)
+  const [initialStart, initialEnd] = initialRange()
+  const [[from, until], setRange] = useState<[string, string]>([initialStart, initialEnd])
+  const [viewMonth, setViewMonth] = useState(() => new Date())
+  const [selectedDate, setSelectedDate] = useState(() => localDateKey(new Date()))
   const [availability, setAvailability] = useState<VenueAvailabilityData | null>(null)
   const [loadingVenue, setLoadingVenue] = useState(true)
   const [loadingCalendar, setLoadingCalendar] = useState(false)
@@ -66,8 +120,17 @@ export function VenueAvailability() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
+          console.error('Failed to load venue details.', { venueId, error: err })
           setError(
-            err instanceof ApiError ? err.message : 'Could not load this venue. Please try again.',
+            err instanceof ApiError && err.status === 404
+              ? 'This venue could not be found. Return to venues and select another venue.'
+              : err instanceof ApiError && err.status === 403
+                ? 'Your account does not have permission to view this venue.'
+                : err instanceof ApiError && err.status === 401
+                  ? 'Your session has expired. Sign in again to view this venue.'
+                  : err instanceof TypeError
+                    ? 'Could not reach the backend to load this venue. Check that the backend is running and try again.'
+                    : 'Could not load this venue. Please try again; check the browser console for diagnostic details.',
           )
         }
       })
@@ -79,9 +142,9 @@ export function VenueAvailability() {
     }
   }, [venueId])
 
-  async function loadCalendar() {
-    const start = fromDateTimeLocal(from)
-    const end = fromDateTimeLocal(until)
+  async function requestAvailability(startValue: string, endValue: string) {
+    const start = fromDateTimeLocal(startValue)
+    const end = fromDateTimeLocal(endValue)
     if (!start || !end) {
       setRangeError('Enter both a start and an end date and time.')
       return
@@ -95,23 +158,59 @@ export function VenueAvailability() {
     setError(null)
     setLoadingCalendar(true)
     try {
-      setAvailability(await getVenueAvailability(venueId, start, end))
+      const result = await getVenueAvailability(venueId, start, end)
+      setAvailability(result)
+      setSelectedDate(localDateKey(new Date(start)))
+      setViewMonth(new Date(new Date(start).getFullYear(), new Date(start).getMonth(), 1))
     } catch (err: unknown) {
       setAvailability(null)
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Could not load venue availability. You can retry without leaving this page.',
-      )
+      console.error('Failed to retrieve venue availability.', {
+        venueId,
+        start,
+        end,
+        error: err,
+      })
+      setError(availabilityErrorMessage(err))
     } finally {
       setLoadingCalendar(false)
     }
   }
 
-  const grouped = new Map<string, NonNullable<typeof availability>['items']>()
+  function loadCalendar() {
+    void requestAvailability(from, until)
+  }
+
+  function changeMonth(value: string) {
+    if (!value) return
+    const [year, month] = value.split('-').map(Number)
+    const nextMonth = new Date(year, month - 1, 1)
+    const [nextFrom, nextUntil] = monthDateRange(nextMonth)
+    setViewMonth(nextMonth)
+    setRange([nextFrom, nextUntil])
+    setSelectedDate(localDateKey(nextMonth))
+    void requestAvailability(nextFrom, nextUntil)
+  }
+
+  function shiftMonth(offset: number) {
+    const nextMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + offset, 1)
+    changeMonth(monthValue(nextMonth))
+  }
+
+  const itemsByDate = new Map<string, VenueAvailabilityItem[]>()
   for (const item of availability?.items ?? []) {
-    const key = new Date(item.start_time).toLocaleDateString()
-    grouped.set(key, [...(grouped.get(key) ?? []), item])
+    const start = new Date(item.start_time)
+    const lastOccupiedInstant = new Date(new Date(item.end_time).getTime() - 1)
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+    const lastDay = new Date(
+      lastOccupiedInstant.getFullYear(),
+      lastOccupiedInstant.getMonth(),
+      lastOccupiedInstant.getDate(),
+    )
+    while (day <= lastDay) {
+      const key = localDateKey(day)
+      itemsByDate.set(key, [...(itemsByDate.get(key) ?? []), item])
+      day.setDate(day.getDate() + 1)
+    }
   }
 
   if (loadingVenue) {
@@ -128,6 +227,11 @@ export function VenueAvailability() {
       </div>
     )
   }
+
+  const calendarMonths = availability
+    ? monthsInRange(new Date(availability.start), new Date(availability.end))
+    : []
+  const selectedItems = itemsByDate.get(selectedDate) ?? []
 
   return (
     <div className="stack">
@@ -165,7 +269,12 @@ export function VenueAvailability() {
             {rangeError}
           </p>
         )}
-        <button type="button" className="btn-primary" onClick={loadCalendar} disabled={loadingCalendar}>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={loadCalendar}
+          disabled={loadingCalendar}
+        >
           {loadingCalendar ? 'Loading calendar…' : 'Check availability'}
         </button>
       </section>
@@ -186,68 +295,138 @@ export function VenueAvailability() {
       {loadingCalendar && <p role="status">Loading availability…</p>}
       {availability && !loadingCalendar && (
         <section className="stack" aria-label="Venue availability calendar">
-          <h2>
-            {dateLabel(availability.start)} – {dateLabel(availability.end)}
-          </h2>
-          {availability.items.length === 0 ? (
-            <p className="card notice-empty">
-              No confirmed bookings, active holds, or closures in this period.
-            </p>
-          ) : (
-            [...grouped.entries()].map(([day, items]) => (
-              <section className="card stack" key={day} aria-label={day}>
-                <h3>{day}</h3>
-                <ul className="request-list">
-                  {items.map((item) => (
-                    <li className="card request" key={`${item.kind}-${item.id}`}>
-                      <div className="request-main">
-                        {item.event_id !== null && user?.role === Role.COORDINATOR ? (
-                          <Link className="request-title" to={`/coordinator/events/${item.event_id}`}>
-                            {item.event_name || 'Event booking'}
-                          </Link>
-                        ) : item.event_id !== null ? (
-                          <span className="request-title">
-                            {item.event_name || 'Event booking'} · Event #{item.event_id}
-                          </span>
-                        ) : (
-                          <span className="request-title">
-                            {item.kind === 'unavailability' ? 'Unavailable' : 'Tentative hold'}
-                          </span>
-                        )}
-                        <span className="request-meta">
-                          {timeLabel(item.start_time)} – {timeLabel(item.end_time)}
-                        </span>
-                        {item.kind === 'tentative_hold' && item.expires_at && (
-                          <span className="request-meta">
-                            Tentative hold expires {timestampLabel(item.expires_at)}
-                          </span>
-                        )}
-                        {item.kind === 'unavailability' && item.reason && (
-                          <span className="request-meta">Reason: {item.reason}</span>
-                        )}
-                        {item.conflicts_with_unavailability && (
-                          <span className="form-error" role="status">
-                            This booking overlaps a recorded unavailability period.
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={`badge ${
-                          item.kind === 'tentative_hold' ? 'badge-accent' : 'badge-muted'
-                        }`}
-                      >
-                        {item.kind === 'confirmed_booking'
-                          ? 'Confirmed booking'
-                          : item.kind === 'tentative_hold'
-                            ? 'Tentative hold'
-                            : 'Unavailable'}
-                      </span>
-                    </li>
+          <div className="availability-month-controls">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => shiftMonth(-1)}
+              aria-label="Previous month"
+            >
+              ‹
+            </button>
+            <div className="field">
+              <label htmlFor="availability-month">View month</label>
+              <input
+                id="availability-month"
+                type="month"
+                value={monthValue(viewMonth)}
+                onChange={(event) => changeMonth(event.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => shiftMonth(1)}
+              aria-label="Next month"
+            >
+              ›
+            </button>
+          </div>
+
+          {calendarMonths.map((month) => {
+            const firstDay = new Date(month.getFullYear(), month.getMonth(), 1)
+            const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
+            const rangeStart = localDateKey(new Date(availability.start))
+            const rangeEnd = localDateKey(new Date(availability.end))
+            const monthLabel = month.toLocaleDateString(undefined, {
+              month: 'long',
+              year: 'numeric',
+            })
+            return (
+              <section className="card availability-month" key={monthValue(month)}>
+                <h2>{monthLabel}</h2>
+                <div className="availability-calendar-grid" role="grid" aria-label={monthLabel}>
+                  {WEEKDAYS.map((weekday) => (
+                    <div className="availability-weekday" role="columnheader" key={weekday}>
+                      {weekday}
+                    </div>
                   ))}
-                </ul>
+                  {Array.from({ length: firstDay.getDay() }, (_, index) => (
+                    <div
+                      className="availability-day availability-day-empty"
+                      role="gridcell"
+                      aria-hidden="true"
+                      key={`empty-${index}`}
+                    />
+                  ))}
+                  {Array.from({ length: daysInMonth }, (_, index) => {
+                    const day = index + 1
+                    const date = new Date(month.getFullYear(), month.getMonth(), day)
+                    const key = localDateKey(date)
+                    const dayItems = itemsByDate.get(key) ?? []
+                    const inRange = key >= rangeStart && key <= rangeEnd
+                    const dateName = date.toLocaleDateString(undefined, {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })
+                    return (
+                      <div
+                        className={`availability-day${selectedDate === key ? ' availability-day-selected' : ''}`}
+                        role="gridcell"
+                        key={key}
+                      >
+                        <button
+                          type="button"
+                          className="availability-day-button"
+                          aria-label={`${dateName}${dayItems.length ? `, ${dayItems.length} availability ${dayItems.length === 1 ? 'entry' : 'entries'}` : ''}`}
+                          aria-pressed={selectedDate === key}
+                          disabled={!inRange}
+                          onClick={() => setSelectedDate(key)}
+                        >
+                          <span>{day}</span>
+                          {dayItems.length > 0 && (
+                            <span className="availability-day-markers" aria-hidden="true">
+                              {dayItems.map((item) => (
+                                <span
+                                  className={`availability-marker availability-marker-${itemMarkerKind(item)}`}
+                                  key={`${item.kind}-${item.id}`}
+                                />
+                              ))}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
               </section>
-            ))
-          )}
+            )
+          })}
+
+          <div className="availability-legend" aria-label="Calendar legend">
+            <span><i className="availability-marker availability-marker-confirmed_booking" /> Confirmed</span>
+            <span><i className="availability-marker availability-marker-tentative_hold" /> Tentative hold</span>
+            <span><i className="availability-marker availability-marker-unavailability" /> Unavailable</span>
+          </div>
+
+          <section className="card stack" aria-label={`Availability on ${selectedDate}`}>
+            <h2>{dateLabel(`${selectedDate}T12:00:00`)}</h2>
+            {selectedItems.length === 0 ? (
+              <p className="notice-empty">
+                No confirmed bookings, active holds, or closures on this date.
+              </p>
+            ) : (
+              <ul className="availability-day-list">
+                {selectedItems.map((item) => (
+                  <li className="availability-entry" key={`${item.kind}-${item.id}`}>
+                    <div className="availability-entry-main">
+                      <strong>{item.event_name || 'Unavailable'}</strong>
+                      <span>{timeLabel(item.start_time)} – {timeLabel(item.end_time)}</span>
+                    </div>
+                    <span
+                      className={`badge ${
+                        item.kind === 'tentative_hold' ? 'badge-accent' : 'badge-muted'
+                      }`}
+                    >
+                      {itemStatus(item)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </section>
       )}
 

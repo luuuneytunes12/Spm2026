@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
+import { EventVenueSuitability } from '../../components/EventVenueSuitability'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
 import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
 import { ApiError } from '../../lib/api'
@@ -384,8 +385,7 @@ export function AssignedEventView() {
       <section className="card">
         <h2>Status</h2>
         <StatusTimeline event={event} />
-        {(event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR ||
-          event.status === EventStatus.UNDER_REVIEW) && (
+        {event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR && (
           <div className="status-actions">
             <h3>Coordinator decision</h3>
             <div className="form-actions">
@@ -464,7 +464,10 @@ export function AssignedEventView() {
       </section>
 
       {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
-        <VenueBookingSection eventId={event.id} expectedAttendance={event.expected_attendance} />
+        <>
+          <VenueBookingSection eventId={event.id} expectedAttendance={event.expected_attendance} />
+          <EventVenueSuitability eventId={event.id} />
+        </>
       )}
 
       {event.status === EventStatus.SAFETY_CHECK_PASSED && (

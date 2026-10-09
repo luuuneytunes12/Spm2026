@@ -6,56 +6,47 @@ vi.mock('../../lib/events', () => ({
   listAssignedEvents: vi.fn(),
 }))
 vi.mock('../../lib/venues', () => ({
-  checkEventVenueSuitability: vi.fn(),
+  checkVenueSuitability: vi.fn(),
 }))
 
 import { listAssignedEvents } from '../../lib/events'
-import { checkEventVenueSuitability } from '../../lib/venues'
+import { checkVenueSuitability } from '../../lib/venues'
 import type { EventSummary } from '../../lib/events'
-import type { EventVenueSuitability } from '../../lib/venues'
+import type { VenueSuitability as VenueSuitabilityResult } from '../../lib/venues'
 
 const mockListAssignedEvents = vi.mocked(listAssignedEvents)
-const mockCheck = vi.mocked(checkEventVenueSuitability)
+const mockCheck = vi.mocked(checkVenueSuitability)
 
 const EVENT: EventSummary = {
   id: 18,
-  name: 'Access Workshop',
+  name: 'Hottie Stuff testing 2',
   event_type: 'Workshop',
   proposed_start: '2026-11-02T09:00:00Z',
   proposed_end: '2026-11-02T12:00:00Z',
-  expected_attendance: 80,
+  expected_attendance: 120,
   status: 'planning_event',
   submitted_at: null,
   updated_at: '2026-10-01T09:00:00Z',
 }
 
-const SUITABLE: EventVenueSuitability = {
+const SUITABLE: VenueSuitabilityResult = {
+  venue_id: 4,
   event_id: 18,
-  event_name: 'Access Workshop',
+  event_name: 'Hottie Stuff testing 2',
   suitable: true,
-  venues: [{
-    booking_id: 23,
-    venue_id: 4,
-    venue_name: 'Harbour Room',
-    suitable: true,
-    checks: [{
+  checks: [
+    {
       category: 'capacity',
-      requirement: '80 people',
-      available: '100 people',
+      requirement: '120 people',
+      available: '250 people',
       met: true,
       message: 'Capacity is sufficient.',
-    }],
-  }],
-  combined_capacity: {
-    required_capacity: 80,
-    available_capacity: 100,
-    met: true,
-    message: 'Combined venue capacity is sufficient.',
-  },
+    },
+  ],
 }
 
 function renderSuitability() {
-  render(<VenueSuitability venueId={4} />)
+  render(<VenueSuitability venueId={4} venueName="Harbour Room" />)
 }
 
 beforeEach(() => {
@@ -63,62 +54,32 @@ beforeEach(() => {
   mockListAssignedEvents.mockResolvedValue([EVENT])
 })
 
-it('shows each venue result and the independent combined capacity result', async () => {
-  mockCheck.mockResolvedValue({
-    ...SUITABLE,
-    suitable: false,
-    venues: [
-      SUITABLE.venues[0],
-      {
-        ...SUITABLE.venues[0],
-        booking_id: 24,
-        venue_id: 5,
-        venue_name: 'Studio B',
-        suitable: false,
-        checks: [{
-          category: 'layout',
-          requirement: 'Theatre',
-          available: 'Boardroom',
-          met: false,
-          message: 'Unsupported layout.',
-        }],
-      },
-    ],
-    combined_capacity: {
-      required_capacity: 80,
-      available_capacity: 150,
-      met: true,
-      message: 'Combined venue capacity is sufficient.',
-    },
-  })
-  renderSuitability()
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
-    target: { value: '18' },
-  })
-  fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
-
-  expect(await screen.findByRole('heading', { name: 'Harbour Room: Suitable' })).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: 'Studio B: Not suitable' })).toBeInTheDocument()
-  expect(screen.getByText(/Combined capacity: 150 \/ 80 required/)).toBeInTheDocument()
-  expect(screen.getByText(/Meets requirement/)).toBeInTheDocument()
-})
-
 describe('Check Venue Suitability for an Event', () => {
-  it('AC1-AC3: checks the selected event and displays detailed mismatches', async () => {
+  it('checks this venue directly even when the event has no venue booking', async () => {
+    mockCheck.mockResolvedValue(SUITABLE)
+    renderSuitability()
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
+      target: { value: '18' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
+
+    expect(await screen.findByRole('heading', { name: 'Suitable for Hottie Stuff testing 2' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('Capacity is sufficient.')).toBeInTheDocument()
+    expect(screen.getByText(/Required: 120 people; available: 250 people/)).toBeInTheDocument()
+    expect(screen.getByText(/You can proceed to check availability/)).toBeInTheDocument()
+    expect(screen.queryByText(/No active venue bookings are attached/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Combined capacity:/)).not.toBeInTheDocument()
+    expect(mockCheck).toHaveBeenCalledWith(4, 18)
+  })
+
+  it('explains each failed check and gives an action to resolve it', async () => {
     mockCheck.mockResolvedValue({
       ...SUITABLE,
       suitable: false,
-      venues: [{
-        ...SUITABLE.venues[0],
-        suitable: false,
-        checks: [
-        {
-          category: 'capacity',
-          requirement: '80 people',
-          available: '40 people',
-          met: false,
-          message: 'Insufficient capacity: 40 available; 80 required.',
-        },
+      checks: [
+        SUITABLE.checks[0],
         {
           category: 'layout',
           requirement: 'Theatre',
@@ -126,13 +87,21 @@ describe('Check Venue Suitability for an Event', () => {
           met: false,
           message: "Unsupported layout: 'Theatre' is not offered by this venue.",
         },
-        ],
-      }],
-      combined_capacity: {
-        ...SUITABLE.combined_capacity,
-        available_capacity: 40,
-        met: false,
-      },
+        {
+          category: 'accessibility',
+          requirement: 'Hearing loop',
+          available: 'None recorded',
+          met: false,
+          message: "Missing accessibility feature: 'Hearing loop'.",
+        },
+        {
+          category: 'facility',
+          requirement: 'Stage',
+          available: 'Projector',
+          met: false,
+          message: "Missing facility: 'Stage'.",
+        },
+      ],
     })
     renderSuitability()
 
@@ -141,14 +110,39 @@ describe('Check Venue Suitability for an Event', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
 
-    expect(await screen.findByRole('heading', { name: 'Not suitable for Access Workshop' }))
+    expect(await screen.findByRole('heading', { name: 'Not suitable for Hottie Stuff testing 2' }))
       .toBeInTheDocument()
-    expect(screen.getByText(/Insufficient capacity/)).toBeInTheDocument()
-    expect(screen.getByText(/Unsupported layout/)).toBeInTheDocument()
-    expect(mockCheck).toHaveBeenCalledWith(18)
+    expect(screen.getByText(/Required: Theatre; available: Boardroom/)).toBeInTheDocument()
+    expect(screen.getByText(/Choose a layout this venue supports/)).toBeInTheDocument()
+    expect(screen.getByText(/Choose a venue that provides this feature/)).toBeInTheDocument()
+    expect(screen.getByText(/Choose a venue with this facility/)).toBeInTheDocument()
+    expect(screen.getByText(/3 of 4 recorded checks need attention/)).toBeInTheDocument()
   })
 
-  it('keeps the workflow active and offers retry after a check request fails', async () => {
+  it('explains how to fix missing attendance', async () => {
+    mockCheck.mockResolvedValue({
+      ...SUITABLE,
+      suitable: false,
+      checks: [{
+        category: 'capacity',
+        requirement: 'Expected attendance is not recorded',
+        available: '250 people',
+        met: false,
+        message: 'Cannot confirm capacity until the event attendance is recorded.',
+      }],
+    })
+    renderSuitability()
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
+      target: { value: '18' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
+
+    expect(await screen.findByText(/Edit the event and enter its expected attendance/))
+      .toBeInTheDocument()
+  })
+
+  it('offers retry after a suitability request fails', async () => {
     mockCheck.mockRejectedValueOnce(new Error('temporary network issue')).mockResolvedValueOnce(SUITABLE)
     renderSuitability()
     fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
@@ -158,12 +152,12 @@ describe('Check Venue Suitability for an Event', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not check suitability')
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry check' }))
-    expect(await screen.findByRole('heading', { name: 'Suitable for Access Workshop' }))
+    expect(await screen.findByRole('heading', { name: 'Suitable for Hottie Stuff testing 2' }))
       .toBeInTheDocument()
     expect(mockCheck).toHaveBeenCalledTimes(2)
   })
 
-  it('allows retry when the assigned-event workflow cannot load its events', async () => {
+  it('allows retry when assigned events cannot be loaded', async () => {
     mockListAssignedEvents
       .mockRejectedValueOnce(new Error('temporary network issue'))
       .mockResolvedValueOnce([EVENT])

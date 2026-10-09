@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.exc import ProgrammingError
+
 from app.core.roles import Role
 from app.models.enums import BookingStatus, NotificationType
 from app.models.events import Event
@@ -150,6 +152,34 @@ def test_calendar_rejects_a_date_range_that_ends_before_it_starts(client, db_ses
 
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == ["query", "end"]
+
+
+def test_calendar_reports_missing_expiry_column_and_logs_database_error(
+    client, db_session, monkeypatch, caplog
+):
+    headers = _coordinator(client, db_session)
+    venue = _venue(db_session, "Calendar Hall")
+
+    def fail_expiring_holds(_db):
+        raise ProgrammingError(
+            "SELECT venue_bookings.expires_at",
+            {},
+            Exception("column venue_bookings.expires_at does not exist"),
+        )
+
+    monkeypatch.setattr("app.routers.venues.expire_tentative_holds", fail_expiring_holds)
+
+    response = client.get(
+        f"/venues/{venue.id}/availability",
+        params=_window(),
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert "venue_bookings.expires_at" in response.json()["detail"]
+    assert "backend/sql/019_multi_venue_tentative_holds.sql" in response.json()["detail"]
+    assert "Failed to retrieve venue availability" in caplog.text
+    assert "column venue_bookings.expires_at does not exist" in caplog.text
 
 
 def test_calendar_is_limited_to_internal_roles(client, db_session):
