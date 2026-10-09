@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
 import { E2E_API_PORT } from '../../playwright.config'
 import { autoAssign } from './db'
@@ -53,4 +54,25 @@ export async function submitEvent(
   if (!submitted.ok()) throw new Error(`submit failed: ${submitted.status()} ${await submitted.text()}`)
   if (assign) autoAssign(id)
   return id
+}
+
+/** Call the API as `headers`' user and expect `expected` back; returns the
+ *  parsed body. For hand-offs between people that are not the behaviour under
+ *  test. */
+export async function call(
+  request: APIRequestContext,
+  method: 'get' | 'post' | 'put',
+  path: string,
+  headers: Record<string, string>,
+  data?: unknown,
+  expected = 200,
+) {
+  const res = await request[method](`${API}${path}`, { headers, data })
+  expect(res.status(), `${method.toUpperCase()} ${path}: ${await res.text()}`).toBe(expected)
+  return res.json()
+}
+
+/** The signed-in user's own id. */
+export async function userId(request: APIRequestContext, headers: Record<string, string>): Promise<number> {
+  return (await call(request, 'get', '/auth/me', headers)).user.id
 }

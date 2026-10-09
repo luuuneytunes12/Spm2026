@@ -13,6 +13,7 @@ from app.models.events import Event
 from app.models.venues import Venue, VenueBooking
 from tests.integration.conftest import submit_event
 from tests.integration.test_coordinator_concurrency_postgres import THREADS, race
+from tests.test_venue_booking_request import _FirstBooking
 
 # These tests start from an event that already has a Coordinator; assignment is
 # now the Lead's job, so submit alone no longer provides one (see tests/conftest.py).
@@ -34,7 +35,11 @@ def _setup(client, make_user, db):
 
 
 def _post(client, headers, event_id, venue_id):
-    return client.post(f"/venue-bookings/events/{event_id}", json={"venue_id": venue_id}, headers=headers)
+    return _FirstBooking(
+        client.post(
+            f"/venue-bookings/events/{event_id}", json={"venues": [{"venue_id": venue_id}]}, headers=headers
+        )
+    )
 
 
 def test_scrum39_ac1_to_ac3_a_request_reaches_the_queue_carrying_everything(client, make_user, db):
@@ -83,6 +88,26 @@ def test_scrum39_an_event_can_have_multiple_live_venue_requests(client, make_use
     assert first.status_code == second.status_code == 201
     assert duplicate.status_code == 409
     assert db.query(VenueBooking).filter_by(event_id=event_id).count() == 2
+
+
+def test_scrum39_several_venues_for_one_event_are_stored_and_each_reaches_the_queue(client, make_user, db):
+    _sam, sam_h, staff_h, event_id, venue_id = _setup(client, make_user, db)
+    other = Venue(name="Bay Room", location="Level 2", capacity=100)
+    db.add(other)
+    db.commit()
+
+    res = client.post(
+        f"/venue-bookings/events/{event_id}",
+        json={"venues": [{"venue_id": venue_id, "facilities_needs": "Two microphones"}, {"venue_id": other.id}]},
+        headers=sam_h,
+    )
+
+    assert res.status_code == 201
+    assert db.query(VenueBooking).count() == 2
+    assert db.get(Event, event_id).status == EventStatus.planning_event
+    queue = client.get("/venue-bookings/queue", headers=staff_h).json()
+    assert {b["venue"]["name"] for b in queue} == {"Marina Hall", "Bay Room"}
+    assert {b["venue"]["name"]: b["facilities_needs"] for b in queue}["Marina Hall"] == "Two microphones"
 
 
 def test_scrum39_the_request_persists_across_separate_sessions(client, make_user, db):

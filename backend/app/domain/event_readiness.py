@@ -8,35 +8,44 @@ outstanding items.
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.models.enums import BookingStatus, EquipmentStatus, EventStatus, PLANNING_STATUSES
+from app.domain.requirement_progress import RequirementReservationLinks
+from app.models.equipment import CoordinatorEquipmentRequirement
+from app.models.enums import (
+    BookingStatus,
+    EquipmentStatus,
+    EventStatus,
+    PLANNING_STATUSES,
+)
 from app.models.events import Event
 from app.models.venues import VenueBooking
 
-def outstanding_arrangements(db: Session, event: Event) -> list[str]:
-    """What still stands between this event and going ahead.
 
-    It needs an APPROVED venue booking and every equipment line RESERVED.
+def outstanding_arrangements(db: Session, event: Event) -> list[str]:
+    """What still stands between this event and going ahead -- every item,
+    each with its status, so the Coordinator sees the whole list at once.
+
+    Venue: the event needs at least one booking that is not cancelled, and
+    EVERY such booking must be approved -- a pending one (a tentative hold) or
+    a rejected one is outstanding, named with its status. A cancelled booking
+    is withdrawn, so it is ignored. A booking a Safety Officer has flagged for
+    re-review is outstanding until its staff clear the flag.
+
+    Equipment: every line and every Coordinator requirement must be RESERVED.
     Cancelled lines are ignored -- the Organiser withdrew them, so there is
     nothing left to arrange. An event that asked for no equipment has no
-    equipment to wait on. A booking or line a Safety Officer has flagged for
-    re-review is outstanding until its staff clear the flag.
+    equipment to wait on.
     """
     outstanding: list[str] = []
 
     now = datetime.now(timezone.utc)
-    bookings = (
+    in_play = (
         db.query(VenueBooking)
+        .options(joinedload(VenueBooking.venue))
         .filter(
             VenueBooking.event_id == event.id,
-            VenueBooking.status.in_(
-                (
-                    BookingStatus.pending,
-                    BookingStatus.tentative_hold,
-                    BookingStatus.approved,
-                )
-            ),
+            VenueBooking.status != BookingStatus.cancelled,
             or_(
                 VenueBooking.status != BookingStatus.tentative_hold,
                 and_(
@@ -48,17 +57,18 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
         .order_by(VenueBooking.id)
         .all()
     )
-    if not bookings:
-        outstanding.append("Venue booking is not approved")
-    for booking in bookings:
+    if not in_play:
+        outstanding.append(
+            "The event has no venue: no venue booking has been requested, or all were cancelled"
+        )
+    for booking in in_play:
         if booking.status is not BookingStatus.approved:
             outstanding.append(
-                f"Venue booking for '{booking.venue.name}' is not approved "
-                f"(status: {booking.status})"
+                f"Venue booking '{booking.venue.name}' is not approved (status: {booking.status})"
             )
         elif booking.safety_recheck_reason:
             outstanding.append(
-                f"Venue booking for '{booking.venue.name}' is awaiting safety re-review by Venue Staff"
+                f"Venue booking '{booking.venue.name}' is awaiting safety re-review by Venue Staff"
             )
 
     for line in event.equipment_items:
@@ -69,6 +79,21 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
         elif line.safety_recheck_reason:
             outstanding.append(
                 f"Equipment '{line.equipment.name}' is awaiting safety re-review by Technical Support"
+            )
+
+    requirements = (
+        db.query(CoordinatorEquipmentRequirement)
+        .filter(CoordinatorEquipmentRequirement.event_id == event.id)
+        .order_by(CoordinatorEquipmentRequirement.id)
+        .all()
+    )
+    progress = RequirementReservationLinks(db).progress_of(requirements)
+    for requirement in requirements:
+        requirement_status = progress[requirement.id].status
+        if requirement_status is not EquipmentStatus.reserved:
+            outstanding.append(
+                f"Equipment requirement '{requirement.category}' is not reserved "
+                f"(status: {requirement_status})"
             )
     return outstanding
 

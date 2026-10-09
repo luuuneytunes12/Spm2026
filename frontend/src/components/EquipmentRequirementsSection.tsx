@@ -23,6 +23,9 @@ interface Props {
   organiserLines: EquipmentLine[]
   /** The Organiser's "Other equipment notes". Context only. */
   organiserNotes: string | null
+  /** Called after a requirement is added: the first one moves an approved
+   *  event into planning, so the page reloads the event to show its status. */
+  onChanged?: () => void
 }
 
 /** One of the Organiser's requests, in the words used to pick and to recall it. */
@@ -72,6 +75,7 @@ export function EquipmentRequirementsSection({
   eventStatus,
   organiserLines,
   organiserNotes,
+  onChanged,
 }: Props) {
   const editable = canRecordEquipment(eventStatus)
 
@@ -231,6 +235,7 @@ export function EquipmentRequirementsSection({
             try {
               const added = await addRequirement(eventId, input)
               setRequirements((current) => [...(current ?? []), added])
+              onChanged?.()
               return true
             } catch (err) {
               setError(reason(err, 'Could not add this requirement.'))

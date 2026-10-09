@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { StatusTimeline } from '../../components/StatusTimeline'
 import { ApiError } from '../../lib/api'
 import {
   EVENT_STATUS_LABELS,
@@ -112,6 +113,11 @@ export function SafetyCheckView() {
           <span className="badge badge-accent">{statusLabel(event.status)}</span>
         </p>
       </header>
+
+      <section className="card" aria-labelledby="status-heading">
+        <h2 id="status-heading">Status</h2>
+        <StatusTimeline status={event.status} activity={event.activity} />
+      </section>
 
       {done && (
         <p className="notice" role="status">
@@ -258,7 +264,7 @@ export function SafetyCheckView() {
                       ? 'Confirm rejection'
                       : 'Send change request'}
                 </button>
-                <button type="button" onClick={() => setDecision(null)} disabled={saving}>
+                <button type="button" className="btn-secondary" onClick={() => setDecision(null)} disabled={saving}>
                   Back
                 </button>
               </div>
@@ -273,10 +279,10 @@ export function SafetyCheckView() {
               >
                 Approve
               </button>
-              <button type="button" onClick={() => setDecision('request-changes')}>
+              <button type="button" className="btn-secondary" onClick={() => setDecision('request-changes')}>
                 Request changes
               </button>
-              <button type="button" onClick={() => setDecision('reject')}>
+              <button type="button" className="btn-danger" onClick={() => setDecision('reject')}>
                 Reject
               </button>
             </div>

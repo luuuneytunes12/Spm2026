@@ -89,6 +89,7 @@ function renderSection(
     eventStatus: EventStatus
     organiserLines: EquipmentLine[]
     organiserNotes: string | null
+    onChanged: () => void
   }> = {},
 ) {
   return render(
@@ -97,6 +98,7 @@ function renderSection(
       eventStatus={props.eventStatus ?? EventStatus.EVENT_APPROVED}
       organiserLines={props.organiserLines ?? []}
       organiserNotes={props.organiserNotes ?? null}
+      onChanged={props.onChanged}
     />,
   )
 }
@@ -137,6 +139,33 @@ describe('showing what has been recorded', () => {
     renderSection()
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load/i)
+  })
+})
+
+describe('adding a requirement tells the page, so it can show the event moving into planning', () => {
+  it('calls onChanged once a requirement has been added', async () => {
+    const user = userEvent.setup()
+    const onChanged = vi.fn()
+    mockAdd.mockResolvedValue({ ...AUDIO, id: 9 })
+    renderSection({ onChanged })
+
+    await user.selectOptions(await screen.findByLabelText('Equipment type'), 'Audio')
+    await user.click(screen.getByRole('button', { name: 'Add requirement' }))
+
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not call onChanged when the add is refused', async () => {
+    const user = userEvent.setup()
+    const onChanged = vi.fn()
+    mockAdd.mockRejectedValue(new ApiError(409, 'Equipment can only be recorded once the event is approved.'))
+    renderSection({ onChanged })
+
+    await user.selectOptions(await screen.findByLabelText('Equipment type'), 'Audio')
+    await user.click(screen.getByRole('button', { name: 'Add requirement' }))
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(onChanged).not.toHaveBeenCalled()
   })
 })
 

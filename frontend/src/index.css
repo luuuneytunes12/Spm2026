@@ -34,6 +34,9 @@
   --danger: #d92d42;
   --danger-bg: rgba(217, 45, 66, 0.09);
   --danger-border: rgba(217, 45, 66, 0.3);
+  /* Red for TEXT on the tinted --danger-bg: --danger itself is for borders
+     and icons and falls just short of 4.5:1 there. */
+  --danger-text: #b4232f;
   --success: #1a8f5a;
   --success-bg: rgba(26, 143, 90, 0.1);
   --warning: #b8720a;
@@ -92,6 +95,7 @@
     --danger: #ff6b7d;
     --danger-bg: rgba(255, 107, 125, 0.12);
     --danger-border: rgba(255, 107, 125, 0.32);
+  --danger-text: #ff8c9a;
     --success: #4ade9a;
     --success-bg: rgba(74, 222, 154, 0.12);
     --warning: #e0a542;
@@ -127,6 +131,7 @@
   --danger: #ff6b7d;
   --danger-bg: rgba(255, 107, 125, 0.12);
   --danger-border: rgba(255, 107, 125, 0.32);
+  --danger-text: #ff8c9a;
   --success: #4ade9a;
   --success-bg: rgba(74, 222, 154, 0.12);
   --warning: #e0a542;

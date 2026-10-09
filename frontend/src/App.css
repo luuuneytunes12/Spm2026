@@ -526,6 +526,18 @@
   color: var(--danger);
 }
 
+/* An error box whose children stack (a lead-in line, then a list). */
+.form-error-stack {
+  flex-direction: column;
+  gap: 4px;
+  color: var(--danger-text);
+}
+
+.form-error-stack p,
+.form-error-stack ul {
+  margin: 0;
+}
+
 /* --- Event requests --------------------------------------------------- */
 
 /* Header with an action button on the right; stacks on narrow screens. */
@@ -553,6 +565,21 @@
 
   &:hover:not(:disabled) {
     background: var(--surface-2);
+  }
+}
+
+/* A secondary button for a destructive choice (Reject). */
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+
+  &:hover:not(:disabled) {
+    background: var(--danger-bg);
   }
 }
 

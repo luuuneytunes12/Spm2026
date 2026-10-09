@@ -786,10 +786,12 @@ def set_event_registration(
 ) -> EventOut:
     """Open or close registration on a confirmed event, and set its dates.
 
-    Enabling needs a confirmed event and both an open and a close date, with
-    the close no earlier than the open; each offending field is reported the
-    way the submit endpoint reports missing ones, so the form can flag it.
-    Switching registration off is always allowed.
+    Enabling needs a confirmed event ('Safety Check Passed (Event Confirmed)')
+    whose venue and equipment are still arranged, and both an open and a
+    close date. The close must not be before the open, nor after the event
+    starts. Each offending field is reported the way the submit endpoint
+    reports missing ones, so the form can flag it. Switching registration off
+    is always allowed.
     """
     event = _get_assigned_event(event_id, user, db, lock=True)
 
@@ -797,17 +799,22 @@ def set_event_registration(
         if event.status != EventStatus.safety_check_passed:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Registration can only be opened for a confirmed event.",
+                detail=(
+                    "Registration cannot be opened yet: the Safety Officer must approve this "
+                    f"event first. It is '{event.status}'."
+                ),
+            )
+        outstanding = outstanding_arrangements(db, event)
+        if outstanding:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Registration cannot be opened. Outstanding: " + "; ".join(outstanding) + ".",
             )
         problems = []
         if body.registration_opens_at is None:
-            problems.append(
-                ("registration_opens_at", "Registration open date is required.")
-            )
+            problems.append(("registration_opens_at", "Registration open date is required."))
         if body.registration_closes_at is None:
-            problems.append(
-                ("registration_closes_at", "Registration close date is required.")
-            )
+            problems.append(("registration_closes_at", "Registration close date is required."))
         if (
             body.registration_opens_at is not None
             and body.registration_closes_at is not None
@@ -824,12 +831,22 @@ def set_event_registration(
                     "Ensure the registration close date is later than the open date.",
                 ),
             )
+        if (
+            body.registration_closes_at is not None
+            and event.proposed_start is not None
+            and _utc(body.registration_closes_at) > _utc(event.proposed_start)
+        ):
+            problems.append(
+                (
+                    "registration_closes_at",
+                    "Registration cannot close after the event starts. Choose a close date "
+                    "on or before the event's start.",
+                ),
+            )
         if problems:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=[
-                    {"loc": ["body", field], "msg": msg} for field, msg in problems
-                ],
+                detail=[{"loc": ["body", field], "msg": msg} for field, msg in problems],
             )
         event.registration_opens_at = body.registration_opens_at
         event.registration_closes_at = body.registration_closes_at

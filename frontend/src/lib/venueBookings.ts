@@ -27,7 +27,6 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
 export const BOOKABLE_EVENT_STATUSES: readonly EventStatus[] = [
   EventStatus.EVENT_APPROVED,
   EventStatus.PLANNING_EVENT,
-  EventStatus.SAFETY_CHECK_PASSED,
 ] as const
 
 export interface VenueBooking {
@@ -40,8 +39,11 @@ export interface VenueBooking {
   end_time: string
   expires_at: string | null
   expected_attendance: number | null
+  /** What was asked of THIS venue; the Event's own needs where nothing was
+   *  entered for it. */
   room_layout_preference: string | null
   accessibility_needs: string | null
+  facilities_needs: string | null
   venue_requirements: string | null
   requested_by: { name: string; email: string }
   /** The outcome, all null while pending. `decision_notes` is the reason
@@ -56,15 +58,24 @@ export interface VenueBooking {
   reviewed_at: string | null
 }
 
-/** Ask for a venue. The timing and requirements come from the event itself,
- *  so the venue is the only thing sent. `null` is allowed on purpose: the
- *  server refuses it with a message the form shows. */
-export function submitVenueBooking(eventId: number, venueId: number | null): Promise<VenueBooking> {
+/** One venue being asked for, and what is needed of it. A need left out (or
+ *  blank) means "as the Event says". */
+export interface VenueRequest {
+  venue_id: number
+  room_layout_preference?: string
+  accessibility_needs?: string
+  facilities_needs?: string
+}
+
+/** Ask for one or more venues. A separate booking is made for each, under the
+ *  same event. The timing comes from the event itself. An empty list is
+ *  allowed on purpose: the server refuses it with a message the form shows. */
+export function submitVenueBookings(eventId: number, venues: VenueRequest[]): Promise<VenueBooking[]> {
   return apiFetch(`/venue-bookings/events/${eventId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ venue_id: venueId }),
-  }) as Promise<VenueBooking>
+    body: JSON.stringify({ venues }),
+  }) as Promise<VenueBooking[]>
 }
 
 /** Booking requests already made for an event the caller coordinates. */

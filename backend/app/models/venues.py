@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import ARRAY, JSON, BigInteger, CheckConstraint, Enum, ForeignKey, Text
+from sqlalchemy import (
+    ARRAY,
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Index,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -41,6 +51,17 @@ class VenueBooking(Base):
             "status != 'tentative_hold' OR expires_at IS NOT NULL",
             name="ck_venue_booking_hold_requires_expiry",
         ),
+        # An event may hold several live requests, but only one per venue,
+        # enforced by the database as well as the API (see
+        # sql/019_venue_bookings_many_per_event.sql).
+        Index(
+            "uq_venue_bookings_one_live_per_event_venue",
+            "event_id",
+            "venue_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'approved')"),
+            sqlite_where=text("status IN ('pending', 'approved')"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -71,6 +92,11 @@ class VenueBooking(Base):
     # booking stays approved -- and keeps the venue held -- until Venue Staff
     # re-approve (clearing it) or reject it. Null means nothing outstanding.
     safety_recheck_reason: Mapped[str | None] = mapped_column(Text)
+    # What the Coordinator asked of THIS venue (sql/019). Null means "as the
+    # Event says", which is how bookings made before 019 read.
+    room_layout_preference: Mapped[str | None] = mapped_column(Text)
+    accessibility_needs: Mapped[str | None] = mapped_column(Text)
+    facilities_needs: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]
 

@@ -1,5 +1,15 @@
 /**
- * Component tests for the Coordinator's Registration card (SCRUM-66).
+ * Component tests for the Coordinator's Registration card (SCRUM-66,
+ * "Schedule Registration for a Confirmed Event").
+ *
+ *   SCRUM-66 AC1  dates entered for a confirmed event are sent, then shown
+ *   SCRUM-66 AC2  an unconfirmed event is told the Safety Officer must approve first
+ *   SCRUM-66 AC3  outstanding venue / equipment items are listed with their status
+ *   SCRUM-66 AC4  close before open, or after the event starts: the date fields are flagged
+ *   SCRUM-66 AC5  (Attendee side) see AttendeeEvents / MyRegistrations tests
+ *   SCRUM-66 AC6  (denied for another Coordinator) is the API's job; the screen shows a not-found
+ *
+ * The older tests below keep their historical AC numbers.
  *
  * Each test is named for the acceptance criterion it covers. Whether the API
  * accepts the dates and who may enable registration is the backend's job
@@ -197,5 +207,78 @@ describe('Registration card', () => {
     expect(await screen.findByLabelText('Enable registration')).toBeChecked()
     expect(screen.getByLabelText('Registration opens')).not.toHaveValue('')
     expect(screen.getByLabelText('Registration closes')).not.toHaveValue('')
+  })
+
+  it('SCRUM-66 AC2: an event awaiting its safety check says the Safety Officer must approve first', async () => {
+    mockGet.mockResolvedValue({ ...CONFIRMED, status: 'awaiting_safety_check' })
+    renderView()
+
+    expect(await screen.findByRole('note')).toHaveTextContent('once the Safety Officer has approved this event')
+    expect(screen.queryByLabelText('Enable registration')).not.toBeInTheDocument()
+  })
+
+  it.each(['event_approved', 'planning_event'])(
+    'SCRUM-66 AC2: an event in %s says the Safety Officer must approve first',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...CONFIRMED, status: status as AssignedEventDetail['status'] })
+      renderView()
+      expect(await screen.findByRole('note')).toHaveTextContent('Safety Officer has approved')
+    },
+  )
+
+  it('SCRUM-66 AC2: the Safety Officer notice is not shown once the event is confirmed', async () => {
+    renderView()
+    await screen.findByLabelText('Enable registration')
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+  })
+
+  it('SCRUM-66 AC2: if the server refuses an unconfirmed event, the Safety Officer reason is shown', async () => {
+    mockSet.mockRejectedValue(
+      new ApiError(409, "Registration cannot be opened yet: the Safety Officer must approve this event first. It is 'planning_event'."),
+    )
+    renderView()
+    await userEvent.click(await screen.findByLabelText('Enable registration'))
+    await fillDates('2026-10-10T09:00', '2026-10-30T09:00')
+    await userEvent.click(screen.getByRole('button', { name: 'Save registration settings' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Safety Officer must approve this event first')
+  })
+
+  it('SCRUM-66 AC3: when a venue or equipment is no longer ready, every outstanding item is shown', async () => {
+    mockSet.mockRejectedValue(
+      new ApiError(
+        409,
+        "Registration cannot be opened. Outstanding: Venue booking 'Hall A' is not approved (status: pending); Equipment 'Projector' is not reserved (status: requested).",
+      ),
+    )
+    renderView()
+    await userEvent.click(await screen.findByLabelText('Enable registration'))
+    await fillDates('2026-10-10T09:00', '2026-10-30T09:00')
+    await userEvent.click(screen.getByRole('button', { name: 'Save registration settings' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("Venue booking 'Hall A' is not approved (status: pending)")
+    expect(alert).toHaveTextContent("Equipment 'Projector' is not reserved (status: requested)")
+    expect(screen.queryByText('Registration settings saved.')).not.toBeInTheDocument()
+  })
+
+  it('SCRUM-66 AC4: a close date after the event starts flags the close date only', async () => {
+    mockSet.mockRejectedValue(
+      new ApiError(
+        422,
+        'registration_closes_at: Registration cannot close after the event starts. Choose a close date on or before the event\'s start.',
+        ['registration_closes_at'],
+        ["Registration cannot close after the event starts. Choose a close date on or before the event's start."],
+      ),
+    )
+    renderView()
+    await userEvent.click(await screen.findByLabelText('Enable registration'))
+    await fillDates('2026-10-10T09:00', '2026-11-30T09:00')
+    await userEvent.click(screen.getByRole('button', { name: 'Save registration settings' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('cannot close after the event starts')
+    expect(screen.getByLabelText('Registration closes')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Registration opens')).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByText('Registration settings saved.')).not.toBeInTheDocument()
   })
 })
