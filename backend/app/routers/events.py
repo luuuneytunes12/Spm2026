@@ -2,29 +2,27 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
 from app.models.enums import (
+    CHANGE_REQUEST_ALLOWED_STATUSES,
     BookingStatus,
     ChangeRequestStatus,
     EquipmentStatus,
     EventStatus,
     NotificationType,
+    PLANNING_STATUSES,
 )
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import VenueBooking
-from app.domain.event_readiness import (
-    PLANNING_STATUSES,
-    can_enter_preparation,
-    outstanding_arrangements,
-)
+from app.domain.event_readiness import can_enter_preparation, outstanding_arrangements
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
     MANDATORY_FIELDS,
@@ -45,10 +43,7 @@ from app.services.submission_notice import SubmissionNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
 
-REVIEWABLE_STATUSES = (
-    EventStatus.submitted_awaiting_coordinator,
-    EventStatus.under_review,
-)
+REVIEWABLE_STATUSES = (EventStatus.submitted_awaiting_coordinator,)
 IMPORTANT_CHANGE_FIELDS = {
     "proposed_start",
     "proposed_end",
@@ -240,8 +235,14 @@ def _change_request_out(
             .options(joinedload(VenueBooking.venue))
             .filter(
                 VenueBooking.event_id == request.event_id,
-                VenueBooking.status.in_(
-                    (BookingStatus.pending, BookingStatus.approved)
+                or_(
+                    VenueBooking.status.in_(
+                        (BookingStatus.pending, BookingStatus.approved)
+                    ),
+                    and_(
+                        VenueBooking.status == BookingStatus.tentative_hold,
+                        VenueBooking.expires_at > datetime.now(timezone.utc),
+                    ),
                 ),
             )
             .order_by(VenueBooking.id)
@@ -267,6 +268,16 @@ def _change_request_out(
         created_at=request.created_at,
         reviewed_at=request.reviewed_at,
         important_change=important,
+        safety_check_required=(
+            "expected_attendance" in changes
+            and request.event.status
+            in (
+                EventStatus.event_approved,
+                EventStatus.planning_event,
+                EventStatus.awaiting_safety_check,
+                EventStatus.safety_check_passed,
+            )
+        ),
         venue_bookings_to_reconsider=[
             {
                 "id": booking.id,
@@ -297,13 +308,20 @@ def _get_change_request_for_coordinator(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found"
         )
-    event = _get_assigned_event(change_request.event_id, user, db)
+    event = db.get(Event, change_request.event_id, with_for_update=True)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.coordinator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned Event Coordinator may review this change request.",
+        )
     if change_request.status != ChangeRequestStatus.pending:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Change request is no longer pending.",
         )
-    if event.status not in REVIEWABLE_STATUSES:
+    if event.status not in CHANGE_REQUEST_ALLOWED_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This event can no longer be changed.",
@@ -522,7 +540,7 @@ def request_event_changes(
     user: User = Depends(require_permission(Permission.EVENT_WRITE)),
 ) -> EventChangeRequestOut:
     event = _get_own_event(event_id, user, db)
-    if event.status not in REVIEWABLE_STATUSES:
+    if event.status not in CHANGE_REQUEST_ALLOWED_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This event can no longer be changed.",
@@ -624,6 +642,29 @@ def approve_change_request(
     for field, value in changes.items():
         setattr(event, field, value)
 
+    attendance_changed_after_approval = (
+        "expected_attendance" in (change_request.proposed_changes or {})
+        and event.status
+        in (
+            EventStatus.event_approved,
+            EventStatus.planning_event,
+            EventStatus.awaiting_safety_check,
+            EventStatus.safety_check_passed,
+        )
+    )
+    if attendance_changed_after_approval:
+        previous_status = event.status
+        event.status = EventStatus.planning_event
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=previous_status,
+                to_status=event.status,
+                note="Attendance changed; a new safety check is required.",
+            )
+        )
+
     change_request.status = ChangeRequestStatus.approved
     change_request.reviewed_by = user.id
     change_request.reviewed_at = datetime.now(timezone.utc)
@@ -638,6 +679,17 @@ def approve_change_request(
             message=f"Your requested changes for '{event.name or 'your event'}' were approved.",
         )
     )
+    if attendance_changed_after_approval:
+        notify(
+            db,
+            user_id=user.id,
+            type=NotificationType.safety_changes_requested,
+            message=(
+                f"Attendance for '{event.name or 'Event'}' changed. "
+                "Review venue capacity and submit it for a new safety check."
+            ),
+            event_id=event.id,
+        )
     db.commit()
     db.refresh(change_request)
     return _change_request_out(db, change_request)
@@ -811,8 +863,41 @@ def approve_event(
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.COORDINATOR)),
 ) -> EventOut:
-    """Approve a request assigned to the current Coordinator."""
-    event = _get_reviewable_event(event_id, user, db)
+    """Approve an assigned Submitted request; Leads only assign.
+
+    TODO(confirm): Coordinator Leads remain view-only for this decision.
+    """
+    event = db.get(Event, event_id, with_for_update=True)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.coordinator_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An event must be assigned to a Coordinator before it can be approved.",
+        )
+    if event.coordinator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned Event Coordinator may approve this event.",
+        )
+    if event.status != EventStatus.submitted_awaiting_coordinator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a Submitted event can be approved.",
+        )
+    pending_change = (
+        db.query(EventChangeRequest)
+        .filter(
+            EventChangeRequest.event_id == event.id,
+            EventChangeRequest.status == ChangeRequestStatus.pending,
+        )
+        .first()
+    )
+    if pending_change:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Resolve the pending change request before deciding this event.",
+        )
     previous_status = event.status
     event.status = EventStatus.event_approved
     db.add(
@@ -843,10 +928,49 @@ def reject_event(
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.COORDINATOR)),
 ) -> EventOut:
-    """Reject an assigned request and retain the Coordinator's reason."""
-    event = _get_reviewable_event(event_id, user, db)
+    """Reject an assigned request and retain the Coordinator's reason.
+
+    TODO(confirm): Coordinator Leads remain view-only for this decision.
+    """
+    event = db.get(Event, event_id, with_for_update=True)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.coordinator_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An event must be assigned to a Coordinator before it can be rejected.",
+        )
+    if event.coordinator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned Event Coordinator may reject this event.",
+        )
+    if event.status != EventStatus.submitted_awaiting_coordinator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a Submitted event can be rejected.",
+        )
     previous_status = event.status
     event.status = EventStatus.event_rejected
+    # TODO(confirm): Rejection releases all live venue bookings and tentative holds.
+    live_bookings = (
+        db.query(VenueBooking)
+        .filter(
+            VenueBooking.event_id == event.id,
+            VenueBooking.status.in_(
+                (
+                    BookingStatus.pending,
+                    BookingStatus.tentative_hold,
+                    BookingStatus.approved,
+                )
+            ),
+        )
+        .all()
+    )
+    for booking in live_bookings:
+        booking.status = BookingStatus.cancelled
+        booking.expires_at = None
+        booking.decision_notes = f"Released because the event was rejected: {body.reason}"
     db.add(
         EventStatusHistory(
             event_id=event.id,

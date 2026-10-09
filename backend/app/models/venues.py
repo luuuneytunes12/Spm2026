@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import ARRAY, JSON, BigInteger, Enum, ForeignKey, Index, Text, text
+from sqlalchemy import (
+    ARRAY,
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Index,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -37,6 +47,10 @@ class Venue(Base):
 class VenueBooking(Base):
     __tablename__ = "venue_bookings"
     __table_args__ = (
+        CheckConstraint(
+            "status != 'tentative_hold' OR expires_at IS NOT NULL",
+            name="ck_venue_booking_hold_requires_expiry",
+        ),
         # An event may hold several live requests, but only one per venue,
         # enforced by the database as well as the API (see
         # sql/019_venue_bookings_many_per_event.sql).
@@ -69,6 +83,7 @@ class VenueBooking(Base):
         Enum(BookingStatus, name="booking_status", create_type=False),
         default=BookingStatus.pending,
     )
+    expires_at: Mapped[datetime | None]
     decision_notes: Mapped[str | None] = mapped_column(Text)
     # What Venue Staff offer instead when rejecting -- another venue, another
     # time (see sql/014_venue_bookings_suggested_alternative.sql).

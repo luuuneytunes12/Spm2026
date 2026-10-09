@@ -7,13 +7,15 @@
 Test names carry the acceptance criterion they prove (AC1-AC5).
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.core.roles import Role
-from app.models.enums import BookingStatus, EventStatus
+from app.models.enums import BookingStatus, EventStatus, NotificationType
 from app.models.events import Event
+from app.models.notifications import Notification
+from app.models.notifications import Notification
 from app.models.venues import VenueBooking, VenueUnavailability
 from tests.event_review_test_helpers import review_setup, submitted_event, user
 from tests.test_venue_booking_request import _submit, _venue
@@ -74,6 +76,77 @@ def test_ac1_a_rejected_request_leaves_the_queue(client, db_session):
     s = _setup(client, db_session)
     assert _reject(client, s["staff_h"], s["booking_id"], reason="Hall closed.").status_code == 200
     assert _queue_ids(client, s["staff_h"]) == []
+
+
+def test_rejecting_one_venue_booking_does_not_remove_other_event_venue_bookings(
+    client, db_session
+):
+    s = _setup(client, db_session)
+    other_venue = _venue(db_session, "Garden Hall")
+    second_booking_id = _submit(
+        client, s["coord_h"], s["event_id"], other_venue.id
+    ).json()["id"]
+
+    response = _reject(client, s["staff_h"], s["booking_id"], reason="Maintenance.")
+
+    assert response.status_code == 200
+    all_requests = _as_coordinator(client, s)
+    assert {booking["id"]: booking["status"] for booking in all_requests} == {
+        s["booking_id"]: BookingStatus.rejected,
+        second_booking_id: BookingStatus.pending,
+    }
+
+
+def test_ac1_venue_staff_can_place_an_expiring_hold_and_notify_the_coordinator(
+    client, db_session
+):
+    s = _setup(client, db_session)
+
+    response = client.post(
+        f"/venue-bookings/{s['booking_id']}/hold",
+        json={},
+        headers=s["staff_h"],
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == BookingStatus.tentative_hold
+    expiry = datetime.fromisoformat(response.json()["expires_at"].replace("Z", "+00:00"))
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    assert expiry > datetime.now(timezone.utc)
+    notification = (
+        db_session.query(Notification)
+        .filter_by(
+            event_id=s["event_id"],
+            type=NotificationType.venue_hold_expiring,
+        )
+        .one()
+    )
+    assert notification.user_id == db_session.get(Event, s["event_id"]).coordinator_id
+    assert expiry.isoformat() in notification.message
+
+
+def test_expired_hold_is_removed_from_staff_queue_and_notified(client, db_session):
+    s = _setup(client, db_session)
+    booking = db_session.get(VenueBooking, s["booking_id"])
+    booking.status = BookingStatus.tentative_hold
+    booking.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.commit()
+
+    response = client.get("/venue-bookings/queue", headers=s["staff_h"])
+
+    assert response.status_code == 200
+    assert all(item["id"] != s["booking_id"] for item in response.json())
+    assert db_session.get(VenueBooking, s["booking_id"]).status == BookingStatus.cancelled
+    notice = (
+        db_session.query(Notification)
+        .filter_by(
+            event_id=s["event_id"],
+            type=NotificationType.venue_hold_expired,
+        )
+        .one()
+    )
+    assert notice.user_id == db_session.get(Event, s["event_id"]).coordinator_id
 
 
 # --- AC2: Venue Staff can either approve or reject --------------------------

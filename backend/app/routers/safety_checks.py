@@ -60,13 +60,13 @@ def _awaiting_decision(event_id: int, db: Session) -> Event:
     return event
 
 
-def _approved_booking(db: Session, event: Event) -> VenueBooking | None:
-    return db.scalar(
+def _approved_bookings(db: Session, event: Event) -> list[VenueBooking]:
+    return list(db.scalars(
         select(VenueBooking).where(
             VenueBooking.event_id == event.id,
             VenueBooking.status == BookingStatus.approved,
-        )
-    )
+        ).order_by(VenueBooking.id)
+    ))
 
 
 def _reserved_lines(event: Event) -> list[EquipmentRequest]:
@@ -153,7 +153,7 @@ def get_safety_check(
 ) -> SafetyCheckDetail:
     """An event's attendance, venue, accessibility needs and equipment."""
     event = _get_event(event_id, db)
-    booking = _approved_booking(db, event)
+    bookings = _approved_bookings(db, event)
     return SafetyCheckDetail(
         id=event.id,
         name=event.name,
@@ -166,7 +166,7 @@ def get_safety_check(
         special_arrangements=event.special_arrangements,
         organiser=OrganiserContact.model_validate(event.organiser),
         coordinator=OrganiserContact.model_validate(event.coordinator) if event.coordinator else None,
-        venue_booking=SafetyVenueBooking.model_validate(booking) if booking else None,
+        venue_bookings=[SafetyVenueBooking.model_validate(booking) for booking in bookings],
         equipment=[
             SafetyEquipmentLine.model_validate(line)
             for line in event.equipment_items
@@ -195,8 +195,10 @@ def approve_safety_check(
             detail="Cannot approve. Outstanding: " + "; ".join(outstanding) + ".",
         )
 
-    booking = _approved_booking(db, event)
-    staff = {booking.reviewed_by if booking else None, *(line.reviewed_by for line in _reserved_lines(event))}
+    bookings = _approved_bookings(db, event)
+    staff = {booking.reviewed_by for booking in bookings} | {
+        line.reviewed_by for line in _reserved_lines(event)
+    }
     _record(db, event, user, EventStatus.safety_check_passed, "Safety Check passed by the Safety Officer.")
     _notify_all(
         db,
@@ -225,8 +227,8 @@ def request_safety_changes(
             detail="Mark at least one venue booking or equipment item to change.",
         )
 
-    booking = _approved_booking(db, event)
-    bookings = [booking] if booking and booking.id in body.venue_booking_ids else []
+    approved_bookings = _approved_bookings(db, event)
+    bookings = [booking for booking in approved_bookings if booking.id in body.venue_booking_ids]
     lines = [line for line in _reserved_lines(event) if line.id in body.equipment_request_ids]
     if len(bookings) != len(set(body.venue_booking_ids)) or len(lines) != len(
         set(body.equipment_request_ids)
@@ -258,13 +260,14 @@ def reject_safety_check(
 ) -> EventOut:
     """Reject the safety arrangement: back to planning with every venue and
     equipment arrangement to review again. Nothing is cancelled."""
+    # TODO(confirm): A Safety Officer rejection returns the event to planning rather than cancelling it.
     event = _awaiting_decision(event_id, db)
-    booking = _approved_booking(db, event)
+    bookings = _approved_bookings(db, event)
     return _send_back(
         db,
         event,
         user,
-        [booking] if booking else [],
+        bookings,
         _reserved_lines(event),
         reason=body.reason,
         note=f"Safety arrangement rejected: {body.reason}",

@@ -3,9 +3,11 @@
 // review; nothing here is a security boundary.
 
 import { apiFetch } from './api'
+import { EventStatus } from './events'
 
 export const BookingStatus = {
   PENDING: 'pending',
+  TENTATIVE_HOLD: 'tentative_hold',
   APPROVED: 'approved',
   REJECTED: 'rejected',
   CANCELLED: 'cancelled',
@@ -14,14 +16,18 @@ export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   pending: 'Pending review',
+  tentative_hold: 'Tentative hold',
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
 }
 
-/** Event statuses in which a venue can be requested: 'Event Approved' and
- *  'Planning Event'. Mirrors BOOKABLE_EVENT_STATUSES on the server. */
-export const BOOKABLE_EVENT_STATUSES: readonly string[] = ['event_approved', 'planning_event']
+/** Event statuses from which a venue can be requested. Mirrors
+ *  BOOKABLE_EVENT_STATUSES on the server. */
+export const BOOKABLE_EVENT_STATUSES: readonly EventStatus[] = [
+  EventStatus.EVENT_APPROVED,
+  EventStatus.PLANNING_EVENT,
+] as const
 
 export interface VenueBooking {
   id: number
@@ -31,6 +37,7 @@ export interface VenueBooking {
   venue: { id: number; name: string; location: string; capacity: number }
   start_time: string
   end_time: string
+  expires_at: string | null
   expected_attendance: number | null
   /** What was asked of THIS venue; the Event's own needs where nothing was
    *  entered for it. */
@@ -102,5 +109,14 @@ export function rejectVenueBooking(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rejection),
+  }) as Promise<VenueBooking>
+}
+
+/** Place a pending request on the server's default 24-hour tentative hold. */
+export function holdVenueBooking(id: number): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}/hold`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   }) as Promise<VenueBooking>
 }

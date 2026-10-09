@@ -2,15 +2,13 @@
 
 The SQLite unit tests (tests/test_venue_booking_request.py) prove the rules;
 these prove they hold on the production engine -- its enum and timestamp
-handling, the one-live-request-per-event-and-venue index -- and when the same request
-arrives many times at once.
+handling, multiple bookings for one event, and when duplicate requests for
+the same venue arrive many times at once.
 """
 
 import pytest
-from sqlalchemy.exc import IntegrityError
-
 from app.core.roles import Role
-from app.models.enums import BookingStatus, EventStatus
+from app.models.enums import EventStatus
 from app.models.events import Event
 from app.models.venues import Venue, VenueBooking
 from tests.integration.conftest import submit_event
@@ -72,25 +70,24 @@ def test_scrum39_a_submit_fired_many_times_at_once_creates_exactly_one_request(
     assert db.query(VenueBooking).count() == 1
 
 
-def test_scrum39_the_database_itself_refuses_a_second_live_request_for_the_same_venue(client, make_user, db):
+def test_scrum39_an_event_can_have_multiple_live_venue_requests(client, make_user, db):
     sam, _h, _s, event_id, venue_id = _setup(client, make_user, db)
     event = db.get(Event, event_id)
-    row = lambda status: VenueBooking(  # noqa: E731
-        event_id=event_id,
-        venue_id=venue_id,
-        requested_by=sam.id,
-        start_time=event.proposed_start,
-        end_time=event.proposed_end,
-        status=status,
+    other_venue = Venue(
+        name="Garden Hall",
+        location="Building B",
+        capacity=180,
     )
-    db.add(row(BookingStatus.rejected))
-    db.add(row(BookingStatus.pending))
-    db.commit()  # history plus one live request is fine
+    db.add(other_venue)
+    db.commit()
 
-    db.add(row(BookingStatus.approved))
-    with pytest.raises(IntegrityError):
-        db.commit()
-    db.rollback()
+    first = _post(client, _h, event_id, venue_id)
+    second = _post(client, _h, event_id, other_venue.id)
+    duplicate = _post(client, _h, event_id, venue_id)
+
+    assert first.status_code == second.status_code == 201
+    assert duplicate.status_code == 409
+    assert db.query(VenueBooking).filter_by(event_id=event_id).count() == 2
 
 
 def test_scrum39_several_venues_for_one_event_are_stored_and_each_reaches_the_queue(client, make_user, db):

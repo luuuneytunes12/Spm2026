@@ -77,7 +77,7 @@ def test_ac1_the_previous_coordinator_can_no_longer_open_or_act_on_it(client, w)
     ):
         assert res.status_code in (403, 404), res.request.url
     assert client.get("/events/assigned", headers=old).json() == []
-    assert w["db"].get(Event, e).status == EventStatus.under_review
+    assert w["db"].get(Event, e).status == EventStatus.submitted_awaiting_coordinator
 
 
 def test_ac1_the_organiser_sees_the_new_coordinator_and_everyone_is_told(client, w):
@@ -136,7 +136,7 @@ def test_ac3_the_activity_log_records_the_lead_both_coordinators_and_the_time(cl
     assert "Sam Tan" in line["note"] and "Priya Nair" in line["note"]
     assert line["note"] == "Reassigned from Sam Tan to Priya Nair."
     assert line["created_at"]
-    assert line["from_status"] == line["to_status"] == "under_review"  # a same-status entry
+    assert line["from_status"] == line["to_status"] == "submitted_awaiting_coordinator"
 
 
 def test_ac3_a_second_reassignment_adds_a_second_line(client, w):

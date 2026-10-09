@@ -1,41 +1,17 @@
-"""Coordinator assignment: picking one, and leaving a record behind.
+"""Shared assignment notifications, activity logging, and coordinator pool.
 
-Shared by two entry points -- POST /events/{id}/submit (initial assignment)
-and POST /events/assigned/{id}/release (a Coordinator declining one event) --
-so both follow the same selection rule and leave the same kind of trail.
-
-Marking yourself unavailable (PATCH /coordinators/me/availability) does NOT
-come through here to move events: it only takes the Coordinator out of the
-pool that `_pick_coordinator` draws from, so they stop receiving NEW events.
-Whatever they already hold stays with them. See the "Declare Coordinator
-Global Unavailability" story:
-
-    As an Event Coordinator, I want to mark myself as unavailable, so that
-    I stop receiving new ones until I'm available again.
+Production assignment is Lead-managed through `lead_assignment`; the legacy
+automatic selector remains only as a test setup helper.
 """
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.roles import Role
-from app.models.enums import EventStatus, NotificationType
+from app.models.enums import ACTIVE_ASSIGNMENT_STATUSES, NotificationType
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.notifications import notify
-
-# Statuses under which an event still needs an active Coordinator working
-# it. COMPLETED, CANCELLED and REJECTED are exits from the pipeline -- an
-# event there does not need reassigning just because its (former)
-# Coordinator has gone unavailable.
-ACTIVE_ASSIGNMENT_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.submitted_awaiting_coordinator,
-    EventStatus.under_review,
-    EventStatus.awaiting_organiser_reply,
-    EventStatus.event_approved,
-    EventStatus.planning_event,
-    EventStatus.awaiting_safety_check,
-    EventStatus.safety_check_passed,
-)
 
 
 def available_coordinators(db: Session):
@@ -81,16 +57,13 @@ def _record(db: Session, event: Event, actor_id: int, note: str) -> None:
     """One activity-log line for a REASSIGNMENT.
 
     Reuses EventStatusHistory rather than a new table. A reassignment isn't
-    a status change (the event was already under review; only who is
-    reviewing it changes), so `from_status` and `to_status` are both the
+    a status change (only who owns the active event changes), so `from_status` and `to_status` are both the
     event's current status and the note carries the real information. See
     AssignedEventView's ActivityLine on the frontend for how a same-status
     entry renders as "Assignment" rather than a status arrow into itself.
 
-    An INITIAL assignment does not go through here -- see
-    `assign_coordinator`, which writes its own EventStatusHistory row
-    because that one genuinely does change status (submitted -> under
-    review).
+    Initial Lead assignment keeps the Submitted status and is implemented by
+    `services.lead_assignment.AssignEvent`.
     """
     db.add(
         EventStatusHistory(
@@ -137,34 +110,25 @@ def _notify_organiser(db: Session, event: Event, coordinator: User) -> None:
 
 
 def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
-    """Auto-assign an available Coordinator to a freshly submitted event.
+    """Legacy helper for tests that need to seed an assigned event.
 
-    Returns the Coordinator assigned, or None if nobody is available -- the
-    event is left unassigned rather than the submission failing. Silent in
-    that case: there is no assignment to log yet, and an Organiser still
-    sees their request went through, just not yet picked up.
+    Production submissions are not auto-assigned. New assignment is handled
+    by the Coordinator Lead through `services.lead_assignment.AssignEvent`.
+    Returns the selected Coordinator or None.
 
-    Being assigned IS what "under review" means: a submitted request that
-    already has a Coordinator on it but still reads "Submitted" is
-    misleading to the very person now responsible for it. So this is a real
-    status transition, not just a same-status note -- unlike
-    `reassign_event`, which never changes status (the event was already
-    under review; only who is reviewing it changes).
+    Kept for test setup and migration compatibility; assignment does not
+    change the event's single authoritative status.
     """
     coordinator = _pick_coordinator(db)
     if coordinator is None:
         return None
 
     event.coordinator_id = coordinator.id
-    previous_status = event.status
-    if event.status == EventStatus.submitted_awaiting_coordinator:
-        event.status = EventStatus.under_review
-
     db.add(
         EventStatusHistory(
             event_id=event.id,
             changed_by=actor_id,
-            from_status=previous_status,
+            from_status=event.status,
             to_status=event.status,
             note=f"Assigned to {coordinator.name}.",
         )
@@ -177,8 +141,8 @@ def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
 def reassign_event(db: Session, event: Event, outgoing: User) -> User | None:
     """Move `event` off `outgoing` onto another available Coordinator.
 
-    Used by POST /events/assigned/{id}/release: `outgoing` declined this one
-    event, so only `event` moves and their availability is untouched.
+    Legacy helper for an outgoing Coordinator declining an event. Production
+    assignment changes are managed by the Lead.
     `outgoing` is recorded as having made the change -- in the activity log
     whether or not anyone takes over. Returns the new Coordinator, or None
     if nobody else is available (the event is left unassigned rather than

@@ -3,29 +3,28 @@
 Both actions are the same shape -- load and lock the Event, check it may be
 changed, change who coordinates it, leave a trail, tell the people involved,
 commit -- so `LeadAssignmentAction` holds those steps once and a subclass
-supplies the two that differ (`check` and `change`). Nothing in
-`app.services.assignment` is modified: this reuses its activity-log and
-notification helpers, and the automatic assignment there stays for the
-Coordinator "release" flow.
+supplies the two that differ (`check` and `change`). The Lead explicitly
+chooses each Coordinator; the legacy automatic selector is not part of this
+workflow.
 """
 
 from fastapi import status as http
 from sqlalchemy.orm import Session
 
 from app.core.roles import Role
-from app.models.enums import EventStatus, NotificationType
+from app.models.enums import (
+    NotificationType,
+    TERMINAL_EVENT_STATUSES,
+)
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.assignment import _notify, _notify_organiser, _record
 from app.services.assignment_overview import ActiveAssignments, UnassignedQueue
 from app.services.notifications import notify
 
-# An Event in one of these states is finished and can no longer be moved.
-FINISHED_STATUSES: tuple[EventStatus, ...] = (
-    EventStatus.event_rejected,
-    EventStatus.event_cancelled,
-    EventStatus.event_completed,
-)
+# Compatibility name retained for callers and tests; the shared enum module
+# owns the single definition.
+FINISHED_STATUSES = TERMINAL_EVENT_STATUSES
 
 
 class AssignmentRefused(Exception):
@@ -83,7 +82,7 @@ class LeadAssignmentAction:
 
 class AssignEvent(LeadAssignmentAction):
     """Assign a request from the Unassigned Queue: it leaves the queue and
-    becomes Under Review with the chosen Coordinator."""
+    remains Submitted with the chosen Coordinator."""
 
     def check(self, event: Event, coordinator: User) -> None:
         if UnassignedQueue().find(self.db, event.id) is None:
@@ -94,7 +93,6 @@ class AssignEvent(LeadAssignmentAction):
     def change(self, event: Event, coordinator: User) -> None:
         previous = event.status
         event.coordinator_id = coordinator.id
-        event.status = EventStatus.under_review
         self.db.add(
             EventStatusHistory(
                 event_id=event.id,
@@ -113,7 +111,7 @@ class ReassignEvent(LeadAssignmentAction):
     earlier activity log are untouched; one line is added."""
 
     def check(self, event: Event, coordinator: User) -> None:
-        if event.status in FINISHED_STATUSES:
+        if event.status in TERMINAL_EVENT_STATUSES:
             raise AssignmentRefused(http.HTTP_409_CONFLICT, "A finished Event cannot be reassigned")
         if ActiveAssignments().find(self.db, event.id) is None:
             raise AssignmentRefused(http.HTTP_409_CONFLICT, "This Event is not an active assignment")

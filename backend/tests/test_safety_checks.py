@@ -48,8 +48,13 @@ def _setup(client, db_session):
         emergency_access="Two fire exits on the east side",
         known_restrictions="No open flames",
     )
+    second_venue = _venue(db_session, name="Garden Pavilion")
     booking_id = _submit(client, coord_h, event_id, venue.id).json()["id"]
     assert client.post(f"/venue-bookings/{booking_id}/approve", headers=staff_h).status_code == 200
+    second_booking_id = _submit(client, coord_h, event_id, second_venue.id).json()["id"]
+    assert client.post(
+        f"/venue-bookings/{second_booking_id}/approve", headers=staff_h
+    ).status_code == 200
     assert client.post(
         "/equipment-reservations",
         json={"event_id": event_id, "equipment_id": projector.id, "placement_notes": "Back of hall"},
@@ -73,6 +78,7 @@ def _setup(client, db_session):
         "bystander": bystander,
         "event_id": event_id,
         "booking_id": booking_id,
+        "second_booking_id": second_booking_id,
         "line_id": line.id,
     }
 
@@ -132,11 +138,14 @@ def test_s1_ac3_detail_shows_attendance_venue_accessibility_and_equipment_placem
     assert detail["expected_attendance"] == 120
     assert detail["accessibility_needs"] == "Step-free access"
     assert detail["room_layout_preference"] == "Theatre"
-    venue = detail["venue_booking"]["venue"]
+    assert len(detail["venue_bookings"]) == 2
+    venues = {booking["venue"]["name"]: booking["venue"] for booking in detail["venue_bookings"]}
+    venue = venues["Marina Hall"]
     assert venue["capacity"] == 250
     assert venue["supported_layouts"] == ["Theatre"]
     assert venue["emergency_access"] == "Two fire exits on the east side"
     assert venue["known_restrictions"] == "No open flames"
+    assert "Garden Pavilion" in venues
     [line] = detail["equipment"]
     assert (line["equipment_name"], line["placement_notes"]) == ("Projector", "Back of hall")
 
@@ -222,7 +231,8 @@ def test_s2_ac6_approval_is_refused_when_an_arrangement_is_no_longer_approved(
 ):
     s = _setup(client, db_session)
     if withdraw == "venue":
-        db_session.get(VenueBooking, s["booking_id"]).status = BookingStatus.cancelled
+        for booking in db_session.query(VenueBooking).filter_by(event_id=s["event_id"]):
+            booking.status = BookingStatus.cancelled
     else:
         db_session.get(EquipmentRequest, s["line_id"]).status = EquipmentStatus.reviewing
     db_session.commit()

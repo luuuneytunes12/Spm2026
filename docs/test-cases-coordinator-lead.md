@@ -6,10 +6,10 @@ Covers one product backlog item:
   Coordinator Lead role added to the system, so that the Lead can assign Event
   Requests.*
 
-Scope: the role, its permissions and its landing page. The assign / reassign
-endpoints and the "view all assignments" page belong to later stories; this
-story gives the Lead the permissions (`assignment:manage`,
-`assignment:view_all`) they will check.
+Scope includes the Lead's role, unassigned queue, assignment/reassignment
+endpoints, and all-assignment overview. New submissions remain unassigned;
+the Lead's assignment leaves an event in `submitted_awaiting_coordinator` so
+the assigned Coordinator can approve it.
 
 Design: `CoordinatorLeadProfile` inherits `CoordinatorProfile`
 (`backend/app/core/roles.py`), so the Lead holds every Coordinator permission
@@ -57,7 +57,7 @@ behaviour is asserted directly.
 | `test_ac3_organiser_keeps_every_permission_it_had` | pytest | Organiser loses nothing |
 | `test_ac3_existing_role_logs_in_with_its_own_role_and_no_lead_powers` | pytest | each role logs in as itself, no Lead powers |
 | `test_ac3_role_gated_endpoint_access_is_unchanged` | pytest | role-gated endpoint: Organiser 200, all others 403 |
-| `test_ac3_lead_is_not_added_to_the_coordinator_assignment_pool` | pytest | auto-assignment still picks only Coordinators |
+| `test_ac3_lead_is_not_added_to_the_coordinator_assignment_pool` | pytest | the Lead remains outside the Coordinator role/pool; request submission itself does not assign |
 | `test_ac3_existing_role_values_are_unchanged` | pytest | no existing role value changed |
 | AC3 cases in `roles.test.ts` | Vitest | existing home pages and permissions unchanged |
 | `TC-CL-3e` | Playwright | Coordinator still lands on `/coordinator`; Lead page is forbidden to them |

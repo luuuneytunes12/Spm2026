@@ -1,7 +1,7 @@
 """Backend tests for SCRUM-80, "Assign Event Request to an Event Coordinator as
 Coordinator Lead".
 
-  AC1 - assigning removes the request from the queue, makes it Under Review and
+  AC1 - assigning removes the request from the queue, keeps it Submitted and
         puts it in that Coordinator's assigned Events
   AC2 - the Coordinator list shows each name and their active-Event count
         (anything not Event Rejected, Cancelled or Completed)
@@ -49,22 +49,22 @@ def assign(client, w, event, coordinator, headers=None):
 # --- AC1 -------------------------------------------------------------------
 
 
-def test_ac1_assigning_takes_it_out_of_the_queue_and_makes_it_under_review(client, w):
+def test_ac1_assigning_takes_it_out_of_the_queue_and_keeps_it_submitted(client, w):
     e = queued(w)
     res = assign(client, w, e, w["sam"])
     assert res.status_code == 200
-    assert res.json()["status"] == "under_review"
+    assert res.json()["status"] == "submitted_awaiting_coordinator"
     assert res.json()["coordinator"]["name"] == "Sam Tan"
     assert client.get("/lead/unassigned-queue", headers=w["lead_h"]).json() == []
     w["db"].refresh(e)
-    assert (e.coordinator_id, e.status) == (w["sam"].id, EventStatus.under_review)
+    assert (e.coordinator_id, e.status) == (w["sam"].id, EventStatus.submitted_awaiting_coordinator)
 
 
 def test_ac1_it_appears_in_that_coordinators_assigned_events(client, w):
     e = queued(w)
     assign(client, w, e, w["sam"])
     mine = client.get("/events/assigned", headers=w["sam_h"]).json()
-    assert [r["id"] for r in mine] == [e.id] and mine[0]["status"] == "under_review"
+    assert [r["id"] for r in mine] == [e.id] and mine[0]["status"] == "submitted_awaiting_coordinator"
     assert client.get("/events/assigned", headers=w["priya_h"]).json() == []
 
 
@@ -112,7 +112,10 @@ def test_ac3_the_activity_log_records_the_lead_the_coordinator_and_the_time(clie
     line = log[0]  # newest first
     assert line["changed_by_name"] == "Lena Lead"
     assert "Sam Tan" in line["note"]
-    assert (line["from_status"], line["to_status"]) == ("submitted_awaiting_coordinator", "under_review")
+    assert (line["from_status"], line["to_status"]) == (
+        "submitted_awaiting_coordinator",
+        "submitted_awaiting_coordinator",
+    )
     assert line["created_at"]
     # and the Organiser can read the same record
     org_log = client.get(f"/events/{e.id}/activity", headers=w["org_h"]).json()
@@ -135,7 +138,7 @@ def test_ac4_another_coordinator_cannot_open_or_act_on_an_assigned_event(client,
     for res in attempts:
         assert res.status_code in (403, 404), res.request.url
     w["db"].refresh(e)
-    assert (e.coordinator_id, e.status) == (w["sam"].id, EventStatus.under_review)
+    assert (e.coordinator_id, e.status) == (w["sam"].id, EventStatus.submitted_awaiting_coordinator)
     # the assigned Coordinator still can
     assert client.get(f"/events/assigned/{e.id}", headers=w["sam_h"]).status_code == 200
 

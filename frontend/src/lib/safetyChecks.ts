@@ -16,6 +16,7 @@ export interface SafetyCheckSummary {
 
 export interface SafetyVenueBooking {
   id: number
+  event_id: number
   status: string
   start_time: string
   end_time: string
@@ -55,7 +56,7 @@ export interface SafetyCheckDetail {
   special_arrangements: string | null
   organiser: EventContact
   coordinator: EventContact | null
-  venue_booking: SafetyVenueBooking | null
+  venue_bookings: SafetyVenueBooking[]
   equipment: SafetyEquipmentLine[]
   activity: ActivityEntry[]
 }

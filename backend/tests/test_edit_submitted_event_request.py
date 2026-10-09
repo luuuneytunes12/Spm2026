@@ -1,6 +1,6 @@
 """Acceptance tests for requesting changes to a submitted event."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -13,7 +13,7 @@ from app.models.enums import (
     EventStatus,
 )
 from app.models.equipment import Equipment, EquipmentRequest
-from app.models.events import Event, EventChangeRequest
+from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.venues import Venue, VenueBooking
 from event_review_test_helpers import COMPLETE, review_setup, user
 
@@ -77,7 +77,7 @@ def test_coordinator_must_decide_pending_change_before_event(client, db_session)
     response = client.post(f"/events/{event_id}/approve", headers=coordinator_headers)
 
     assert response.status_code == 409
-    assert db_session.get(Event, event_id).status == EventStatus.under_review
+    assert db_session.get(Event, event_id).status == EventStatus.submitted_awaiting_coordinator
 
 
 def test_coordinator_approval_applies_proposed_values(client, db_session):
@@ -101,11 +101,15 @@ def test_coordinator_approval_applies_proposed_values(client, db_session):
 
 def test_important_change_shows_existing_bookings_and_reservations(client, db_session):
     _, organiser_headers, organiser, _, event_id = review_setup(client, db_session)
+    event = db_session.get(Event, event_id)
+    event.status = EventStatus.event_approved
     venue = Venue(name="Main Hall", location="Building A", capacity=300)
+    second_venue = Venue(name="Garden Hall", location="Building B", capacity=120)
+    expired_venue = Venue(name="Old Hall", location="Building C", capacity=80)
     equipment = Equipment(
         name="Projector", total_quantity=4, operational_status=EquipmentOperationalStatus.available
     )
-    db_session.add_all([venue, equipment])
+    db_session.add_all([venue, second_venue, expired_venue, equipment])
     db_session.commit()
     db_session.add_all(
         [
@@ -116,6 +120,24 @@ def test_important_change_shows_existing_bookings_and_reservations(client, db_se
                 start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
                 end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
                 status=BookingStatus.approved,
+            ),
+            VenueBooking(
+                event_id=event_id,
+                venue_id=second_venue.id,
+                requested_by=organiser.id,
+                start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
+                end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
+                status=BookingStatus.tentative_hold,
+                expires_at=datetime(2026, 10, 31, 12, tzinfo=timezone.utc),
+            ),
+            VenueBooking(
+                event_id=event_id,
+                venue_id=expired_venue.id,
+                requested_by=organiser.id,
+                start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
+                end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
+                status=BookingStatus.tentative_hold,
+                expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
             ),
             EquipmentRequest(
                 event_id=event_id,
@@ -135,8 +157,70 @@ def test_important_change_shows_existing_bookings_and_reservations(client, db_se
 
     body = response.json()
     assert body["important_change"] is True
-    assert body["venue_bookings_to_reconsider"][0]["venue_name"] == "Main Hall"
+    assert body["safety_check_required"] is True
+    assert {item["venue_name"] for item in body["venue_bookings_to_reconsider"]} == {
+        "Main Hall",
+        "Garden Hall",
+    }
     assert body["equipment_reservations_to_reconsider"][0]["equipment_name"] == "Projector"
+
+
+def test_attendance_change_after_approval_returns_event_to_planning_for_safety_review(
+    client, db_session
+):
+    _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
+    event = db_session.get(Event, event_id)
+    event.status = EventStatus.event_approved
+    db_session.commit()
+    requested = client.post(
+        f"/events/{event_id}/change-requests",
+        json={
+            "description": "Attendance increased",
+            "proposed_changes": {"expected_attendance": 180},
+        },
+        headers=organiser_headers,
+    ).json()
+    assert requested["safety_check_required"] is True
+
+    response = client.post(
+        f"/events/change-requests/{requested['id']}/approve",
+        json={},
+        headers=coordinator_headers,
+    )
+
+    assert response.status_code == 200
+    assert db_session.get(Event, event_id).status == EventStatus.planning_event
+    history = (
+        db_session.query(EventStatusHistory)
+        .filter_by(event_id=event_id, to_status=EventStatus.planning_event)
+        .one()
+    )
+    assert "new safety check is required" in history.note
+
+
+def test_only_assigned_coordinator_can_review_change_request(client, db_session):
+    _, organiser_headers, _, _, event_id = review_setup(client, db_session)
+    requested = client.post(
+        f"/events/{event_id}/change-requests",
+        json={"description": "Update title", "proposed_changes": {"name": "Updated"}},
+        headers=organiser_headers,
+    ).json()
+    _, other_headers = user(
+        client,
+        db_session,
+        Role.COORDINATOR,
+        "other-reviewer@example.com",
+        "Other Reviewer",
+    )
+
+    response = client.post(
+        f"/events/change-requests/{requested['id']}/approve",
+        json={},
+        headers=other_headers,
+    )
+
+    assert response.status_code == 403
+    assert db_session.query(EventChangeRequest).one().status == ChangeRequestStatus.pending
 
 
 def test_coordinator_approval_applies_equipment_proposal(client, db_session):
@@ -166,12 +250,18 @@ def test_coordinator_approval_applies_equipment_proposal(client, db_session):
 
 
 @pytest.mark.parametrize(
-    "terminal_status", [EventStatus.event_rejected, EventStatus.event_completed, EventStatus.event_cancelled]
+    "blocked_status",
+    [
+        EventStatus.draft,
+        EventStatus.event_rejected,
+        EventStatus.event_completed,
+        EventStatus.event_cancelled,
+    ],
 )
-def test_terminal_event_cannot_receive_change_request(client, db_session, terminal_status):
+def test_blocked_status_cannot_receive_change_request(client, db_session, blocked_status):
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
-    event.status = terminal_status
+    event.status = blocked_status
     db_session.commit()
 
     response = client.post(
@@ -239,7 +329,7 @@ def test_partial_date_change_cannot_conflict_with_existing_date(client, db_sessi
 
 
 @pytest.mark.parametrize("decision", ["approve", "reject"])
-def test_decided_request_cannot_be_edited(client, db_session, decision):
+def test_change_request_rules_follow_the_event_status(client, db_session, decision):
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     payload = {"reason": "The requested venue is unavailable."} if decision == "reject" else None
     assert (
@@ -253,7 +343,7 @@ def test_decided_request_cannot_be_edited(client, db_session, decision):
         headers=organiser_headers,
     )
 
-    assert response.status_code == 409
+    assert response.status_code == (201 if decision == "approve" else 409)
     assert db_session.get(Event, event_id).name == COMPLETE["name"]
     expected_status = EventStatus.event_approved if decision == "approve" else EventStatus.event_rejected
     assert db_session.get(Event, event_id).status == expected_status
