@@ -41,6 +41,7 @@ from app.schemas.event import (
     RegistrationSettingsIn,
 )
 from app.services.notifications import notify
+from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
 from app.services.submission_notice import SubmissionNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -720,6 +721,7 @@ def submit_for_safety_check(
             note="Submitted for safety check by the Event Coordinator.",
         )
     )
+    SafetyCheckRequestedNotice(resubmitted=was_sent_back_before(db, event)).send(db, event)
     db.commit()
     db.refresh(event)
     return EventOut.model_validate(event)

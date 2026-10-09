@@ -79,6 +79,7 @@ class NotificationType(enum.StrEnum):
     safety_check_passed = "safety_check_passed"
     safety_changes_requested = "safety_changes_requested"
     safety_check_rejected = "safety_check_rejected"
+    safety_check_requested = "safety_check_requested"
 
 
 class ChangeRequestStatus(enum.StrEnum):
