@@ -36,6 +36,9 @@ class BookingStatus(enum.StrEnum):
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
+    # A tentative hold on the venue (SCRUM-97 places them). SCRUM-92 re-checks
+    # active holds for conflicts; nothing else treats it as approved.
+    hold = "hold"
 
 
 class EquipmentStatus(enum.StrEnum):
@@ -79,9 +82,20 @@ class NotificationType(enum.StrEnum):
     safety_check_passed = "safety_check_passed"
     safety_changes_requested = "safety_changes_requested"
     safety_check_rejected = "safety_check_rejected"
+    venue_booking_conflict = "venue_booking_conflict"
 
 
 class ChangeRequestStatus(enum.StrEnum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+
+class UnavailabilityReason(enum.StrEnum):
+    """Why Venue Staff took a venue out of use for a period (SCRUM-93)."""
+
+    maintenance = "Maintenance"
+    equipment_failure = "Equipment failure"
+    renovation = "Renovation"
+    safety_concern = "Safety concern"
+    other = "Other"

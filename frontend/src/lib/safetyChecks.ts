@@ -20,6 +20,11 @@ export interface SafetyVenueBooking {
   start_time: string
   end_time: string
   safety_recheck_reason: string | null
+  /** Present when the server includes the venue's setup and turnaround. */
+  setup_minutes?: number
+  turnaround_minutes?: number
+  occupied_start?: string
+  occupied_end?: string
   venue: {
     id: number
     name: string

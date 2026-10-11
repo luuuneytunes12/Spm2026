@@ -2,7 +2,7 @@ import type { IconName } from '../components/Icon'
 import { listMyEvents, listAssignedEvents } from './events'
 import { listUnassignedQueue } from './coordinatorLead'
 import { listMyRegistrations } from './registrations'
-import { listVenueBookingQueue } from './venueBookings'
+import { listFlaggedBookings, listVenueBookingQueue } from './venueBookings'
 import { Role } from './roles'
 
 export interface LandingTile {
@@ -97,6 +97,13 @@ export const ROLE_LANDING: Record<Role, RoleLandingConfig> = {
         to: '/venue-staff/bookings',
         icon: 'inbox',
         count: async () => (await listVenueBookingQueue()).length,
+      },
+      {
+        title: 'Flagged Bookings',
+        description: 'Approved bookings that now conflict after a setup or turnaround change.',
+        to: '/venue-staff/flagged',
+        icon: 'list',
+        count: async () => (await listFlaggedBookings()).length,
       },
       {
         title: 'Venues',

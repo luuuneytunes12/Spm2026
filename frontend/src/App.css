@@ -433,6 +433,11 @@
   background: var(--surface-2);
   font-size: 14px;
   color: var(--text);
+
+  /* A link inside running text must not rely on colour alone. */
+  & a {
+    text-decoration: underline;
+  }
 }
 
 /* --- Buttons ---------------------------------------------------------- */
@@ -523,7 +528,7 @@
   border-radius: var(--radius-sm);
   background: var(--danger-bg);
   border: 1px solid var(--danger-border);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 /* An error box whose children stack (a lead-in line, then a list). */

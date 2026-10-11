@@ -2,8 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, computed_field, Field, field_validator
 
+from app.domain.venue_occupancy import occupied_window
 from app.models.enums import BookingStatus, EquipmentStatus, EventStatus
 from app.schemas.event import ActivityEntry, OrganiserContact
 
@@ -29,6 +30,8 @@ class SafetyVenue(BaseModel):
     accessibility_features: list[str]
     emergency_access: str | None
     known_restrictions: str | None
+    setup_minutes: int | None = None
+    turnaround_minutes: int | None = None
 
 
 class SafetyVenueBooking(BaseModel):
@@ -40,6 +43,26 @@ class SafetyVenueBooking(BaseModel):
     end_time: datetime
     safety_recheck_reason: str | None
     venue: SafetyVenue
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def setup_minutes(self) -> int:
+        return self.venue.setup_minutes or 0
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def turnaround_minutes(self) -> int:
+        return self.venue.turnaround_minutes or 0
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def occupied_start(self) -> datetime:
+        return occupied_window(self.start_time, self.end_time, self.setup_minutes, 0).start
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def occupied_end(self) -> datetime:
+        return occupied_window(self.start_time, self.end_time, 0, self.turnaround_minutes).end
 
 
 class SafetyEquipmentLine(BaseModel):

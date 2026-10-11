@@ -27,7 +27,9 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
     EVERY such booking must be approved -- a pending one (a tentative hold) or
     a rejected one is outstanding, named with its status. A cancelled booking
     is withdrawn, so it is ignored. A booking a Safety Officer has flagged for
-    re-review is outstanding until its staff clear the flag.
+    re-review is outstanding until its staff clear the flag, and so is one
+    flagged as conflicting with another booking (SCRUM-92) until Venue Staff
+    resolve it.
 
     Equipment: every line and every Coordinator requirement must be RESERVED.
     Cancelled lines are ignored -- the Organiser withdrew them, so there is
@@ -53,10 +55,15 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
             outstanding.append(
                 f"Venue booking '{booking.venue.name}' is not approved (status: {booking.status})"
             )
-        elif booking.safety_recheck_reason:
-            outstanding.append(
-                f"Venue booking '{booking.venue.name}' is awaiting safety re-review by Venue Staff"
-            )
+        else:
+            if booking.safety_recheck_reason:
+                outstanding.append(
+                    f"Venue booking '{booking.venue.name}' is awaiting safety re-review by Venue Staff"
+                )
+            if booking.conflict_flagged_at is not None:
+                outstanding.append(
+                    f"Venue booking '{booking.venue.name}' has an unresolved conflict with another booking"
+                )
 
     for line in event.equipment_items:
         if line.status is EquipmentStatus.cancelled:

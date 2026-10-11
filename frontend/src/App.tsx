@@ -29,6 +29,7 @@ import { QueuedRequestView } from './pages/lead/QueuedRequestView'
 import { Organiser } from './pages/roles/Organiser'
 import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
+import { FlaggedBookings } from './pages/venues/FlaggedBookings'
 import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
@@ -78,6 +79,7 @@ function App() {
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />
             <Route path="/venue-staff/bookings" element={<VenueBookingQueue />} />
+            <Route path="/venue-staff/flagged" element={<FlaggedBookings />} />
           </Route>
           {/* Shared by both internal roles that assess venues, so not
               nested under either role's home path. */}

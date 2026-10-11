@@ -4,14 +4,24 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.datetimes import as_utc
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
+from app.domain.venue_occupancy import occupied_window, overlap_of
 from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
-from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut, VenueBookingRejection
+from app.services import booking_conflict_flags as flags
+from app.schemas.venue_booking import (
+    BookingConflict,
+    ConflictCancel,
+    ConflictKeep,
+    VenueBookingCreate,
+    VenueBookingOut,
+    VenueBookingRejection,
+)
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
@@ -29,8 +39,118 @@ _coordinator = require_role(Role.COORDINATOR)
 _venue_staff = require_role(Role.VENUE_STAFF)
 
 
-def _out(booking: VenueBooking) -> VenueBookingOut:
+def _conflict_between(
+    mine: VenueBooking, other: VenueBooking, venue: Venue
+) -> BookingConflict | None:
+    """What `other` (approved) clashes with in `mine`, or None.
+
+    Both occupied windows use the venue's current setup/turnaround and are
+    compared with strict overlap, so a request starting exactly when the
+    other's occupied period ends is not a conflict.
+    """
+    setup, turnaround = venue.setup_minutes, venue.turnaround_minutes
+    theirs = occupied_window(other.start_time, other.end_time, setup, turnaround)
+    shared = overlap_of(occupied_window(mine.start_time, mine.end_time, setup, turnaround), theirs)
+    if shared is None:
+        return None
+    return BookingConflict(
+        booking_id=other.id,
+        event_id=other.event_id,
+        event_name=other.event.name or "Untitled event",
+        event_start=other.start_time,
+        event_end=other.end_time,
+        occupied_start=theirs.start,
+        occupied_end=theirs.end,
+        overlap_start=shared.start,
+        overlap_end=shared.end,
+    )
+
+
+def _closure_conflict(booking: VenueBooking, closure: VenueUnavailability) -> BookingConflict:
+    start, end = as_utc(closure.start_time), as_utc(closure.end_time)
+    shared = overlap_of(
+        occupied_window(booking.start_time, booking.end_time, 0, 0), occupied_window(start, end, 0, 0)
+    )
+    assert shared is not None
+    reason = closure.reason_category + (f": {closure.reason}" if closure.reason else "")
+    return BookingConflict(
+        kind="unavailability",
+        event_start=start,
+        event_end=end,
+        occupied_start=start,
+        occupied_end=end,
+        overlap_start=shared.start,
+        overlap_end=shared.end,
+        reason=reason,
+    )
+
+
+def _conflicts(bookings: list[VenueBooking], db: Session, viewer: User) -> dict[int, list[BookingConflict]]:
+    """Conflicts per booking id, for Venue Staff viewing pending requests and
+    flagged approved bookings only.
+
+    Anyone else gets nothing, so no other event's name reaches a Coordinator
+    or Organiser. The approved bookings are loaded once for all the venues
+    involved, not once per booking.
+    """
+    if viewer.role != Role.VENUE_STAFF.value:
+        return {}
+    pending = [
+        b
+        for b in bookings
+        if b.status == BookingStatus.pending
+        or (b.status == BookingStatus.approved and b.conflict_flagged_at is not None)
+    ]
+    if not pending:
+        return {}
+    approved: dict[int, list[VenueBooking]] = {}
+    for other in db.scalars(
+        select(VenueBooking)
+        .where(
+            VenueBooking.venue_id.in_({b.venue_id for b in pending}),
+            VenueBooking.status == BookingStatus.approved,
+        )
+        .options(joinedload(VenueBooking.event))
+        .order_by(VenueBooking.start_time, VenueBooking.id)
+    ).unique():
+        approved.setdefault(other.venue_id, []).append(other)
+    # Periods Venue Staff marked the venue unavailable (SCRUM-93): shown the
+    # same way, with the reason, so the request is flagged during review.
+    closures: dict[int, list[VenueUnavailability]] = {}
+    for closure in db.scalars(
+        select(VenueUnavailability)
+        .where(VenueUnavailability.venue_id.in_({b.venue_id for b in pending}))
+        .order_by(VenueUnavailability.start_time, VenueUnavailability.id)
+    ):
+        closures.setdefault(closure.venue_id, []).append(closure)
+    found: dict[int, list[BookingConflict]] = {}
+    for booking in pending:
+        hits = [
+            c
+            for other in approved.get(booking.venue_id, [])
+            if other.id != booking.id
+            and (c := _conflict_between(booking, other, booking.venue)) is not None
+        ]
+        hits += [
+            _closure_conflict(booking, closure)
+            for closure in closures.get(booking.venue_id, [])
+            if flags.closure_overlaps(booking, closure)
+        ]
+        found[booking.id] = hits
+    return found
+
+
+def _outs(bookings, db: Session, viewer: User) -> list[VenueBookingOut]:
+    bookings = list(bookings)
+    conflicts = _conflicts(bookings, db, viewer)
+    return [_out(b, conflicts.get(b.id, [])) for b in bookings]
+
+
+def _out(booking: VenueBooking, conflicts: list[BookingConflict] | None = None) -> VenueBookingOut:
     event = booking.event
+    setup = booking.venue.setup_minutes or 0
+    turnaround = booking.venue.turnaround_minutes or 0
+    occupied = occupied_window(booking.start_time, booking.end_time, setup, turnaround)
     return VenueBookingOut(
         id=booking.id,
         status=booking.status,
@@ -50,6 +170,12 @@ def _out(booking: VenueBooking) -> VenueBookingOut:
         safety_recheck_reason=booking.safety_recheck_reason,
         reviewed_by=booking.reviewed_by_user,
         reviewed_at=booking.reviewed_at,
+        conflict_flagged=booking.conflict_flagged_at is not None,
+        setup_minutes=setup,
+        turnaround_minutes=turnaround,
+        occupied_start=occupied.start,
+        occupied_end=occupied.end,
+        conflicts=conflicts or [],
     )
 
 
@@ -82,6 +208,12 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
     An approved booking flagged for safety re-review is decided again the
     same way; either decision clears the flag.
     """
+    # Venue first, then the booking: the same order as the setup/turnaround
+    # re-check and keep-conflict, so none of them can deadlock on each other.
+    venue_id = db.scalar(select(VenueBooking.venue_id).where(VenueBooking.id == booking_id))
+    if venue_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    db.get(Venue, venue_id, with_for_update=True)
     booking = db.get(VenueBooking, booking_id, with_for_update=True)
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
@@ -96,11 +228,24 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
 
 
 def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Session) -> VenueBookingOut:
-    """Record the outcome with who decided and when, and return it."""
+    """Record the outcome with who decided and when, and return it.
+
+    A flagged conflict (SCRUM-92) is cleared by either decision: re-approval
+    only passes when nothing overlaps, and a rejected booking holds nothing.
+    A rejection frees the venue, so other bookings that only clashed with this
+    one are un-flagged too.
+    """
+    was_approved = booking.status == BookingStatus.approved
+    flags.release(
+        db, booking, staff, f"Venue booking '{booking.venue.name}' conflict cleared: booking {decision}."
+    )
     booking.status = decision
     booking.safety_recheck_reason = None
     booking.reviewed_by = staff.id
     booking.reviewed_at = datetime.now(timezone.utc)
+    if was_approved and decision != BookingStatus.approved:
+        db.flush()
+        flags.recheck_venue(db, booking.venue, staff, may_flag=False)
     db.commit()
     booking = db.scalars(_with_relations(select(VenueBooking).where(VenueBooking.id == booking.id))).one()
     return _out(booking)
@@ -218,7 +363,7 @@ def submit_venue_booking(
     rows = db.scalars(
         _with_relations(select(VenueBooking).where(VenueBooking.id.in_(ids)).order_by(VenueBooking.id))
     ).unique()
-    return [_out(b) for b in rows]
+    return _outs(rows, db, user)
 
 
 @router.get("/events/{event_id}", response_model=list[VenueBookingOut])
@@ -239,13 +384,13 @@ def list_event_venue_bookings(
             .order_by(VenueBooking.created_at.desc(), VenueBooking.id.desc())
         )
     ).unique()
-    return [_out(b) for b in bookings]
+    return _outs(bookings, db, user)
 
 
 @router.get("/queue", response_model=list[VenueBookingOut])
 def venue_booking_queue(
     db: Session = Depends(get_db),
-    _: User = Depends(_venue_staff),
+    user: User = Depends(_venue_staff),
 ) -> list[VenueBookingOut]:
     """Booking requests for Venue Staff to review, oldest first: pending
     ones, and approved ones a Safety Officer has sent back."""
@@ -256,21 +401,39 @@ def venue_booking_queue(
             .order_by(VenueBooking.created_at, VenueBooking.id)
         )
     ).unique()
-    return [_out(b) for b in bookings]
+    return _outs(bookings, db, user)
+
+
+@router.get("/flagged", response_model=list[VenueBookingOut])
+def flagged_venue_bookings(
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> list[VenueBookingOut]:
+    """Approved bookings flagged as conflicting after a venue's setup or
+    turnaround changed, soonest first, each with the bookings it overlaps
+    and the overlapping period."""
+    bookings = db.scalars(
+        _with_relations(
+            select(VenueBooking)
+            .where(VenueBooking.conflict_flagged_at.is_not(None))
+            .order_by(VenueBooking.start_time, VenueBooking.id)
+        )
+    ).unique()
+    return _outs(bookings, db, user)
 
 
 @router.get("/{booking_id}", response_model=VenueBookingOut)
 def get_venue_booking(
     booking_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(_venue_staff),
+    user: User = Depends(_venue_staff),
 ) -> VenueBookingOut:
     booking = db.scalars(
         _with_relations(select(VenueBooking).where(VenueBooking.id == booking_id))
     ).unique().first()
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
-    return _out(booking)
+    return _outs([booking], db, user)[0]
 
 
 @router.post("/{booking_id}/approve", response_model=VenueBookingOut)
@@ -287,23 +450,33 @@ def approve_venue_booking(
     venue and time, approved at the same moment, cannot both get through.
     """
     booking = _pending_for_decision(booking_id, db)
-    db.get(Venue, booking.venue_id, with_for_update=True)
+    venue = db.get(Venue, booking.venue_id, with_for_update=True)
 
-    # Same overlap rule as the venue search: each starts before the other
-    # ends, so back-to-back bookings do not clash.
-    taken = db.scalar(
-        select(VenueBooking.id).where(
+    # Same overlap rule as the venue search: each period starts before the
+    # other ends, so touching edges do not clash. Both periods include the
+    # venue's setup and turnaround, so a booking that leaves too little time
+    # to reset and set up again is a clash (0 when none is recorded). The
+    # setup/turnaround saved on the venue now applies to every booking there.
+    others = db.scalars(
+        select(VenueBooking)
+        .where(
             VenueBooking.venue_id == booking.venue_id,
             VenueBooking.id != booking.id,
             VenueBooking.status == BookingStatus.approved,
-            VenueBooking.start_time < booking.end_time,
-            VenueBooking.end_time > booking.start_time,
         )
-    )
-    if taken is not None:
+        .options(joinedload(VenueBooking.event))
+        .order_by(VenueBooking.start_time, VenueBooking.id)
+    ).unique()
+    hits = [c for o in others if (c := _conflict_between(booking, o, venue)) is not None]
+    if hits:
+        first = hits[0]
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="The venue is already booked for another event at that time.",
+            detail=(
+                "The venue is already booked for another event at that time: "
+                f"{first.event_name}, {first.overlap_start:%Y-%m-%d %H:%M} to "
+                f"{first.overlap_end:%Y-%m-%d %H:%M} UTC."
+            ),
         )
     blocked = db.scalar(
         select(VenueUnavailability.id).where(
@@ -339,3 +512,75 @@ def reject_venue_booking(
     booking.decision_notes = body.reason
     booking.suggested_alternative = body.suggested_alternative
     return _decide(booking, BookingStatus.rejected, user, db)
+
+
+@router.post("/{booking_id}/keep-conflict", response_model=VenueBookingOut)
+def keep_conflicting_booking(
+    booking_id: int,
+    body: ConflictKeep,
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> VenueBookingOut:
+    """Venue Staff accept a flagged overlap and keep the booking as it is.
+
+    The reason is required. The flag is cleared and the resolution (actor,
+    time, reason) goes in the Activity Log. 409 when the booking is not
+    flagged, which also makes a repeated call a no-op. The venue is locked
+    first, as in the setup/turnaround save, so the two cannot interleave.
+    """
+    booking = db.get(VenueBooking, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    db.get(Venue, booking.venue_id, with_for_update=True)
+    db.refresh(booking, with_for_update=True)
+    if booking.conflict_flagged_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This booking is not flagged as conflicting."
+        )
+    flags.release(
+        db,
+        booking,
+        user,
+        f"Venue booking '{booking.venue.name}' conflict kept by Venue Staff. Reason: {body.reason}",
+    )
+    db.commit()
+    booking = db.scalars(_with_relations(select(VenueBooking).where(VenueBooking.id == booking_id))).unique().one()
+    return _outs([booking], db, user)[0]
+
+
+@router.post("/{booking_id}/cancel-flagged", response_model=VenueBookingOut)
+def cancel_flagged_booking(
+    booking_id: int,
+    body: ConflictCancel,
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> VenueBookingOut:
+    """Venue Staff cancel a flagged booking so it no longer overlaps (SCRUM-92 AC6).
+
+    Only a flagged booking can be cancelled here; 409 otherwise. The reason is
+    required. The booking's flag is cleared, any other booking that only
+    clashed with it is un-flagged, the resolution (actor, time, reason) goes
+    in the Activity Log and the Event's Coordinator is told. The Event itself
+    is not cancelled: the Coordinator still has to arrange a venue.
+    """
+    booking = db.get(VenueBooking, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    db.get(Venue, booking.venue_id, with_for_update=True)
+    db.refresh(booking, with_for_update=True)
+    if booking.conflict_flagged_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This booking is not flagged as conflicting."
+        )
+    event = booking.event
+    venue_name = booking.venue.name
+    booking.status = BookingStatus.cancelled
+    flags.log_resolution(
+        db, booking, user, f"Venue booking '{venue_name}' cancelled by Venue Staff to resolve a conflict. Reason: {body.reason}"
+    )
+    flags.booking_changed(db, booking, user)
+    if event.coordinator_id is not None:
+        flags.notify_cancelled(db, event, venue_name, body.reason)
+    db.commit()
+    booking = db.scalars(_with_relations(select(VenueBooking).where(VenueBooking.id == booking_id))).unique().one()
+    return _outs([booking], db, user)[0]

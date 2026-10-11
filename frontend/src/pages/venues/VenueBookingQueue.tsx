@@ -3,11 +3,13 @@ import { ApiError } from '../../lib/api'
 import { formatRange, formatTimestamp } from '../../lib/events'
 import {
   BOOKING_STATUS_LABELS,
+  describeConflict,
+  formatBookingPeriods,
   approveVenueBooking,
   listVenueBookingQueue,
   rejectVenueBooking,
 } from '../../lib/venueBookings'
-import type { VenueBooking } from '../../lib/venueBookings'
+import type { BookingConflict, VenueBooking } from '../../lib/venueBookings'
 
 /** Venue Staff's review queue: every pending booking request, each carrying
  *  what is needed to decide on it -- the venue, the event's date and time,
@@ -71,6 +73,42 @@ export function VenueBookingQueue() {
   )
 }
 
+/** Warns Venue Staff that this request overlaps other bookings of the venue:
+ *  which event, the time it holds the venue, and the overlapping time. Marked
+ *  with a text label and an alert role, not by colour alone. Nothing at all
+ *  when there is no conflict. */
+function ConflictWarning({ conflicts }: { conflicts: BookingConflict[] }) {
+  if (conflicts.length === 0) return null
+  return (
+    <div className="form-error form-error-stack conflict-warning" role="alert">
+      <p>
+        <strong>Warning: booking conflict.</strong> This request overlaps{' '}
+        {conflicts.length === 1 ? 'another booking' : `${conflicts.length} other bookings`} of this
+        venue. Approving it will be refused.
+      </p>
+      <ul>
+        {conflicts.map((c) => {
+          const d = describeConflict(c)
+          return (
+            <li key={c.booking_id ?? `unavailable-${c.event_start}`}>
+              {d.unavailable ? (
+                <>
+                  <strong>Venue unavailable</strong> ({d.reason ?? 'no reason given'}) {d.occupied}. Overlap:{' '}
+                  {d.overlap}.
+                </>
+              ) : (
+                <>
+                  <strong>{d.name}</strong> holds the venue {d.occupied}. Overlap: {d.overlap}.
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function BookingCard({
   booking: b,
   onDecided,
@@ -104,11 +142,13 @@ function BookingCard({
           held. The Safety Officer asked for another look: {b.safety_recheck_reason}
         </p>
       )}
+      <ConflictWarning conflicts={b.conflicts ?? []} />
       <dl className="detail-list">
         {(
           [
             ['Venue', `${b.venue.name} — ${b.venue.location}`],
             ['Date and time', formatRange(b.start_time, b.end_time)],
+            ['Venue time held', formatBookingPeriods(b)],
             ['Expected attendance', b.expected_attendance?.toString() ?? 'Not given'],
             ['Layout requirements', b.room_layout_preference ?? 'None given'],
             ['Accessibility needs', b.accessibility_needs ?? 'None given'],

@@ -9,6 +9,7 @@ export const BookingStatus = {
   APPROVED: 'approved',
   REJECTED: 'rejected',
   CANCELLED: 'cancelled',
+  HOLD: 'hold',
 } as const
 export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
@@ -17,6 +18,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
+  hold: 'Tentative hold',
 }
 
 /** Event statuses in which a venue can be requested: 'Event Approved' and
@@ -31,6 +33,14 @@ export interface VenueBooking {
   venue: { id: number; name: string; location: string; capacity: number }
   start_time: string
   end_time: string
+  /** Effective whole minutes of setup before / turnaround after the Event
+   *  (0 when the venue has none saved). */
+  setup_minutes: number
+  turnaround_minutes: number
+  /** The venue is held from `occupied_start` (start minus setup) to
+   *  `occupied_end` (end plus turnaround). */
+  occupied_start: string
+  occupied_end: string
   expected_attendance: number | null
   /** What was asked of THIS venue; the Event's own needs where nothing was
    *  entered for it. */
@@ -49,6 +59,32 @@ export interface VenueBooking {
   safety_recheck_reason?: string | null
   reviewed_by: { name: string; email: string } | null
   reviewed_at: string | null
+  /** Other bookings that hold this venue at an overlapping time. Only filled
+   *  for a pending booking seen by Venue Staff; absent or empty otherwise. */
+  conflicts?: BookingConflict[]
+  /** An approved booking whose venue's setup/turnaround change made it
+   *  overlap another. It is not counted as approved (e.g. for Safety Check
+   *  submit) until the flag is cleared. Absent means not flagged. */
+  conflict_flagged?: boolean
+}
+
+/** One booking whose occupied window overlaps this request's. All ISO 8601.
+ *  Windows that merely touch (one ends as the other starts) are not
+ *  conflicts; the server decides, so none is listed then. */
+export interface BookingConflict {
+  /** "unavailability" (SCRUM-93): the venue was marked temporarily
+   *  unavailable then; there is no booking or event, and `reason` says why. */
+  kind?: 'booking' | 'unavailability'
+  booking_id: number | null
+  event_id: number | null
+  event_name: string | null
+  event_start: string
+  event_end: string
+  occupied_start: string
+  occupied_end: string
+  overlap_start: string
+  overlap_end: string
+  reason?: string | null
 }
 
 /** One venue being asked for, and what is needed of it. A need left out (or
@@ -103,4 +139,94 @@ export function rejectVenueBooking(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rejection),
   }) as Promise<VenueBooking>
+}
+
+/** Approved bookings flagged as conflicting, soonest first (Venue Staff). */
+export function listFlaggedBookings(): Promise<VenueBooking[]> {
+  return apiFetch('/venue-bookings/flagged') as Promise<VenueBooking[]>
+}
+
+/** Keep a flagged booking as it is, with a reason. 422 on a blank reason,
+ *  409 when it is not flagged. */
+export function keepFlaggedBooking(id: number, reason: string): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}/keep-conflict`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  }) as Promise<VenueBooking>
+}
+
+/** Venue Staff cancel a flagged booking so it no longer overlaps. A reason is
+ *  required. 409 when it is not flagged. The Event is not cancelled. */
+export function cancelFlaggedBooking(id: number, reason: string): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}/cancel-flagged`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  }) as Promise<VenueBooking>
+}
+
+/** Text of the marker shown on a flagged booking. */
+export const CONFLICT_FLAG_LABEL = 'Conflict flagged - not counted as approved until resolved'
+
+type Timing = Pick<
+  VenueBooking,
+  'start_time' | 'end_time' | 'setup_minutes' | 'turnaround_minutes'
+> &
+  Partial<Pick<VenueBooking, 'occupied_start' | 'occupied_end'>>
+
+const hhmm = (d: Date) =>
+  `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+/** The three periods a booking holds a venue for, as a single line, e.g.
+ *  `Event 10:00-12:00 | Setup 09:30-10:00 | Turnaround 12:00-12:45`.
+ *  Times are local, 24-hour. Setup starts at `occupied_start` and turnaround
+ *  ends at `occupied_end`; when the server omits them they are worked out
+ *  from the minutes. */
+export function formatBookingPeriods(b: Timing): string {
+  const start = new Date(b.start_time)
+  const end = new Date(b.end_time)
+  const setupStart = b.occupied_start
+    ? new Date(b.occupied_start)
+    : new Date(start.getTime() - b.setup_minutes * 60_000)
+  const turnaroundEnd = b.occupied_end
+    ? new Date(b.occupied_end)
+    : new Date(end.getTime() + b.turnaround_minutes * 60_000)
+  return (
+    `Event ${hhmm(start)}-${hhmm(end)} | ` +
+    `Setup ${hhmm(setupStart)}-${hhmm(start)} | ` +
+    `Turnaround ${hhmm(end)}-${hhmm(turnaroundEnd)}`
+  )
+}
+
+const shortDate = (d: Date) =>
+  d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+
+/** A period as one readable string. Same day: `2 Nov 2026, 09:30-12:45`.
+ *  Across days both ends carry their date. Local time, 24-hour. */
+export function formatPeriod(startIso: string, endIso: string): string {
+  const start = new Date(startIso)
+  const end = new Date(endIso)
+  if (start.toDateString() === end.toDateString()) {
+    return `${shortDate(start)}, ${hhmm(start)}-${hhmm(end)}`
+  }
+  return `${shortDate(start)} ${hhmm(start)} to ${shortDate(end)} ${hhmm(end)}`
+}
+
+/** What Venue Staff read for one conflict: the event it belongs to, the time
+ *  it holds the venue, and where that overlaps this request. */
+export function describeConflict(c: BookingConflict): {
+  name: string
+  occupied: string
+  overlap: string
+  unavailable: boolean
+  reason: string | null
+} {
+  return {
+    unavailable: c.kind === 'unavailability',
+    reason: c.reason ?? null,
+    name: c.event_name ?? 'Another event',
+    occupied: formatPeriod(c.occupied_start, c.occupied_end),
+    overlap: formatPeriod(c.overlap_start, c.overlap_end),
+  }
 }

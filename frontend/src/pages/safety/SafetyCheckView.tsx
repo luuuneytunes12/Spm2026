@@ -15,6 +15,7 @@ import {
   requestSafetyChanges,
 } from '../../lib/safetyChecks'
 import type { SafetyCheckDetail } from '../../lib/safetyChecks'
+import { formatBookingPeriods } from '../../lib/venueBookings'
 
 type Decision = 'request-changes' | 'reject'
 
@@ -156,6 +157,9 @@ export function SafetyCheckView() {
                 [
                   ['Venue', `${booking.venue.name} — ${booking.venue.location}`],
                   ['Capacity', booking.venue.capacity.toString()],
+                  ...(booking.setup_minutes !== undefined && booking.turnaround_minutes !== undefined
+                    ? [['Venue time held', formatBookingPeriods({ ...booking, setup_minutes: booking.setup_minutes, turnaround_minutes: booking.turnaround_minutes })]]
+                    : []),
                   ['Supported layouts', listOrNone(booking.venue.supported_layouts)],
                   ['Accessibility features', listOrNone(booking.venue.accessibility_features)],
                   ['Emergency access', booking.venue.emergency_access ?? 'None recorded'],
