@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.roles import Role
-from app.models.enums import ACTIVE_ASSIGNMENT_STATUSES, NotificationType
+from app.models.enums import ACTIVE_ASSIGNMENT_STATUSES, EventStatus, NotificationType
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.notifications import notify
@@ -62,8 +62,8 @@ def _record(db: Session, event: Event, actor_id: int, note: str) -> None:
     AssignedEventView's ActivityLine on the frontend for how a same-status
     entry renders as "Assignment" rather than a status arrow into itself.
 
-    Initial Lead assignment keeps the Submitted status and is implemented by
-    `services.lead_assignment.AssignEvent`.
+    Initial assignment moves a submitted event to Under Review and is
+    implemented in production by `services.lead_assignment.AssignEvent`.
     """
     db.add(
         EventStatusHistory(
@@ -123,14 +123,16 @@ def assign_coordinator(db: Session, event: Event, actor_id: int) -> User | None:
     if coordinator is None:
         return None
 
+    previous_status = event.status
     event.coordinator_id = coordinator.id
+    event.status = EventStatus.under_review
     db.add(
         EventStatusHistory(
             event_id=event.id,
             changed_by=actor_id,
-            from_status=event.status,
+            from_status=previous_status,
             to_status=event.status,
-            note=f"Assigned to {coordinator.name}.",
+            note=f"Assigned to {coordinator.name}; review started.",
         )
     )
     _notify(db, coordinator.id, event)

@@ -23,7 +23,7 @@ def test_rejection_requires_a_non_blank_reason(client, db_session):
     )
 
     assert response.status_code == 422
-    assert db_session.get(Event, event_id).status == EventStatus.submitted_awaiting_coordinator
+    assert db_session.get(Event, event_id).status == EventStatus.under_review
 
 
 def test_rejection_records_reason_notifies_organiser_and_logs_coordinator(
@@ -33,7 +33,7 @@ def test_rejection_records_reason_notifies_organiser_and_logs_coordinator(
         client, db_session
     )
     event = db_session.get(Event, event_id)
-    event.status = EventStatus.submitted_awaiting_coordinator
+    event.status = EventStatus.under_review
     db_session.commit()
     reason = "The requested venue is unavailable on that date."
 
@@ -80,7 +80,7 @@ def test_only_the_assigned_coordinator_can_reject(client, db_session):
     )
 
     assert response.status_code == 403
-    assert db_session.get(Event, event_id).status == EventStatus.submitted_awaiting_coordinator
+    assert db_session.get(Event, event_id).status == EventStatus.under_review
 
 
 def test_coordinator_lead_is_view_only_for_event_rejection(client, db_session):
@@ -100,7 +100,7 @@ def test_coordinator_lead_is_view_only_for_event_rejection(client, db_session):
     )
 
     assert response.status_code == 403
-    assert db_session.get(Event, event_id).status == EventStatus.submitted_awaiting_coordinator
+    assert db_session.get(Event, event_id).status == EventStatus.under_review
 
 
 def test_event_rejection_releases_all_of_its_live_venue_bookings(client, db_session):

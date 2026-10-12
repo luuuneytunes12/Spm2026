@@ -43,7 +43,7 @@ from app.services.submission_notice import SubmissionNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
 
-REVIEWABLE_STATUSES = (EventStatus.submitted_awaiting_coordinator,)
+REVIEWABLE_STATUSES = (EventStatus.under_review,)
 IMPORTANT_CHANGE_FIELDS = {
     "proposed_start",
     "proposed_end",
@@ -863,7 +863,7 @@ def approve_event(
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.COORDINATOR)),
 ) -> EventOut:
-    """Approve an assigned Submitted request; Leads only assign.
+    """Approve an assigned request under review; Leads only assign.
 
     TODO(confirm): Coordinator Leads remain view-only for this decision.
     """
@@ -880,10 +880,10 @@ def approve_event(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned Event Coordinator may approve this event.",
         )
-    if event.status != EventStatus.submitted_awaiting_coordinator:
+    if event.status != EventStatus.under_review:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only a Submitted event can be approved.",
+            detail="Only an event Under Review can be approved.",
         )
     pending_change = (
         db.query(EventChangeRequest)
@@ -945,10 +945,10 @@ def reject_event(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned Event Coordinator may reject this event.",
         )
-    if event.status != EventStatus.submitted_awaiting_coordinator:
+    if event.status != EventStatus.under_review:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only a Submitted event can be rejected.",
+            detail="Only an event Under Review can be rejected.",
         )
     previous_status = event.status
     event.status = EventStatus.event_rejected

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.roles import Role
 from app.models.enums import (
+    EventStatus,
     NotificationType,
     TERMINAL_EVENT_STATUSES,
 )
@@ -81,8 +82,7 @@ class LeadAssignmentAction:
 
 
 class AssignEvent(LeadAssignmentAction):
-    """Assign a request from the Unassigned Queue: it leaves the queue and
-    remains Submitted with the chosen Coordinator."""
+    """Assign a request from the Unassigned Queue and move it into review."""
 
     def check(self, event: Event, coordinator: User) -> None:
         if UnassignedQueue().find(self.db, event.id) is None:
@@ -93,13 +93,14 @@ class AssignEvent(LeadAssignmentAction):
     def change(self, event: Event, coordinator: User) -> None:
         previous = event.status
         event.coordinator_id = coordinator.id
+        event.status = EventStatus.under_review
         self.db.add(
             EventStatusHistory(
                 event_id=event.id,
                 changed_by=self.lead.id,
                 from_status=previous,
                 to_status=event.status,
-                note=f"Assigned to {coordinator.name}.",
+                note=f"Assigned to {coordinator.name}; review started.",
             )
         )
         _notify(self.db, coordinator.id, event)

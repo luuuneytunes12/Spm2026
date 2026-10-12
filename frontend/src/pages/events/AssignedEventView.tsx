@@ -329,7 +329,7 @@ export function AssignedEventView() {
       <section className="card">
         <h2>Status</h2>
         <StatusTimeline status={event.status} activity={event.activity} />
-        {event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR && (
+        {event.status === EventStatus.UNDER_REVIEW && (
           <div className="status-actions">
             <h3>Coordinator decision</h3>
             <div className="form-actions">

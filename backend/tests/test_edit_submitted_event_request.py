@@ -77,7 +77,7 @@ def test_coordinator_must_decide_pending_change_before_event(client, db_session)
     response = client.post(f"/events/{event_id}/approve", headers=coordinator_headers)
 
     assert response.status_code == 409
-    assert db_session.get(Event, event_id).status == EventStatus.submitted_awaiting_coordinator
+    assert db_session.get(Event, event_id).status == EventStatus.under_review
 
 
 def test_coordinator_approval_applies_proposed_values(client, db_session):
