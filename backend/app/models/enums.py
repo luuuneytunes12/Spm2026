@@ -113,6 +113,7 @@ class NotificationType(enum.StrEnum):
     safety_check_passed = "safety_check_passed"
     safety_changes_requested = "safety_changes_requested"
     safety_check_rejected = "safety_check_rejected"
+    safety_check_requested = "safety_check_requested"
     venue_unavailability_recorded = "venue_unavailability_recorded"
     venue_hold_expiring = "venue_hold_expiring"
     venue_hold_expired = "venue_hold_expired"

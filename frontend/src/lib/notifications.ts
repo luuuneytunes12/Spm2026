@@ -117,6 +117,7 @@ export function notificationLink(n: Notification, role: Role): string | null {
   if (role === Role.COORDINATOR) return `/coordinator/events/${n.event_id}`
   if (role === Role.ORGANISER) return `/organiser/events/${n.event_id}`
   if (role === Role.COORDINATOR_LEAD) return `/coordinator-lead/queue/${n.event_id}`
+  if (role === Role.SAFETY_OFFICER) return `/safety-checks/${n.event_id}`
   return null
 }
 
