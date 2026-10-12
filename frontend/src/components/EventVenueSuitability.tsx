@@ -14,7 +14,14 @@ export function EventVenueSuitability({ eventId }: { eventId: number }) {
     try {
       setResult(await checkEventVenueSuitability(eventId))
     } catch (err: unknown) {
-      setError(err instanceof ApiError ? err.message : 'Could not check event venue suitability.')
+      console.error('Failed to check event venue suitability.', { eventId, error: err })
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof TypeError
+            ? 'Could not reach the backend to check event venue suitability.'
+            : 'Could not check event venue suitability. Check the browser console for diagnostic details.',
+      )
     } finally {
       setLoading(false)
     }
@@ -31,8 +38,13 @@ export function EventVenueSuitability({ eventId }: { eventId: number }) {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
+          console.error('Failed to check event venue suitability.', { eventId, error: err })
           setError(
-            err instanceof ApiError ? err.message : 'Could not check event venue suitability.',
+            err instanceof ApiError
+              ? err.message
+              : err instanceof TypeError
+                ? 'Could not reach the backend to check event venue suitability.'
+                : 'Could not check event venue suitability. Check the browser console for diagnostic details.',
           )
         }
       })

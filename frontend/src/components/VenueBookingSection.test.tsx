@@ -90,6 +90,25 @@ describe('SCRUM-39 AC1 - no venue selected', () => {
     render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('venues down')
   })
+
+  it('does not treat a failed booking lookup as an empty booking list and allows retry', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockList
+      .mockRejectedValueOnce(new ApiError(503, 'Booking records could not be loaded.'))
+      .mockResolvedValueOnce([BOOKING])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Booking records could not be loaded.')
+    expect(screen.getByText(/cannot submit another request yet/)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Marina Hall/ })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading bookings' }))
+    expect(
+      await screen.findByRole('checkbox', { name: /Marina Hall.*already requested/ }),
+    ).toBeDisabled()
+    expect(mockList).toHaveBeenCalledTimes(2)
+    consoleError.mockRestore()
+  })
 })
 
 describe('SCRUM-39 AC2 - one or more venues are submitted', () => {

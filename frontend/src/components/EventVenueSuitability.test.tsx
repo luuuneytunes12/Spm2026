@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventVenueSuitability } from './EventVenueSuitability'
+import { ApiError } from '../lib/api'
 
 vi.mock('../lib/venues', () => ({
   checkEventVenueSuitability: vi.fn(),
@@ -83,5 +84,25 @@ describe('event-wide venue suitability', () => {
     expect(await screen.findByText('No active venue bookings are attached to this event yet.'))
       .toBeInTheDocument()
     expect(screen.getByText(/Combined capacity: 0 \/ 120 required/)).toBeInTheDocument()
+  })
+
+  it('shows the server explanation and permits a retry after failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockCheck
+      .mockRejectedValueOnce(new ApiError(503, 'Venue suitability could not be calculated.'))
+      .mockResolvedValueOnce(RESULT)
+    render(<EventVenueSuitability eventId={7} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Venue suitability could not be calculated.',
+    )
+    await screen.findByRole('button', { name: 'Retry check' }).then((button) => button.click())
+    expect(await screen.findByText('Main Hall: Suitable')).toBeInTheDocument()
+    expect(mockCheck).toHaveBeenCalledTimes(2)
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to check event venue suitability.',
+      expect.objectContaining({ eventId: 7 }),
+    )
+    consoleError.mockRestore()
   })
 })

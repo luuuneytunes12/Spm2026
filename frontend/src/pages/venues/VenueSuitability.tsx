@@ -44,8 +44,13 @@ export function VenueSuitability({ venueId, venueName }: { venueId: number; venu
       })
       .catch((err: unknown) => {
         if (!cancelled) {
+          console.error('Failed to load assigned events for venue suitability.', { error: err })
           setEventsError(
-            err instanceof ApiError ? err.message : 'Could not load your assigned events.',
+            err instanceof ApiError
+              ? err.message
+              : err instanceof TypeError
+                ? 'Could not reach the backend to load your assigned events.'
+                : 'Could not load your assigned events. Check the browser console for diagnostic details.',
           )
         }
       })
@@ -63,8 +68,13 @@ export function VenueSuitability({ venueId, venueName }: { venueId: number; venu
     try {
       setEvents(await listAssignedEvents())
     } catch (err: unknown) {
+      console.error('Failed to load assigned events for venue suitability.', { error: err })
       setEventsError(
-        err instanceof ApiError ? err.message : 'Could not load your assigned events.',
+        err instanceof ApiError
+          ? err.message
+          : err instanceof TypeError
+            ? 'Could not reach the backend to load your assigned events.'
+            : 'Could not load your assigned events. Check the browser console for diagnostic details.',
       )
     } finally {
       setLoadingEvents(false)
@@ -79,8 +89,17 @@ export function VenueSuitability({ venueId, venueName }: { venueId: number; venu
     try {
       setResult(await checkVenueSuitability(venueId, Number(selectedEventId)))
     } catch (err: unknown) {
+      console.error('Failed to check venue suitability.', {
+        venueId,
+        eventId: Number(selectedEventId),
+        error: err,
+      })
       setCheckError(
-        err instanceof ApiError ? err.message : 'Could not check suitability. Please try again.',
+        err instanceof ApiError
+          ? err.message
+          : err instanceof TypeError
+            ? 'Could not reach the backend to check venue suitability.'
+            : 'Could not check suitability. Check the browser console for diagnostic details.',
       )
     } finally {
       setChecking(false)

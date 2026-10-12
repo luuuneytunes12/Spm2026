@@ -157,6 +157,25 @@ describe('Check Venue Suitability for an Event', () => {
     expect(mockCheck).toHaveBeenCalledTimes(2)
   })
 
+  it('explains a backend connection failure and logs venue and event context', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockCheck.mockRejectedValue(new TypeError('Failed to fetch'))
+    renderSuitability()
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
+      target: { value: '18' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not reach the backend to check venue suitability.',
+    )
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to check venue suitability.',
+      expect.objectContaining({ venueId: 4, eventId: 18 }),
+    )
+    consoleError.mockRestore()
+  })
+
   it('allows retry when assigned events cannot be loaded', async () => {
     mockListAssignedEvents
       .mockRejectedValueOnce(new Error('temporary network issue'))

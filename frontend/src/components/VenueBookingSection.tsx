@@ -47,12 +47,29 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null)
+  const [loadingBookings, setLoadingBookings] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     listEventVenueBookings(eventId)
-      .then((b) => !cancelled && setBookings(b))
-      .catch(() => !cancelled && setBookings([]))
+      .then((b) => {
+        if (!cancelled) {
+          setBookings(b)
+          setBookingsLoadError(null)
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        console.error('Failed to load event venue bookings.', { eventId, error: err })
+        setBookings(null)
+        setBookingsLoadError(
+          err instanceof ApiError ? err.message : 'Could not load the existing venue bookings.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBookings(false)
+      })
     // Every active venue, as on the Venues tab. Not narrowed by attendance:
     // a hidden venue is indistinguishable from a missing one, so a small
     // venue is flagged in its label instead.
@@ -60,6 +77,7 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
       .then((v) => !cancelled && setVenues(v.filter((venue) => venue.is_active)))
       .catch((err: unknown) => {
         if (cancelled) return
+        console.error('Failed to load active venues for event booking.', { eventId, error: err })
         setVenues([])
         setLoadError(err instanceof ApiError ? err.message : 'Could not load venues.')
       })
@@ -71,6 +89,32 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
   const liveVenueIds = new Set(
     (bookings ?? []).filter((b) => b.status === 'pending' || b.status === 'approved').map((b) => b.venue.id),
   )
+
+  async function reloadBookings() {
+    setLoadingBookings(true)
+    setBookingsLoadError(null)
+    setBookings(null)
+    try {
+      setBookings(await listEventVenueBookings(eventId))
+    } catch (err: unknown) {
+      console.error('Failed to load event venue bookings.', { eventId, error: err })
+      setBookingsLoadError(
+        err instanceof ApiError ? err.message : 'Could not load the existing venue bookings.',
+      )
+    } finally {
+      setLoadingBookings(false)
+    }
+  }
+
+  async function reloadVenues() {
+    setLoadError(null)
+    try {
+      setVenues((await listVenues()).filter((venue) => venue.is_active))
+    } catch (err: unknown) {
+      console.error('Failed to load active venues for event booking.', { eventId, error: err })
+      setLoadError(err instanceof ApiError ? err.message : 'Could not load venues.')
+    }
+  }
 
   function toggle(venueId: number) {
     setChosen((current) => {
@@ -109,6 +153,19 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
     <section className="card" aria-labelledby="venue-booking-heading">
       <h2 id="venue-booking-heading">Venue bookings</h2>
 
+      {bookingsLoadError && (
+        <div>
+          <p className="form-error" role="alert">{bookingsLoadError}</p>
+          <p className="page-subtitle">
+            Existing booking status could not be checked, so you cannot submit another request yet.
+          </p>
+          <button type="button" className="btn-secondary" onClick={() => void reloadBookings()}>
+            Retry loading bookings
+          </button>
+        </div>
+      )}
+      {loadingBookings && <p role="status">Loading existing venue bookings…</p>}
+
       {bookings && bookings.length > 0 && (
         <ul aria-label="Venue bookings for this event" className="booking-list">
           {bookings.map((b) => (
@@ -126,7 +183,7 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
           Choose one or more venues. The event's date, time and expected attendance are sent with
           each request; add what you need of each venue below it.
         </p>
-        <fieldset disabled={submitting}>
+        <fieldset disabled={submitting || bookings === null || bookingsLoadError !== null}>
           <legend>Venues</legend>
           {venues.map((v) => {
             const live = liveVenueIds.has(v.id)
@@ -177,9 +234,12 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
           })}
         </fieldset>
         {loadError && (
-          <p className="form-error" role="alert">
-            {loadError}
-          </p>
+          <div>
+            <p className="form-error" role="alert">{loadError}</p>
+            <button type="button" className="btn-secondary" onClick={() => void reloadVenues()}>
+              Retry loading venues
+            </button>
+          </div>
         )}
         <button type="submit" className="btn-primary" disabled={submitting}>
           {submitting ? 'Submitting…' : 'Submit booking request'}

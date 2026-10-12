@@ -74,8 +74,13 @@ export function VenueView() {
       )
       setUnavailableReason('')
     } catch (err: unknown) {
+      console.error('Failed to record venue unavailability.', { venueId: Number(id), error: err })
       setUnavailabilityError(
-        err instanceof ApiError ? err.message : 'Could not record venue unavailability.',
+        err instanceof ApiError
+          ? err.message
+          : err instanceof TypeError
+            ? 'Could not reach the backend to record venue unavailability.'
+            : 'Could not record venue unavailability. Check the browser console for diagnostic details.',
       )
     } finally {
       setSavingUnavailability(false)
@@ -91,6 +96,7 @@ export function VenueView() {
       })
       .catch((err: unknown) => {
         if (cancelled) return
+        console.error('Failed to load venue details.', { venueId: Number(id), error: err })
         setError(
           err instanceof ApiError && err.status === 404
             ? 'Venue not found.'
