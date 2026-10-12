@@ -5,12 +5,20 @@
  * on screen, including the "nothing recorded" states. Who may see venues is
  * enforced server-side and covered by backend/tests/test_venues.py.
  */
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { VenueView } from './VenueView'
 import { Venues } from './Venues'
+
+const auth = vi.hoisted(() => ({ role: 'venue_staff' }))
+vi.mock('../../auth/useAuth', () => ({
+  useAuth: () => ({ user: { role: auth.role } }),
+}))
+vi.mock('../../lib/events', () => ({
+  fromDateTimeLocal: (value: string) => (value ? new Date(value).toISOString() : null),
+}))
 
 // listVenueFilterOptions: the list page also loads its filter choices
 // (Search and Filter Venues). Without it in the mock the page would call
@@ -18,18 +26,21 @@ import { Venues } from './Venues'
 vi.mock('../../lib/venues', () => ({
   listVenues: vi.fn(),
   getVenue: vi.fn(),
+  getVenueAvailability: vi.fn(),
   listVenueFilterOptions: vi.fn().mockResolvedValue({
     layouts: [],
     facilities: [],
     accessibility_features: [],
   }),
+  recordVenueUnavailability: vi.fn(),
 }))
 
-import { getVenue, listVenues } from '../../lib/venues'
+import { getVenue, listVenues, recordVenueUnavailability } from '../../lib/venues'
 import type { VenueDetail } from '../../lib/venues'
 
 const mockList = vi.mocked(listVenues)
 const mockGet = vi.mocked(getVenue)
+const mockRecordUnavailability = vi.mocked(recordVenueUnavailability)
 
 const VENUE: VenueDetail = {
   id: 4,
@@ -55,6 +66,7 @@ function renderDetail() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  auth.role = 'venue_staff'
 })
 
 describe('venue list', () => {
@@ -128,5 +140,47 @@ describe('venue details', () => {
     renderDetail()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Venue not found.')
+  })
+
+  it('does not offer event suitability to Venue Staff', async () => {
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+
+    expect(await screen.findByRole('heading', { name: 'Marina Grand Ballroom' }))
+      .toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Check event suitability' }))
+      .not.toBeInTheDocument()
+  })
+
+  it('lets Venue Staff record unavailability and confirms affected bookings remain', async () => {
+    mockGet.mockResolvedValue(VENUE)
+    mockRecordUnavailability.mockResolvedValue({
+      id: 5,
+      venue_id: VENUE.id,
+      start_time: '2026-11-02T09:00:00Z',
+      end_time: '2026-11-02T17:00:00Z',
+      reason: 'Maintenance',
+      affected_booking_ids: [22],
+      affected_event_ids: [18],
+    })
+    renderDetail()
+    fireEvent.change(await screen.findByLabelText('From'), {
+      target: { value: '2026-11-02T09:00' },
+    })
+    fireEvent.change(screen.getByLabelText('Until'), {
+      target: { value: '2026-11-02T17:00' },
+    })
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'Maintenance' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Record unavailability' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('1 existing booking(s) are affected')
+    expect(screen.getByRole('status')).toHaveTextContent('they were not cancelled')
+    expect(mockRecordUnavailability).toHaveBeenCalledWith(VENUE.id, {
+      start_time: new Date('2026-11-02T09:00').toISOString(),
+      end_time: new Date('2026-11-02T17:00').toISOString(),
+      reason: 'Maintenance',
+    })
   })
 })

@@ -132,7 +132,11 @@ def test_ac1_resubmitting_after_being_sent_back_says_resubmitted(client, db_sess
     ).status_code == 200
     if decision == "reject":
         _, staff_h = user(client, db_session, Role.VENUE_STAFF, "staff2@example.com", "Second Staff")
-        assert client.post(f"/venue-bookings/{s['booking_id']}/approve", headers=staff_h).status_code == 200
+        for booking_id in (s["booking_id"], s["second_booking_id"]):
+            assert (
+                client.post(f"/venue-bookings/{booking_id}/approve", headers=staff_h).status_code
+                == 200
+            )
 
     assert client.post(f"/events/{s['event_id']}/confirm", headers=s["coord_h"]).status_code == 200
 

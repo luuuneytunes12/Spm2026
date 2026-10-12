@@ -2,8 +2,7 @@
 Events as Coordinator Lead".
 
   AC1 - active Events with a Coordinator are listed with name, Coordinator and
-        status (active = Under Review, Awaiting Organiser Reply, Event
-        Approved, Planning Event, Safety Check Passed)
+        status (including Submitted and Awaiting Safety Check)
   AC2 - filtering by a Coordinator shows only theirs, and how many
   AC3 - opening one shows what the Organiser entered plus the Organiser's
         contact details and current status, read-only
@@ -28,13 +27,20 @@ from event_review_test_helpers import user
 
 LIST = "/lead/assignments"
 ACTIVE = [
+    EventStatus.submitted_awaiting_coordinator,
     EventStatus.under_review,
     EventStatus.awaiting_organiser_reply,
     EventStatus.event_approved,
     EventStatus.planning_event,
+    EventStatus.awaiting_safety_check,
     EventStatus.safety_check_passed,
 ]
-INACTIVE = [EventStatus.draft, EventStatus.submitted_awaiting_coordinator, EventStatus.event_rejected, EventStatus.event_completed, EventStatus.event_cancelled]
+INACTIVE = [
+    EventStatus.draft,
+    EventStatus.event_rejected,
+    EventStatus.event_completed,
+    EventStatus.event_cancelled,
+]
 
 
 @pytest.fixture()
@@ -210,7 +216,8 @@ def test_active_assignments_inherit_from_the_earlier_overview_class():
 
 def test_the_active_status_set_is_the_stories_definition():
     assert set(LEAD_ACTIVE_STATUSES) == set(ACTIVE)
-    assert EventStatus.submitted_awaiting_coordinator not in LEAD_ACTIVE_STATUSES
+    assert EventStatus.submitted_awaiting_coordinator in LEAD_ACTIVE_STATUSES
+    assert EventStatus.awaiting_safety_check in LEAD_ACTIVE_STATUSES
 
 
 def test_workload_is_a_plain_read_that_changes_nothing(client, world):

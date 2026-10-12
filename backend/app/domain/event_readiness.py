@@ -5,18 +5,21 @@ Officer's approval, so both refuse for the same reasons and name the same
 outstanding items.
 """
 
+from datetime import datetime, timezone
+
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.domain.requirement_progress import RequirementReservationLinks
-from app.models.enums import BookingStatus, EquipmentStatus, EventStatus
 from app.models.equipment import CoordinatorEquipmentRequirement
+from app.models.enums import (
+    BookingStatus,
+    EquipmentStatus,
+    EventStatus,
+    PLANNING_STATUSES,
+)
 from app.models.events import Event
 from app.models.venues import VenueBooking
-
-# The planning stage an event is in while its venue and equipment are being
-# arranged -- `event_approved` on first pass, `planning_event` once a Safety Officer has
-# sent it back.
-PLANNING_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
 
 
 def outstanding_arrangements(db: Session, event: Event) -> list[str]:
@@ -36,18 +39,28 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
     """
     outstanding: list[str] = []
 
+    now = datetime.now(timezone.utc)
     in_play = (
         db.query(VenueBooking)
         .options(joinedload(VenueBooking.venue))
         .filter(
             VenueBooking.event_id == event.id,
             VenueBooking.status != BookingStatus.cancelled,
+            or_(
+                VenueBooking.status != BookingStatus.tentative_hold,
+                and_(
+                    VenueBooking.expires_at.is_not(None),
+                    VenueBooking.expires_at > now,
+                ),
+            ),
         )
         .order_by(VenueBooking.id)
         .all()
     )
     if not in_play:
-        outstanding.append("The event has no venue: no venue booking has been requested, or all were cancelled")
+        outstanding.append(
+            "The event has no venue: no venue booking has been requested, or all were cancelled"
+        )
     for booking in in_play:
         if booking.status is not BookingStatus.approved:
             outstanding.append(
@@ -76,10 +89,11 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
     )
     progress = RequirementReservationLinks(db).progress_of(requirements)
     for requirement in requirements:
-        status = progress[requirement.id].status
-        if status is not EquipmentStatus.reserved:
+        requirement_status = progress[requirement.id].status
+        if requirement_status is not EquipmentStatus.reserved:
             outstanding.append(
-                f"Equipment requirement '{requirement.category}' is not reserved (status: {status})"
+                f"Equipment requirement '{requirement.category}' is not reserved "
+                f"(status: {requirement_status})"
             )
     return outstanding
 

@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'approved', 'rejected', 'cancelled'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -177,6 +177,7 @@ create table venue_bookings (
     start_time timestamptz not null,
     end_time timestamptz not null,
     status booking_status not null default 'pending',
+    expires_at timestamptz,
     decision_notes text,
     -- What Venue Staff offer instead when rejecting; see sql/014.
     suggested_alternative text,
@@ -190,7 +191,8 @@ create table venue_bookings (
     facilities_needs text,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
-    check (end_time > start_time)
+    check (end_time > start_time),
+    check (status <> 'tentative_hold' or expires_at is not null)
 );
 
 create index idx_venue_bookings_event on venue_bookings (event_id);

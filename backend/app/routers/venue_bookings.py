@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, or_, select
@@ -7,11 +7,18 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
-from app.models.enums import BookingStatus, EventStatus
+from app.models.enums import BookingStatus, EventStatus, NotificationType
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
-from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut, VenueBookingRejection
+from app.schemas.venue_booking import (
+    VenueBookingCreate,
+    VenueBookingOut,
+    VenueBookingRejection,
+    VenueHoldIn,
+)
+from app.routers.venues import expire_tentative_holds
+from app.services.notifications import notify
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
@@ -20,10 +27,11 @@ router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 # the arrangement is judged as it stands.
 BOOKABLE_EVENT_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
 
-# A request that is still live: a second one for the same venue and event
-# would be a double-click or a misunderstanding. A rejected or cancelled one
-# is history, so the Coordinator may try that venue again.
-LIVE_BOOKING_STATUSES = (BookingStatus.pending, BookingStatus.approved)
+LIVE_BOOKING_STATUSES = (
+    BookingStatus.pending,
+    BookingStatus.tentative_hold,
+    BookingStatus.approved,
+)
 
 _coordinator = require_role(Role.COORDINATOR)
 _venue_staff = require_role(Role.VENUE_STAFF)
@@ -47,6 +55,7 @@ def _out(booking: VenueBooking) -> VenueBookingOut:
         requested_by=booking.requested_by_user,
         decision_notes=booking.decision_notes,
         suggested_alternative=booking.suggested_alternative,
+        expires_at=booking.expires_at,
         safety_recheck_reason=booking.safety_recheck_reason,
         reviewed_by=booking.reviewed_by_user,
         reviewed_at=booking.reviewed_at,
@@ -66,6 +75,7 @@ def _with_relations(stmt):
 # Safety Officer has sent back for another look (still holding the venue).
 _AWAITING_DECISION = or_(
     VenueBooking.status == BookingStatus.pending,
+    VenueBooking.status == BookingStatus.tentative_hold,
     and_(
         VenueBooking.status == BookingStatus.approved,
         VenueBooking.safety_recheck_reason.is_not(None),
@@ -82,10 +92,13 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
     An approved booking flagged for safety re-review is decided again the
     same way; either decision clears the flag.
     """
+    expire_tentative_holds(db)
     booking = db.get(VenueBooking, booking_id, with_for_update=True)
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
     if booking.status == BookingStatus.approved and booking.safety_recheck_reason:
+        return booking
+    if booking.status == BookingStatus.tentative_hold:
         return booking
     if booking.status != BookingStatus.pending:
         raise HTTPException(
@@ -98,11 +111,61 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
 def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Session) -> VenueBookingOut:
     """Record the outcome with who decided and when, and return it."""
     booking.status = decision
+    if decision != BookingStatus.tentative_hold:
+        booking.expires_at = None
     booking.safety_recheck_reason = None
     booking.reviewed_by = staff.id
     booking.reviewed_at = datetime.now(timezone.utc)
     db.commit()
     booking = db.scalars(_with_relations(select(VenueBooking).where(VenueBooking.id == booking.id))).one()
+    return _out(booking)
+
+
+@router.post("/{booking_id}/hold", response_model=VenueBookingOut)
+def create_tentative_hold(
+    booking_id: int,
+    body: VenueHoldIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> VenueBookingOut:
+    """Place a temporary hold on a pending request for follow-up."""
+    booking = db.get(VenueBooking, booking_id, with_for_update=True)
+    if booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    if booking.status != BookingStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a pending venue booking can be placed on tentative hold.",
+        )
+    now = datetime.now(timezone.utc)
+    # TODO(confirm): The hold duration defaults to 24 hours until the business confirms it.
+    expires_at = body.expires_at or (now + timedelta(hours=24))
+    comparable_expiry = expires_at.replace(tzinfo=timezone.utc) if expires_at.tzinfo is None else expires_at
+    if comparable_expiry <= now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A tentative hold expiry must be in the future.",
+        )
+    booking.status = BookingStatus.tentative_hold
+    booking.expires_at = expires_at
+    booking.reviewed_by = user.id
+    booking.reviewed_at = now
+    coordinator_id = booking.event.coordinator_id
+    if coordinator_id is not None:
+        notify(
+            db,
+            user_id=coordinator_id,
+            type=NotificationType.venue_hold_expiring,
+            message=(
+                f"The tentative hold for {booking.venue.name} will expire "
+                f"at {expires_at.isoformat()}."
+            ),
+            event_id=booking.event_id,
+        )
+    db.commit()
+    booking = db.scalars(
+        _with_relations(select(VenueBooking).where(VenueBooking.id == booking.id))
+    ).unique().one()
     return _out(booking)
 
 
@@ -123,7 +186,6 @@ def submit_venue_booking(
     waiting for Venue Staff. The first request on an approved event moves it
     to Planning Event, and that is logged. All or nothing: if any venue is
     refused, none are created.
-
     404 for an event that is not assigned to the caller, the same as
     GET /events/assigned/{id}: "not yours" and "does not exist" are
     indistinguishable. The event row is locked so two overlapping submits
@@ -158,6 +220,7 @@ def submit_venue_booking(
             detail="The event has no date and time to book the venue for.",
         )
 
+    expire_tentative_holds(db)
     venues = {v.id: v for v in db.scalars(select(Venue).where(Venue.id.in_(venue_ids)))}
     for venue_id in venue_ids:
         venue = venues.get(venue_id)
@@ -171,17 +234,20 @@ def submit_venue_booking(
                 detail=f"{venue.name} is inactive and cannot be booked.",
             )
 
-    already = db.scalar(
+    already_requested = db.scalar(
         select(VenueBooking.venue_id).where(
             VenueBooking.event_id == event.id,
             VenueBooking.venue_id.in_(venue_ids),
             VenueBooking.status.in_(LIVE_BOOKING_STATUSES),
         )
     )
-    if already is not None:
+    if already_requested is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This event already has a venue booking request for {venues[already].name}.",
+            detail=(
+                f"This event already has a live booking request for "
+                f"{venues[already_requested].name}."
+            ),
         )
 
     created = []
@@ -232,6 +298,7 @@ def list_event_venue_bookings(
     event = db.get(Event, event_id)
     if event is None or event.coordinator_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    expire_tentative_holds(db)
     bookings = db.scalars(
         _with_relations(
             select(VenueBooking)
@@ -249,6 +316,7 @@ def venue_booking_queue(
 ) -> list[VenueBookingOut]:
     """Booking requests for Venue Staff to review, oldest first: pending
     ones, and approved ones a Safety Officer has sent back."""
+    expire_tentative_holds(db)
     bookings = db.scalars(
         _with_relations(
             select(VenueBooking)
@@ -265,6 +333,7 @@ def get_venue_booking(
     db: Session = Depends(get_db),
     _: User = Depends(_venue_staff),
 ) -> VenueBookingOut:
+    expire_tentative_holds(db)
     booking = db.scalars(
         _with_relations(select(VenueBooking).where(VenueBooking.id == booking_id))
     ).unique().first()

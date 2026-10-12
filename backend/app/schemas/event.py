@@ -168,6 +168,7 @@ class EventChangeRequestOut(BaseModel):
     created_at: datetime
     reviewed_at: datetime | None
     important_change: bool
+    safety_check_required: bool = False
     venue_bookings_to_reconsider: list[VenueBookingImpact]
     equipment_reservations_to_reconsider: list[EquipmentReservationImpact]
 

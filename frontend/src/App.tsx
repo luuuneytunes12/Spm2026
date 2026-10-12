@@ -30,6 +30,7 @@ import { Organiser } from './pages/roles/Organiser'
 import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
 import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
+import { VenueAvailability } from './pages/venues/VenueAvailability'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
 import { SafetyCheckView } from './pages/safety/SafetyCheckView'
@@ -83,6 +84,7 @@ function App() {
               nested under either role's home path. */}
           <Route element={<RequireRole roles={[Role.COORDINATOR, Role.VENUE_STAFF]} />}>
             <Route path="/venues" element={<Venues />} />
+            <Route path="/venues/:id/availability" element={<VenueAvailability />} />
             <Route path="/venues/:id" element={<VenueView />} />
           </Route>
           <Route element={<RequireRole roles={[Role.TECH_SUPPORT]} />}>

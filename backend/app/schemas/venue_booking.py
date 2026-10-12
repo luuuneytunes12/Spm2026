@@ -52,6 +52,10 @@ class VenueBookingRejection(BaseModel):
         return (value or "").strip() or None
 
 
+class VenueHoldIn(BaseModel):
+    expires_at: datetime | None = None
+
+
 class BookingEventRef(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,6 +95,7 @@ class VenueBookingOut(BaseModel):
     venue: BookingVenueRef
     start_time: datetime
     end_time: datetime
+    expires_at: datetime | None = None
     expected_attendance: int | None
     # What was asked of THIS venue; where the Coordinator gave nothing, the
     # Event's own needs.

@@ -37,6 +37,7 @@ Where the tests live:
 | `GET /venue-bookings/queue` | Venue Staff | Pending requests, oldest first (from SCRUM-39). |
 | `POST /venue-bookings/{id}/approve` | Venue Staff | Request becomes `approved`. 409 if it is already decided, or if the venue is already confirmed for another event, or blocked out, at an overlapping time. |
 | `POST /venue-bookings/{id}/reject` | Venue Staff | Body `{reason?, suggested_alternative?}`, at least one non-blank (422 otherwise). Request becomes `rejected`. 409 if it is already decided. |
+| `POST /venue-bookings/{id}/hold` | Venue Staff | Places a pending request on a 24-hour tentative hold and notifies the Coordinator of its expiry. |
 | `GET /venue-bookings/events/{event_id}` | the event's Coordinator | Every request for the event, newest first, each with its outcome. |
 
 Both decisions record `reviewed_by` and `reviewed_at`. A booking response
@@ -61,6 +62,7 @@ the outcome in the **Venue booking** card on `/coordinator/events/{id}`.
 |---|---|---|---|
 | TC-VBD-1a | A newly submitted request is in the queue, and leaves it once approved | pytest | `test_ac1_a_new_request_is_in_the_queue_until_it_is_decided` |
 | TC-VBD-1b | A rejected request leaves the queue | pytest | `test_ac1_a_rejected_request_leaves_the_queue` |
+| TC-VBD-1c | A hold has an expiry and its Coordinator receives an expiry notice | pytest | `test_ac1_venue_staff_can_place_an_expiring_hold_and_notify_the_coordinator` |
 | TC-VBD-1c | On PostgreSQL: the queue holds the pending request, then is empty after the decision | Postgres | `test_ac1_to_ac5_reject_resubmit_and_approve_persist_and_reach_the_coordinator` |
 | TC-VBD-1d | The queue lists each pending request under its event; says so when empty; shows an error when it cannot load | Vitest (queue) | *SCRUM-39 AC2 - the request appears in the queue* |
 | TC-VBD-1e | In a browser: the request's card is visible in the queue, and still gone after a reload once decided | Playwright | *AC1 + AC2 + AC4* |

@@ -185,7 +185,7 @@ def test_assignment_is_in_the_activity_log_the_organiser_can_read(client, db_ses
     event_id = _submit(client, organiser_headers)
 
     log = client.get(f"/events/{event_id}/activity", headers=organiser_headers).json()
-    assert any(entry["note"] == "Assigned to Sam Tan." for entry in log)
+    assert any(entry["note"] == "Assigned to Sam Tan; review started." for entry in log)
 
 
 def test_the_activity_log_is_one_record_seen_by_organiser_and_coordinator(client, db_session):
@@ -203,7 +203,10 @@ def test_the_activity_log_is_one_record_seen_by_organiser_and_coordinator(client
     ).json()["activity"]
 
     assert organiser_log == coordinator_log
-    assert any(entry["note"] == "Assigned to Sam Tan." for entry in coordinator_log)
+    assert any(
+        entry["note"] == "Assigned to Sam Tan; review started."
+        for entry in coordinator_log
+    )
 
 
 # --------------------------------------------------------------------------
