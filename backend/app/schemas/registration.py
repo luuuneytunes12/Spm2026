@@ -24,6 +24,25 @@ class RegistrableEvent(BaseModel):
     my_status: RegistrationStatus | None
 
 
+class AttendeeVenue(BaseModel):
+    name: str
+    location: str
+
+
+class AttendeeEventDetail(RegistrableEvent):
+    """The attendee-facing view of one event. Only public fields are listed
+    here, so no planning information (notes, bookings, holds, equipment,
+    safety decisions, staff) can reach an Attendee."""
+
+    description: str | None
+    event_type: str | None
+    programme: str | None
+    accessibility_needs: str | None
+    # Venues of the currently approved bookings only, so a replaced venue
+    # is never shown.
+    venues: list[AttendeeVenue]
+
+
 class AttendeeEntry(BaseModel):
     """One person's registration as the managing Coordinator/Organiser sees it."""
 

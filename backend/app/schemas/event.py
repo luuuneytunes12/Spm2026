@@ -245,6 +245,17 @@ class ActivityEntry(BaseModel):
     created_at: datetime
 
 
+class SafetyCheckReturn(BaseModel):
+    """Why the Safety Officer last sent this event back to planning."""
+
+    result: str  # "Rejected" or "Changes Requested"
+    reason: str
+    decided_by_name: str | None
+    decided_at: datetime
+    # Bookings / equipment lines still flagged for re-review.
+    items_to_review: list[str]
+
+
 class AssignedEventDetail(EventOut):
     """Everything a Coordinator needs to plan an event assigned to them.
 
@@ -259,6 +270,8 @@ class AssignedEventDetail(EventOut):
     # What still stands between an Approved event and "Confirmed": an empty
     # list means the Coordinator may confirm it now.
     confirmation_outstanding: list[str] = []
+    # Set while the event is back in planning after a Safety Check.
+    safety_check_return: SafetyCheckReturn | None = None
 
 
 class RegistrationSettingsIn(BaseModel):

@@ -192,6 +192,14 @@ export interface AssignedEventDetail extends EventDetail {
   /** What still blocks submitting a planned event for its Safety Check;
    *  empty when it is ready. */
   confirmation_outstanding?: string[]
+  /** Why the Safety Officer last sent the event back; null once resubmitted. */
+  safety_check_return?: {
+    result: 'Rejected' | 'Changes Requested'
+    reason: string
+    decided_by_name: string | null
+    decided_at: string
+    items_to_review: string[]
+  } | null
 }
 
 export interface EventChangeRequest {

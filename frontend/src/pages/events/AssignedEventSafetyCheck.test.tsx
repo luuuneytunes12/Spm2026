@@ -172,3 +172,53 @@ describe('Submit for Safety Check card', () => {
     expect(screen.getByText(/Sam Tan/)).toBeInTheDocument()
   })
 })
+
+describe('Safety Check send-back', () => {
+  const RETURNED: AssignedEventDetail = {
+    ...APPROVED,
+    status: 'planning_event',
+    safety_check_return: {
+      result: 'Changes Requested',
+      reason: 'Move the projector',
+      decided_by_name: 'Sam Safety',
+      decided_at: '2026-10-01T02:00:00Z',
+      items_to_review: ['Equipment: Projector (x2)'],
+    },
+  }
+
+  it.each(['Rejected', 'Changes Requested'] as const)(
+    'AC1: a returned event shows the %s result, the reason and the items to review',
+    async (result) => {
+      mockGet.mockResolvedValue({
+        ...RETURNED,
+        safety_check_return: { ...RETURNED.safety_check_return!, result },
+      })
+      renderView()
+
+      const block = await screen.findByText(/Safety Check result:/)
+      expect(block).toHaveTextContent(`Safety Check result: ${result} by Sam Safety`)
+      expect(screen.getByText('Reason: Move the projector')).toBeInTheDocument()
+      expect(screen.getByText('Equipment: Projector (x2)')).toBeInTheDocument()
+    },
+  )
+
+  it('AC1: nothing is shown for an event never sent back', async () => {
+    mockGet.mockResolvedValue({ ...APPROVED, status: 'planning_event', safety_check_return: null })
+    renderView()
+    await submitButton()
+    expect(screen.queryByText(/Safety Check result:/)).not.toBeInTheDocument()
+  })
+
+  it('AC2: resubmitting a returned event shows it as Awaiting Safety Check', async () => {
+    mockGet.mockResolvedValueOnce(RETURNED)
+    mockSubmit.mockResolvedValue({ ...APPROVED, status: 'awaiting_safety_check' })
+    mockGet.mockResolvedValue({ ...APPROVED, status: 'awaiting_safety_check', safety_check_return: null })
+    renderView()
+
+    await userEvent.click(await submitButton())
+
+    expect(mockSubmit).toHaveBeenCalledWith(7)
+    expect((await screen.findAllByText('Awaiting Safety Check')).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Safety Check result:/)).not.toBeInTheDocument()
+  })
+})

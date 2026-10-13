@@ -8,11 +8,18 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import require_permission, require_role
 from app.core.roles import Permission, Role
-from app.models.enums import EventStatus, RegistrationStatus
+from app.models.enums import BookingStatus, EventStatus, RegistrationStatus
 from app.models.events import Event
 from app.models.registrations import Registration
 from app.models.user import User
-from app.schemas.registration import AttendeeEntry, AttendeeList, RegistrableEvent
+from app.models.venues import VenueBooking
+from app.schemas.registration import (
+    AttendeeEntry,
+    AttendeeEventDetail,
+    AttendeeList,
+    AttendeeVenue,
+    RegistrableEvent,
+)
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -116,6 +123,38 @@ def list_my_registrations(
         .all()
     )
     return [_out(event, registration) for event, registration in rows]
+
+
+@router.get("/events/{event_id}", response_model=AttendeeEventDetail)
+def get_attendee_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_attendee),
+) -> AttendeeEventDetail:
+    """One event's attendee-facing details. Visible on the same terms as the
+    events list (confirmed and taking registrations, or registered for);
+    anything else is "not found" so ids cannot be probed."""
+    event = db.get(Event, event_id)
+    registration = _my_registration(event_id, user, db) if event else None
+    if event is None or (
+        registration is None
+        and (event.status != EventStatus.safety_check_passed or not event.registration_enabled)
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    bookings = (
+        db.query(VenueBooking)
+        .filter(VenueBooking.event_id == event.id, VenueBooking.status == BookingStatus.approved)
+        .order_by(VenueBooking.start_time, VenueBooking.id)
+        .all()
+    )
+    return AttendeeEventDetail(
+        **_out(event, registration).model_dump(),
+        description=event.description,
+        event_type=event.event_type,
+        programme=event.programme,
+        accessibility_needs=event.accessibility_needs,
+        venues=[AttendeeVenue(name=b.venue.name, location=b.venue.location) for b in bookings],
+    )
 
 
 @router.post("/events/{event_id}", response_model=RegistrableEvent)

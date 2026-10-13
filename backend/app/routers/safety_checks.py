@@ -24,7 +24,7 @@ from app.models.equipment import EquipmentRequest
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.models.venues import VenueBooking
-from app.routers.events import _event_activity
+from app.routers.events import SAFETY_RESULT_NOTES, _event_activity
 from app.schemas.event import EventOut, OrganiserContact
 from app.schemas.safety_check import (
     SafetyChangesIn,
@@ -245,7 +245,7 @@ def request_safety_changes(
         bookings,
         lines,
         reason=body.reason,
-        note=f"Safety changes requested: {body.reason}",
+        note=SAFETY_RESULT_NOTES["Changes Requested"] + body.reason,
         type=NotificationType.safety_changes_requested,
         message=f"Safety changes requested for '{event.name or 'Event'}': {body.reason}",
     )
@@ -270,7 +270,7 @@ def reject_safety_check(
         bookings,
         _reserved_lines(event),
         reason=body.reason,
-        note=f"Safety arrangement rejected: {body.reason}",
+        note=SAFETY_RESULT_NOTES["Rejected"] + body.reason,
         type=NotificationType.safety_check_rejected,
         message=f"The safety arrangement for '{event.name or 'Event'}' was rejected: {body.reason}",
     )

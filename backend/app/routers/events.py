@@ -37,6 +37,7 @@ from app.schemas.event import (
     EventSummary,
     OrganiserContact,
     RegistrationSettingsIn,
+    SafetyCheckReturn,
 )
 from app.services.notifications import notify
 from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
@@ -204,6 +205,53 @@ def _event_activity(db: Session, event_id: int) -> list[ActivityEntry]:
         )
         for entry in history
     ]
+
+
+# Activity-log note prefixes for a Safety Officer send-back
+# (routers/safety_checks.py); the reason follows the prefix.
+SAFETY_RESULT_NOTES = {
+    "Changes Requested": "Safety changes requested: ",
+    "Rejected": "Safety arrangement rejected: ",
+}
+
+
+def _safety_check_return(db: Session, event: Event) -> SafetyCheckReturn | None:
+    """The latest Safety Check decision, if it sent the event back and the
+    event has not been resubmitted since."""
+    if event.status != EventStatus.planning_event:
+        return None
+    entry = (
+        db.query(EventStatusHistory)
+        .filter(
+            EventStatusHistory.event_id == event.id,
+            EventStatusHistory.from_status == EventStatus.awaiting_safety_check,
+        )
+        .order_by(EventStatusHistory.created_at.desc(), EventStatusHistory.id.desc())
+        .first()
+    )
+    note = (entry.note or "") if entry else ""
+    result = next((r for r, prefix in SAFETY_RESULT_NOTES.items() if note.startswith(prefix)), None)
+    if entry is None or result is None:
+        return None
+    bookings = (
+        db.query(VenueBooking)
+        .options(joinedload(VenueBooking.venue))
+        .filter(VenueBooking.event_id == event.id, VenueBooking.safety_recheck_reason.is_not(None))
+        .order_by(VenueBooking.id)
+        .all()
+    )
+    return SafetyCheckReturn(
+        result=result,
+        reason=note.removeprefix(SAFETY_RESULT_NOTES[result]),
+        decided_by_name=entry.changed_by_user.name if entry.changed_by_user else None,
+        decided_at=entry.created_at,
+        items_to_review=[f"Venue booking: {b.venue.name}" for b in bookings]
+        + [
+            f"Equipment: {line.equipment.name} (x{line.quantity_requested})"
+            for line in event.equipment_items
+            if line.safety_recheck_reason
+        ],
+    )
 
 
 def _change_request_out(
@@ -517,6 +565,7 @@ def get_assigned_event(
             if event.status in PLANNING_STATUSES
             else []
         ),
+        safety_check_return=_safety_check_return(db, event),
         change_requests=[
             _change_request_out(db, request)
             for request in db.query(EventChangeRequest)
