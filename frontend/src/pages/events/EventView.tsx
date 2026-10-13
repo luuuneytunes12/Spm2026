@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { AttendeeListSection } from '../../components/AttendeeListSection'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { ApiError } from '../../lib/api'
@@ -140,6 +141,8 @@ export function EventView() {
           </div>
         </dl>
       </section>
+
+      {event.registration_enabled && <AttendeeListSection eventId={event.id} />}
 
       {changeRequests.length > 0 && (
         <section className="card">

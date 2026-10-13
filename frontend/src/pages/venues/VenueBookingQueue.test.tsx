@@ -39,6 +39,10 @@ const BOOKING: VenueBooking = {
   venue: { id: 3, name: 'Marina Hall', location: '10 Bayfront Ave', capacity: 250 },
   start_time: '2026-11-02T09:00:00Z',
   end_time: '2026-11-02T17:00:00Z',
+  setup_minutes: 30,
+  turnaround_minutes: 45,
+  occupied_start: '2026-11-02T08:30:00Z',
+  occupied_end: '2026-11-02T17:45:00Z',
   expires_at: null,
   expected_attendance: 120,
   room_layout_preference: 'Theatre',
@@ -205,5 +209,83 @@ describe('AC3 - a rejection records a reason, an alternative, or both', () => {
     await userEvent.click(card.getByRole('button', { name: 'Cancel' }))
     expect(card.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
     expect(mockReject).not.toHaveBeenCalled()
+  })
+})
+
+describe('SCRUM-78 AC6 - the queue shows the event time, setup and turnaround', () => {
+  it('shows the Event, Setup and Turnaround periods on each request', async () => {
+    mockQueue.mockResolvedValue([BOOKING])
+    render(<VenueBookingQueue />)
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.getByText('Venue time held')).toBeInTheDocument()
+    expect(
+      screen.getByText(/^Event \d\d:\d\d-\d\d:\d\d \| Setup \d\d:\d\d-\d\d:\d\d \| Turnaround \d\d:\d\d-\d\d:\d\d$/),
+    ).toBeInTheDocument()
+  })
+})
+
+const CONFLICT = {
+  booking_id: 9,
+  event_id: 12,
+  event_name: 'Alumni Gala',
+  event_start: '2026-11-02T10:00:00Z',
+  event_end: '2026-11-02T12:00:00Z',
+  occupied_start: '2026-11-02T09:30:00Z',
+  occupied_end: '2026-11-02T12:45:00Z',
+  overlap_start: '2026-11-02T09:30:00Z',
+  overlap_end: '2026-11-02T12:45:00Z',
+}
+
+describe('SCRUM-41 AC1 + AC5 - Venue Staff are warned of overlapping bookings', () => {
+  it('AC1: flags the conflict in an alert on the request, with a text label', async () => {
+    mockQueue.mockResolvedValue([{ ...BOOKING, conflicts: [CONFLICT] }])
+    render(<VenueBookingQueue />)
+    const card = within(await screen.findByRole('region', { name: /Regional Partner Conference/ }))
+    expect(card.getByRole('alert')).toHaveTextContent('Warning: booking conflict')
+  })
+
+  it('AC5: names the conflicting event and shows its occupied period and the overlap', async () => {
+    mockQueue.mockResolvedValue([{ ...BOOKING, conflicts: [CONFLICT] }])
+    render(<VenueBookingQueue />)
+    const alert = within(await screen.findByRole('alert'))
+    expect(alert.getByText('Alumni Gala')).toBeInTheDocument()
+    const item = alert.getByRole('listitem')
+    expect(item).toHaveTextContent(/holds the venue .*\d\d:\d\d-\d\d:\d\d\. Overlap: .*\d\d:\d\d-\d\d:\d\d\./)
+  })
+
+  it('AC5: lists every conflict', async () => {
+    mockQueue.mockResolvedValue([
+      { ...BOOKING, conflicts: [CONFLICT, { ...CONFLICT, booking_id: 10, event_name: 'Careers Fair' }] },
+    ])
+    render(<VenueBookingQueue />)
+    const alert = within(await screen.findByRole('alert'))
+    expect(alert.getAllByRole('listitem')).toHaveLength(2)
+    expect(alert.getByText('Careers Fair')).toBeInTheDocument()
+  })
+
+  it('AC3: no warning when the server lists no conflicts (touching bookings are not conflicts)', async () => {
+    mockQueue.mockResolvedValue([{ ...BOOKING, conflicts: [] }])
+    render(<VenueBookingQueue />)
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/booking conflict/i)).not.toBeInTheDocument()
+  })
+
+  it('AC3/AC4: a booking with no conflicts field shows no warning', async () => {
+    mockQueue.mockResolvedValue([BOOKING])
+    render(<VenueBookingQueue />)
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByText(/booking conflict/i)).not.toBeInTheDocument()
+  })
+
+  it('AC1: an approval refused for a conflict shows the message and keeps the request queued', async () => {
+    mockQueue.mockResolvedValue([{ ...BOOKING, conflicts: [CONFLICT] }])
+    mockApprove.mockRejectedValue(new ApiError(409, 'Conflicts with Alumni Gala (2 Nov 2026).'))
+    render(<VenueBookingQueue />)
+    const card = within(await screen.findByRole('region', { name: /Regional Partner Conference/ }))
+    await userEvent.click(card.getByRole('button', { name: 'Approve' }))
+    expect(await card.findByText('Conflicts with Alumni Gala (2 Nov 2026).')).toBeInTheDocument()
+    expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })

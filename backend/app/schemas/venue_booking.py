@@ -1,6 +1,7 @@
 """Schemas for venue booking requests (Coordinator -> Venue Staff)."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -52,6 +53,35 @@ class VenueBookingRejection(BaseModel):
         return (value or "").strip() or None
 
 
+class ConflictCancel(BaseModel):
+    """Why Venue Staff cancel a flagged booking. Required, like keeping one."""
+
+    reason: str = Field(max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Give a reason for cancelling the conflicting booking.")
+        return value
+
+
+class ConflictKeep(BaseModel):
+    """Why Venue Staff keep a flagged booking as it is. Required: blank is
+    refused with a message by the router (422), not stored."""
+
+    reason: str = Field(max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Give a reason for keeping the conflicting booking.")
+        return value
+
+
 class VenueHoldIn(BaseModel):
     expires_at: datetime | None = None
 
@@ -77,6 +107,25 @@ class BookingPerson(BaseModel):
 
     name: str
     email: str
+
+
+class BookingConflict(BaseModel):
+    """What a booking request clashes with: an approved booking of the same
+    venue whose occupied period (event plus setup/turnaround) overlaps, or
+    (kind "unavailability", SCRUM-93) a period Venue Staff marked the venue
+    unavailable -- then there is no booking or event, and `reason` says why."""
+
+    kind: Literal["booking", "unavailability"] = "booking"
+    booking_id: int | None = None
+    event_id: int | None = None
+    event_name: str | None = None
+    event_start: datetime
+    event_end: datetime
+    occupied_start: datetime
+    occupied_end: datetime
+    overlap_start: datetime
+    overlap_end: datetime
+    reason: str | None = None
 
 
 class VenueBookingOut(BaseModel):
@@ -111,3 +160,16 @@ class VenueBookingOut(BaseModel):
     safety_recheck_reason: str | None = None
     reviewed_by: BookingPerson | None
     reviewed_at: datetime | None
+    # The venue's setup / turnaround as of now (0 when not set) and the
+    # resulting occupied period: start - setup .. end + turnaround.
+    setup_minutes: int = 0
+    turnaround_minutes: int = 0
+    occupied_start: datetime
+    occupied_end: datetime
+    # True while a venue setup/turnaround change has left this approved
+    # booking overlapping another (SCRUM-92); it stays approved.
+    conflict_flagged: bool = False
+    # Only filled for Venue Staff looking at a pending request, or at a
+    # flagged approved booking: the other approved bookings it overlaps.
+    # [] for everyone else and once decided.
+    conflicts: list[BookingConflict] = []

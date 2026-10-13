@@ -162,7 +162,13 @@ create table venues (
     -- Read by the Safety Officer; see sql/017_safety_check.sql.
     emergency_access text,
     known_restrictions text,
-    is_active boolean not null default true
+    is_active boolean not null default true,
+    -- Whole minutes before / after an Event; null = not set (0 is used).
+    -- See sql/021_venue_setup_turnaround.sql.
+    setup_minutes integer check (setup_minutes is null or setup_minutes >= 0),
+    turnaround_minutes integer check (turnaround_minutes is null or turnaround_minutes >= 0),
+    setup_turnaround_updated_by bigint references users (id) on delete set null,
+    setup_turnaround_updated_at timestamptz
 );
 
 create index idx_venues_facilities on venues using gin (facilities);
@@ -184,6 +190,9 @@ create table venue_bookings (
     -- Set by a Safety Officer to send the booking back for review without
     -- releasing it; see sql/017_safety_check.sql.
     safety_recheck_reason text,
+    -- Set when a venue setup/turnaround change made this approved booking
+    -- clash with another; null means not flagged. See sql/022.
+    conflict_flagged_at timestamptz,
     -- What the Coordinator asked of THIS venue; null means as the Event says.
     -- See sql/019.
     room_layout_preference text,
@@ -197,19 +206,26 @@ create table venue_bookings (
 
 create index idx_venue_bookings_event on venue_bookings (event_id);
 create index idx_venue_bookings_venue_time on venue_bookings (venue_id, start_time, end_time);
+create index idx_venue_bookings_conflict_flagged on venue_bookings (start_time)
+    where conflict_flagged_at is not null;
 
--- An event may hold several live (pending or approved) requests, but only one
+-- An event may hold several live (pending, held or approved) requests, but only one
 -- per venue; see sql/019 (which replaced sql/013).
 create unique index uq_venue_bookings_one_live_per_event_venue
-    on venue_bookings (event_id, venue_id) where status in ('pending', 'approved');
+    on venue_bookings (event_id, venue_id) where status in ('pending', 'tentative_hold', 'approved');
 
 create table venue_unavailability (
     id bigint generated always as identity primary key,
     venue_id bigint not null references venues (id) on delete cascade,
     start_time timestamptz not null,
     end_time timestamptz not null,
+    -- Optional details; the category below is the required reason (sql/023).
     reason text,
     created_by bigint not null references users (id) on delete restrict,
+    reason_category text not null default 'Other'
+        check (reason_category in ('Maintenance', 'Equipment failure', 'Renovation', 'Safety concern', 'Other')),
+    updated_by bigint references users (id) on delete set null,
+    updated_at timestamptz,
     check (end_time > start_time)
 );
 

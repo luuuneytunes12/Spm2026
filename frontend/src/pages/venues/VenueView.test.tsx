@@ -5,42 +5,54 @@
  * on screen, including the "nothing recorded" states. Who may see venues is
  * enforced server-side and covered by backend/tests/test_venues.py.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { VenueView } from './VenueView'
 import { Venues } from './Venues'
 
-const auth = vi.hoisted(() => ({ role: 'venue_staff' }))
-vi.mock('../../auth/useAuth', () => ({
-  useAuth: () => ({ user: { role: auth.role } }),
-}))
-vi.mock('../../lib/events', () => ({
-  fromDateTimeLocal: (value: string) => (value ? new Date(value).toISOString() : null),
-}))
+// The suitability panel a Coordinator sees loads their assigned events.
+vi.mock('../../lib/events', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
+  return { ...actual, listAssignedEvents: vi.fn().mockResolvedValue([]) }
+})
 
 // listVenueFilterOptions: the list page also loads its filter choices
 // (Search and Filter Venues). Without it in the mock the page would call
 // undefined on mount.
-vi.mock('../../lib/venues', () => ({
-  listVenues: vi.fn(),
-  getVenue: vi.fn(),
-  getVenueAvailability: vi.fn(),
-  listVenueFilterOptions: vi.fn().mockResolvedValue({
-    layouts: [],
-    facilities: [],
-    accessibility_features: [],
-  }),
-  recordVenueUnavailability: vi.fn(),
-}))
+vi.mock('../../lib/venues', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/venues')>('../../lib/venues')
+  return {
+    ...actual,
+    listVenues: vi.fn(),
+    getVenue: vi.fn(),
+    saveSetupTurnaround: vi.fn(),
+    getVenueAvailability: vi.fn(),
+    listUnavailability: vi.fn().mockResolvedValue([]),
+    listVenueFilterOptions: vi.fn().mockResolvedValue({
+      layouts: [],
+      facilities: [],
+      accessibility_features: [],
+    }),
+  }
+})
+vi.mock('../../auth/useAuth', () => ({ useAuth: vi.fn() }))
 
-import { getVenue, listVenues, recordVenueUnavailability } from '../../lib/venues'
+import { useAuth } from '../../auth/useAuth'
+import { getVenue, getVenueAvailability, listVenues, saveSetupTurnaround } from '../../lib/venues'
 import type { VenueDetail } from '../../lib/venues'
 
 const mockList = vi.mocked(listVenues)
 const mockGet = vi.mocked(getVenue)
-const mockRecordUnavailability = vi.mocked(recordVenueUnavailability)
+const mockSave = vi.mocked(saveSetupTurnaround)
+const mockAvail = vi.mocked(getVenueAvailability)
+const mockAuth = vi.mocked(useAuth)
+
+function signInAs(role: string) {
+  mockAuth.mockReturnValue({ user: { role } } as unknown as ReturnType<typeof useAuth>)
+}
 
 const VENUE: VenueDetail = {
   id: 4,
@@ -52,6 +64,8 @@ const VENUE: VenueDetail = {
   facilities: ['Stage', 'Built-in PA system'],
   accessibility_features: ['Wheelchair access', 'Hearing loop'],
   operating_hours: 'Mon-Fri 08:00-23:00\nSat-Sun 09:00-23:00',
+  setup_minutes: null,
+  turnaround_minutes: null,
 }
 
 function renderDetail() {
@@ -66,7 +80,7 @@ function renderDetail() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  auth.role = 'venue_staff'
+  signInAs('coordinator')
 })
 
 describe('venue list', () => {
@@ -143,6 +157,7 @@ describe('venue details', () => {
   })
 
   it('does not offer event suitability to Venue Staff', async () => {
+    signInAs('venue_staff')
     mockGet.mockResolvedValue(VENUE)
     renderDetail()
 
@@ -151,36 +166,182 @@ describe('venue details', () => {
     expect(screen.queryByRole('region', { name: 'Check event suitability' }))
       .not.toBeInTheDocument()
   })
+})
 
-  it('lets Venue Staff record unavailability and confirms affected bookings remain', async () => {
+describe('SCRUM-78 setup and turnaround', () => {
+  it('AC3: says not set, and that 0 minutes is used, when none is saved', async () => {
+    signInAs('venue_staff')
     mockGet.mockResolvedValue(VENUE)
-    mockRecordUnavailability.mockResolvedValue({
-      id: 5,
-      venue_id: VENUE.id,
-      start_time: '2026-11-02T09:00:00Z',
-      end_time: '2026-11-02T17:00:00Z',
-      reason: 'Maintenance',
-      affected_booking_ids: [22],
-      affected_event_ids: [18],
-    })
     renderDetail()
-    fireEvent.change(await screen.findByLabelText('From'), {
-      target: { value: '2026-11-02T09:00' },
-    })
-    fireEvent.change(screen.getByLabelText('Until'), {
-      target: { value: '2026-11-02T17:00' },
-    })
-    fireEvent.change(screen.getByLabelText('Reason'), {
-      target: { value: 'Maintenance' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Record unavailability' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('1 existing booking(s) are affected')
-    expect(screen.getByRole('status')).toHaveTextContent('they were not cancelled')
-    expect(mockRecordUnavailability).toHaveBeenCalledWith(VENUE.id, {
-      start_time: new Date('2026-11-02T09:00').toISOString(),
-      end_time: new Date('2026-11-02T17:00').toISOString(),
-      reason: 'Maintenance',
+    expect(await screen.findAllByText('Not set - 0 minutes is used')).toHaveLength(2)
+  })
+
+  it('AC4: a Coordinator sees both values and the occupancy, read-only', async () => {
+    mockGet.mockResolvedValue({ ...VENUE, setup_minutes: 30, turnaround_minutes: 45 })
+    renderDetail()
+
+    expect(await screen.findByText('30 minutes')).toBeInTheDocument()
+    expect(screen.getByText('45 minutes')).toBeInTheDocument()
+    expect(
+      screen.getByText(/From the Event start minus 30 minutes to the Event end plus 45 minutes/),
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('Setup time (minutes)')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Save setup/ })).not.toBeInTheDocument()
+  })
+
+  it('AC1: Venue Staff save whole minutes and see them on the venue', async () => {
+    signInAs('venue_staff')
+    mockGet.mockResolvedValue(VENUE)
+    mockSave.mockResolvedValue({ ...VENUE, setup_minutes: 30, turnaround_minutes: 45 })
+    renderDetail()
+
+    await userEvent.type(await screen.findByLabelText('Setup time (minutes)'), '30')
+    await userEvent.type(screen.getByLabelText('Turnaround time (minutes)'), '45')
+    await userEvent.click(screen.getByRole('button', { name: 'Save setup and turnaround' }))
+
+    expect(mockSave).toHaveBeenCalledWith(4, { setup_minutes: 30, turnaround_minutes: 45 })
+    expect(await screen.findByRole('status')).toHaveTextContent('saved')
+    expect(screen.getByText('30 minutes')).toBeInTheDocument()
+  })
+
+  it('AC2: empty, negative and non-whole values are blocked before anything is sent', async () => {
+    signInAs('venue_staff')
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+    const setup = await screen.findByLabelText('Setup time (minutes)')
+    const turnaround = screen.getByLabelText('Turnaround time (minutes)')
+    const save = screen.getByRole('button', { name: 'Save setup and turnaround' })
+
+    await userEvent.click(save)
+    expect(screen.getAllByRole('alert').map((a) => a.textContent).join(' ')).toMatch(/Setup time is required/)
+    expect(setup).toHaveAttribute('aria-invalid', 'true')
+
+    await userEvent.type(setup, '-5')
+    await userEvent.type(turnaround, '1.5')
+    await userEvent.click(save)
+    const alerts = screen.getAllByRole('alert').map((a) => a.textContent)
+    expect(alerts[0]).toMatch(/cannot be negative/)
+    expect(alerts[1]).toMatch(/whole number/)
+    // The problem is tied to its field for assistive technology.
+    expect(setup.getAttribute('aria-describedby')).toContain('setup-minutes-error')
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('AC2: a server refusal is shown next to the field it names', async () => {
+    signInAs('venue_staff')
+    mockGet.mockResolvedValue(VENUE)
+    mockSave.mockRejectedValue(
+      new ApiError(422, 'setup_minutes: must be 1440 or less', ['setup_minutes'], ['must be 1440 or less']),
+    )
+    renderDetail()
+
+    await userEvent.type(await screen.findByLabelText('Setup time (minutes)'), '5000')
+    await userEvent.type(screen.getByLabelText('Turnaround time (minutes)'), '10')
+    await userEvent.click(screen.getByRole('button', { name: 'Save setup and turnaround' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('must be 1440 or less')
+    expect(screen.getByLabelText('Setup time (minutes)')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Turnaround time (minutes)')).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('AC4: no edit form for anyone but Venue Staff', async () => {
+    signInAs('organiser')
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Setup and turnaround' })
+    expect(screen.queryByLabelText('Setup time (minutes)')).not.toBeInTheDocument()
+  })
+})
+
+describe('SCRUM-41 AC2 - the availability calendar', () => {
+  async function checkRange(start: string, end: string) {
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Availability' })
+    if (start) await userEvent.type(screen.getByLabelText('Availability from'), start)
+    if (end) await userEvent.type(screen.getByLabelText('Availability until'), end)
+    await userEvent.click(screen.getByRole('button', { name: 'Check availability' }))
+  }
+
+  it('does not show the venue available during an approved booking\'s occupied period', async () => {
+    mockAvail.mockResolvedValue({
+      venue_id: 4,
+      start: '2026-11-02T00:00:00Z',
+      end: '2026-11-03T00:00:00Z',
+      items: [],
+      busy: [{ kind: 'booking', start: '2026-11-02T01:30:00Z', end: '2026-11-02T04:45:00Z', event_name: 'Alumni Gala' }],
     })
+    await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
+    const results = await screen.findByRole('region', { name: 'Availability results' })
+    expect(results).toHaveTextContent('Booked for Alumni Gala')
+    expect(results).not.toHaveTextContent('Available for the whole period')
+    expect(mockAvail).toHaveBeenCalledWith(4, expect.any(String), expect.any(String))
+  })
+
+  it('lists a closure', async () => {
+    mockAvail.mockResolvedValue({
+      venue_id: 4,
+      start: '2026-11-02T00:00:00Z',
+      end: '2026-11-03T00:00:00Z',
+      items: [],
+      busy: [{ kind: 'closure', start: '2026-11-02T01:00:00Z', end: '2026-11-02T02:00:00Z' }],
+    })
+    await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
+    expect(await screen.findByText(/Unavailable \(closed\)/)).toBeInTheDocument()
+  })
+
+  it('says the venue is available when nothing is busy', async () => {
+    mockAvail.mockResolvedValue({
+      venue_id: 4,
+      start: '2026-11-02T00:00:00Z',
+      end: '2026-11-03T00:00:00Z',
+      items: [],
+      busy: [],
+    })
+    await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
+    expect(await screen.findByText('Available for the whole period.')).toBeInTheDocument()
+  })
+
+  it('refuses an end that is not after the start, without calling the server', async () => {
+    await checkRange('2026-11-03T00:00', '2026-11-02T00:00')
+    expect(await screen.findByRole('alert')).toHaveTextContent('The end must be after the start.')
+    expect(mockAvail).not.toHaveBeenCalled()
+  })
+
+  it('shows the server\'s refusal', async () => {
+    mockAvail.mockRejectedValue(new ApiError(403, 'Not allowed.'))
+    await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not allowed.')
+  })
+})
+
+describe('SCRUM-92 AC1/AC3 - the re-check result after saving', () => {
+  async function save(recheck: { flagged: number; cleared: number } | null) {
+    signInAs('venue_staff')
+    mockGet.mockResolvedValue(VENUE)
+    mockSave.mockResolvedValue({ ...VENUE, setup_minutes: 30, turnaround_minutes: 45, recheck })
+    renderDetail()
+    await userEvent.type(await screen.findByLabelText('Setup time (minutes)'), '30')
+    await userEvent.type(screen.getByLabelText('Turnaround time (minutes)'), '45')
+    await userEvent.click(screen.getByRole('button', { name: 'Save setup and turnaround' }))
+  }
+
+  it('AC1: flagged bookings are reported with a link to the flagged list', async () => {
+    await save({ flagged: 2, cleared: 1 })
+    expect(await screen.findByText(/2 existing bookings flagged for conflict; 1 flag cleared/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View flagged bookings' })).toHaveAttribute('href', '/venue-staff/flagged')
+  })
+
+  it('AC3: with no conflicts it says so and offers no link', async () => {
+    await save({ flagged: 0, cleared: 0 })
+    expect(await screen.findByText(/times saved\. No existing bookings conflict\./)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View flagged bookings' })).not.toBeInTheDocument()
+  })
+
+  it('a save without a re-check result shows only the saved notice', async () => {
+    await save(null)
+    expect(await screen.findByText('Setup and turnaround times saved.')).toBeInTheDocument()
+    expect(screen.queryByText(/existing booking/)).not.toBeInTheDocument()
   })
 })

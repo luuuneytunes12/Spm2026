@@ -412,8 +412,26 @@ export function VenueAvailability() {
                 {selectedItems.map((item) => (
                   <li className="availability-entry" key={`${item.kind}-${item.id}`}>
                     <div className="availability-entry-main">
-                      <strong>{item.event_name || 'Unavailable'}</strong>
+                      <strong>{item.event_name || (item.kind === 'unavailability' ? 'Unavailable' : itemStatus(item))}</strong>
                       <span>{timeLabel(item.start_time)} – {timeLabel(item.end_time)}</span>
+                      {item.kind !== 'unavailability' &&
+                        item.occupied_start &&
+                        item.occupied_end &&
+                        (item.occupied_start !== item.start_time || item.occupied_end !== item.end_time) && (
+                          <small className="text-muted">
+                            Venue held {timeLabel(item.occupied_start)} – {timeLabel(item.occupied_end)} (setup and
+                            turnaround included)
+                          </small>
+                        )}
+                      {item.kind === 'unavailability' && item.reason_category && (
+                        <small className="text-muted">
+                          {item.reason_category}
+                          {item.reason ? `: ${item.reason}` : ''}
+                        </small>
+                      )}
+                      {item.kind === 'tentative_hold' && item.expires_at && (
+                        <small className="text-muted">Expires {new Date(item.expires_at).toLocaleString()}</small>
+                      )}
                     </div>
                     <span
                       className={`badge ${

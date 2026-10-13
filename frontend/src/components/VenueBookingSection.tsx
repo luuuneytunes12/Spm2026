@@ -5,6 +5,8 @@ import { listVenues } from '../lib/venues'
 import type { VenueSummary } from '../lib/venues'
 import {
   BOOKING_STATUS_LABELS,
+  CONFLICT_FLAG_LABEL,
+  formatBookingPeriods,
   listEventVenueBookings,
   submitVenueBookings,
 } from '../lib/venueBookings'
@@ -172,6 +174,15 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
             <li key={b.id}>
               <strong>{b.venue.name}</strong> · {formatRange(b.start_time, b.end_time)} ·{' '}
               <span className="badge">{BOOKING_STATUS_LABELS[b.status]}</span>
+              <p className="page-subtitle" aria-label={`Venue time for ${b.venue.name}`}>
+                {formatBookingPeriods(b)}
+              </p>
+              {b.conflict_flagged && (
+                <p className="notice" role="note">
+                  <span className="badge">Conflict flagged</span> {CONFLICT_FLAG_LABEL}. Venue Staff
+                  are reviewing it; it is still held.
+                </p>
+              )}
               <Decision booking={b} />
             </li>
           ))}

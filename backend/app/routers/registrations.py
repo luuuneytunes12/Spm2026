@@ -6,13 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.deps import require_role
-from app.core.roles import Role
+from app.core.deps import require_permission, require_role
+from app.core.roles import Permission, Role
 from app.models.enums import EventStatus, RegistrationStatus
 from app.models.events import Event
 from app.models.registrations import Registration
 from app.models.user import User
-from app.schemas.registration import RegistrableEvent
+from app.schemas.registration import AttendeeEntry, AttendeeList, RegistrableEvent
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -20,6 +20,9 @@ router = APIRouter(prefix="/registrations", tags=["registrations"])
 # identity rather than a permission. REGISTRATION_MANAGE is the Coordinator's
 # "manage other people's registrations" and is deliberately not reused here.
 _attendee = require_role(Role.ATTENDEE)
+# Seeing WHO registered is the managing side's view (Coordinator, Lead,
+# Organiser). Attendees hold REGISTRATION_READ but not MANAGE, so they are 403.
+_manager = require_permission(Permission.REGISTRATION_MANAGE)
 
 
 def _utc(value: datetime) -> datetime:
@@ -195,3 +198,49 @@ def withdraw(
     db.commit()
     db.refresh(registration)
     return _out(registration.event, registration)
+
+
+@router.get("/events/{event_id}/attendees", response_model=AttendeeList)
+def list_event_attendees(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_manager),
+) -> AttendeeList:
+    """Registered Attendees of an event the caller manages (its Organiser or
+    assigned Coordinator), by name, with each one's registration status.
+
+    Someone else's event is "not found", like the other per-event lookups, so
+    this cannot probe event ids. An event that does not take registration has
+    no attendee list: 409.
+    """
+    event = db.get(Event, event_id)
+    if event is None or user.id not in (event.organiser_id, event.coordinator_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if not event.registration_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Registration is not enabled for this event.",
+        )
+    rows = (
+        db.query(Registration, User)
+        .join(User, User.id == Registration.attendee_id)
+        .filter(Registration.event_id == event_id)
+        .order_by(User.name, Registration.id)
+        .all()
+    )
+    entries = [
+        AttendeeEntry(
+            registration_id=r.id,
+            attendee_id=u.id,
+            name=u.name,
+            status=r.status,
+            registered_at=r.registered_at,
+            withdrawn_at=r.withdrawn_at,
+        )
+        for r, u in rows
+    ]
+    return AttendeeList(
+        event_id=event_id,
+        registered_count=sum(1 for e in entries if e.status == RegistrationStatus.registered),
+        attendees=entries,
+    )

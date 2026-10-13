@@ -22,6 +22,7 @@ vi.mock('../lib/venueBookings', async () => {
 vi.mock('../lib/venues', () => ({ listVenues: vi.fn() }))
 
 import { listEventVenueBookings, submitVenueBookings } from '../lib/venueBookings'
+import { formatBookingPeriods } from '../lib/venueBookings'
 import type { VenueBooking } from '../lib/venueBookings'
 import { listVenues } from '../lib/venues'
 
@@ -37,6 +38,10 @@ const BOOKING: VenueBooking = {
   venue: { id: 3, name: 'Marina Hall', location: '10 Bayfront Ave', capacity: 250 },
   start_time: '2026-11-02T09:00:00Z',
   end_time: '2026-11-02T17:00:00Z',
+  setup_minutes: 30,
+  turnaround_minutes: 45,
+  occupied_start: '2026-11-02T08:30:00Z',
+  occupied_end: '2026-11-02T17:45:00Z',
   expires_at: null,
   expected_attendance: 120,
   room_layout_preference: 'Theatre',
@@ -270,5 +275,30 @@ describe('the outcome is visible to the Event Coordinator', () => {
       expect.stringContaining('Rejection 2'),
       expect.stringContaining('Rejection 1'),
     ])
+  })
+})
+
+describe('SCRUM-78 AC6 - bookings show the event time, setup and turnaround', () => {
+  it('lists Event, Setup and Turnaround periods on each booking', async () => {
+    mockList.mockResolvedValue([BOOKING])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const periods = await screen.findByLabelText('Venue time for Marina Hall')
+    expect(periods).toHaveTextContent(formatBookingPeriods(BOOKING))
+    expect(periods.textContent).toMatch(/^Event \d\d:\d\d-\d\d:\d\d \| Setup \d\d:\d\d-\d\d:\d\d \| Turnaround \d\d:\d\d-\d\d:\d\d$/)
+  })
+})
+
+describe('SCRUM-92 AC5 - a flagged booking is marked for the Coordinator', () => {
+  it('AC5: shows a text marker saying it is not counted as approved until resolved', async () => {
+    mockList.mockResolvedValue([{ ...BOOKING, status: 'approved', conflict_flagged: true }])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    expect(await screen.findByText(/Conflict flagged - not counted as approved until resolved/)).toBeInTheDocument()
+  })
+
+  it('AC3: an unflagged approved booking carries no marker', async () => {
+    mockList.mockResolvedValue([{ ...BOOKING, status: 'approved', conflict_flagged: false }])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    await screen.findByLabelText('Venue time for Marina Hall')
+    expect(screen.queryByText(/Conflict flagged/)).not.toBeInTheDocument()
   })
 })

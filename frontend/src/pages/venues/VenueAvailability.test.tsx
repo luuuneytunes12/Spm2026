@@ -28,12 +28,15 @@ const VENUE: VenueDetail = {
   supported_layouts: ['Theatre'],
   accessibility_features: ['Wheelchair access'],
   operating_hours: null,
+  setup_minutes: null,
+  turnaround_minutes: null,
 }
 
 const CALENDAR: VenueAvailabilityData = {
   venue_id: 7,
   start: '2026-11-02T09:00:00Z',
   end: '2026-11-02T17:00:00Z',
+  busy: [],
   items: [
     {
       id: 31,

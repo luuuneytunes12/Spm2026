@@ -135,6 +135,8 @@ test('accessibility: the decision controls have no serious axe violations and wo
 
   await card.getByRole('button', { name: 'Approve' }).focus()
   await vera.keyboard.press('Tab')
+  await expect(card.getByRole('button', { name: 'Place 24-hour hold' })).toBeFocused()
+  await vera.keyboard.press('Tab')
   await expect(card.getByRole('button', { name: 'Reject' })).toBeFocused()
   await vera.keyboard.press('Enter')
   await expect(card.getByLabel('Reason')).toBeFocused() // focus follows into the form

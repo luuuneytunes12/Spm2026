@@ -38,3 +38,25 @@ export function withdrawFromEvent(id: number): Promise<RegistrableEvent> {
     method: 'POST',
   }) as Promise<RegistrableEvent>
 }
+
+export interface AttendeeEntry {
+  registration_id: number
+  attendee_id: number
+  name: string
+  status: RegistrationStatus
+  registered_at: string
+  withdrawn_at: string | null
+}
+
+/** The attendee list of an event the caller manages. `registered_count`
+ *  excludes withdrawn people, who stay in `attendees` with that status. */
+export interface AttendeeList {
+  event_id: number
+  registered_count: number
+  attendees: AttendeeEntry[]
+}
+
+/** Rejects 404 (not yours), 409 (registration not enabled), 403 (Attendee). */
+export function listEventAttendees(id: number): Promise<AttendeeList> {
+  return apiFetch(`/registrations/events/${id}/attendees`) as Promise<AttendeeList>
+}

@@ -46,7 +46,7 @@ def test_calendar_shows_confirmed_bookings_and_recorded_unavailability(client, d
         (item["kind"], item["event_name"], item["reason"])
         for item in response.json()["items"]
     ] == [
-        ("confirmed_booking", "Planning Workshop", None),
+        ("confirmed_booking", None, None),  # a Coordinator is not told which event
         ("unavailability", None, "Maintenance"),
     ]
 
@@ -124,7 +124,7 @@ def test_calendar_shows_active_holds_for_each_venue_and_excludes_expired_holds(
     assert first_calendar.status_code == second_calendar.status_code == 200
     first_item = first_calendar.json()["items"][0]
     assert first_item["kind"] == "tentative_hold"
-    assert first_item["event_id"] == event.id
+    assert first_item["event_id"] is None and first_item["event_name"] is None
     assert first_item["expires_at"] is not None
     assert second_calendar.json()["items"] == []
     assert db_session.get(VenueBooking, expired_hold.id).status == BookingStatus.cancelled

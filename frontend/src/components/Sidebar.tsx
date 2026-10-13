@@ -73,9 +73,14 @@ export function Sidebar({ id, open }: SidebarProps) {
             </Item>
           )}
           {user.role === Role.VENUE_STAFF && (
-            <Item to="/venue-staff/bookings" icon="inbox">
-              Booking Requests
-            </Item>
+            <>
+              <Item to="/venue-staff/bookings" icon="inbox">
+                Booking Requests
+              </Item>
+              <Item to="/venue-staff/flagged" icon="list">
+                Flagged Bookings
+              </Item>
+            </>
           )}
           {user.role === Role.TECH_SUPPORT && (
             <>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { AttendeeListSection } from '../../components/AttendeeListSection'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
 import { EventVenueSuitability } from '../../components/EventVenueSuitability'
@@ -493,6 +494,8 @@ export function AssignedEventView() {
           </div>
         </section>
       )}
+
+      {event.registration_enabled && <AttendeeListSection eventId={event.id} />}
 
       {/* Always present: while the event is under review it explains that
           equipment can be recorded once it is approved, rather than the

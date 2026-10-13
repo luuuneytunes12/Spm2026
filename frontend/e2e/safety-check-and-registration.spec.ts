@@ -134,8 +134,9 @@ test('TC-SC-AC1/2: blocked with every outstanding item listed, then submitted on
   await expect(outstanding).toContainText('requested') // ... with its status
 
   await submitButton(sam).click()
-  await expect(sam.getByRole('alert')).toContainText('Cannot submit yet')
-  await expect(sam.getByRole('alert')).toContainText('SCR Projector')
+  const blocked = sam.getByRole('alert').filter({ hasText: 'Cannot submit yet' })
+  await expect(blocked).toBeVisible()
+  await expect(blocked).toContainText('SCR Projector')
   expect((await call(request, 'get', `/events/${eventId}`, h[ORG.email])).status).toBe('event_approved') // unchanged
 
   await arrange(request, h, eventId)

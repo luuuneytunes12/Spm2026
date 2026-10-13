@@ -113,6 +113,7 @@ class NotificationType(enum.StrEnum):
     safety_check_passed = "safety_check_passed"
     safety_changes_requested = "safety_changes_requested"
     safety_check_rejected = "safety_check_rejected"
+    venue_booking_conflict = "venue_booking_conflict"
     safety_check_requested = "safety_check_requested"
     venue_unavailability_recorded = "venue_unavailability_recorded"
     venue_hold_expiring = "venue_hold_expiring"
@@ -123,3 +124,13 @@ class ChangeRequestStatus(enum.StrEnum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+
+class UnavailabilityReason(enum.StrEnum):
+    """Why Venue Staff took a venue out of use for a period (SCRUM-93)."""
+
+    maintenance = "Maintenance"
+    equipment_failure = "Equipment failure"
+    renovation = "Renovation"
+    safety_concern = "Safety concern"
+    other = "Other"

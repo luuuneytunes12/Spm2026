@@ -249,6 +249,15 @@ select {
   }
 }
 
+/* In Chromium the focus of a date-time field sits on its inner day / hour
+   parts, so the input itself never matches :focus -- only :focus-within.
+   Without this a keyboard user gets no visible focus on these fields. */
+input[type='datetime-local']:focus-within {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
 /* type=search carries its own native look in WebKit -- rounded in Safari,
    and with a clear button sized to the browser's taste rather than the
    app's. Normalised here so a search field is visually just another text

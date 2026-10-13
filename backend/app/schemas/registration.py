@@ -22,3 +22,26 @@ class RegistrableEvent(BaseModel):
     registration_opens_at: datetime | None = None
     registration_closes_at: datetime | None = None
     my_status: RegistrationStatus | None
+
+
+class AttendeeEntry(BaseModel):
+    """One person's registration as the managing Coordinator/Organiser sees it."""
+
+    registration_id: int
+    attendee_id: int
+    name: str
+    status: RegistrationStatus
+    registered_at: datetime
+    withdrawn_at: datetime | None = None
+
+
+class AttendeeList(BaseModel):
+    """The attendee list for an event with registration enabled.
+
+    `registered_count` counts only `registered` rows; withdrawn people stay
+    in `attendees` (with that status) but do not count towards turnout.
+    """
+
+    event_id: int
+    registered_count: int
+    attendees: list[AttendeeEntry]
