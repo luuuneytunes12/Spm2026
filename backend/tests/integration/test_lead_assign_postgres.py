@@ -20,7 +20,7 @@ pytestmark = pytest.mark.integration
 def test_ac5_many_leads_assigning_the_same_request_at_once_exactly_one_wins(client, make_client, db, make_user):
     _o, org_h = make_user(Role.ORGANISER, "org@connectsphere.test", "Olivia Organiser")
     coords = [make_user(Role.COORDINATOR, f"c{i}@connectsphere.test", f"Coord {i}")[0] for i in range(THREADS)]
-    _l, lead_h = make_user(Role.COORDINATOR_LEAD, "lead@connectsphere.test", "Lena Lead")
+    lead, lead_h = make_user(Role.COORDINATOR_LEAD, "lead@connectsphere.test", "Lena Lead")
     event_id = submit_event(client, org_h)
 
     counter = iter(range(THREADS))
@@ -40,3 +40,12 @@ def test_ac5_many_leads_assigning_the_same_request_at_once_exactly_one_wins(clie
     assert event.status == EventStatus.under_review and event.coordinator_id in {c.id for c in coords}
     assigned_lines = [h for h in db.query(EventStatusHistory).filter(EventStatusHistory.event_id == event_id) if h.note and h.note.startswith("Assigned to")]
     assert len(assigned_lines) == 1
+    assert (
+        assigned_lines[0].from_status,
+        assigned_lines[0].to_status,
+    ) == (
+        EventStatus.submitted_awaiting_coordinator,
+        EventStatus.under_review,
+    )
+    assert assigned_lines[0].changed_by == lead.id
+    assert assigned_lines[0].created_at is not None

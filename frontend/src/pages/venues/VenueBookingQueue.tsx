@@ -6,6 +6,7 @@ import {
   describeConflict,
   formatBookingPeriods,
   approveVenueBooking,
+  holdVenueBooking,
   listVenueBookingQueue,
   rejectVenueBooking,
 } from '../../lib/venueBookings'
@@ -58,9 +59,13 @@ export function VenueBookingQueue() {
       )}
       {decided && (
         <p className="notice" role="status" tabIndex={-1} ref={confirmation}>
-          {BOOKING_STATUS_LABELS[decided.status]}: {decided.venue.name} for{' '}
-          {decided.event.name ?? 'an untitled event'}. {decided.requested_by.name} can now see the
-          decision.
+          {decided.status === 'tentative_hold'
+            ? `Tentative hold placed for ${decided.venue.name} until ${
+                decided.expires_at ? formatTimestamp(decided.expires_at) : 'its expiry'
+              }. The Coordinator has been notified.`
+            : `${BOOKING_STATUS_LABELS[decided.status]}: ${decided.venue.name} for ${
+                decided.event.name ?? 'an untitled event'
+              }. ${decided.requested_by.name} can now see the decision.`}
         </p>
       )}
       {!error && bookings === null && <p>Loading…</p>}
@@ -224,6 +229,14 @@ function BookingCard({
               disabled={saving}
             >
               {saving ? 'Saving…' : 'Approve'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void decide(() => holdVenueBooking(b.id))}
+              disabled={saving || b.status !== 'pending'}
+            >
+              Place 24-hour hold
             </button>
             <button
               type="button"

@@ -78,7 +78,7 @@ test('SCRUM-23: the activity log (shared) and the notifications (per role) tell 
   await olivia.goto(`/organiser/events/${eventId}`)
   await sam.goto(`/coordinator/events/${eventId}`)
   for (const page of [olivia, sam]) {
-    await expect(page.getByRole('list', { name: 'Activity log' })).toContainText('Assigned to Sam Tan.')
+    await expect(page.getByRole('list', { name: 'Activity log' })).toContainText('Assigned to Sam Tan')
   }
 
   // Notifications are worded for the reader and never cross over.
@@ -137,7 +137,7 @@ test('SCRUM-28 AC1-AC4: the assigned coordinator sees every requirement, the org
   await expect(organiser).toContainText('Olivia Organiser') // AC2
   await expect(organiser.getByRole('link', { name: OLIVIA.email })).toBeVisible()
   await expect(sam.getByText('Under Review').first()).toBeVisible() // AC3
-  await expect(sam.getByRole('list', { name: 'Activity log' })).toContainText('Assigned to Sam Tan.') // AC4
+  await expect(sam.getByRole('list', { name: 'Activity log' })).toContainText('Assigned to Sam Tan') // AC4
 })
 
 test('SCRUM-28 AC5: a coordinator cannot open an event that is assigned to someone else', async ({ browser, request }) => {

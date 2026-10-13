@@ -22,11 +22,12 @@ which covers the two Organiser stories this one reads the output of.
 
 There is no Playwright layer for this story yet.
 
-Assignment itself now happens automatically on submission — see
-`backend/tests/test_coordinator_assignment.py`. The tests
-below mostly still assign a Coordinator directly (`_assign()` in
-`test_assigned_events.py`) rather than by submitting, so this story's tests
-stay about *viewing* an assignment, not about how one came to exist.
+Submission places the Event in the Lead's unassigned queue with status
+`submitted_awaiting_coordinator`. When the Lead assigns a Coordinator, the
+Event moves to `under_review` and that status transition is recorded in the
+activity log. These view tests model that transition in `_assign()`; the
+Lead assignment endpoint and its authorization/concurrency behavior are
+covered separately in `backend/tests/test_lead_assign_event.py`.
 
 ## What "assigned to me" means
 
@@ -122,11 +123,10 @@ Organiser stories already rely on.
 
 ## Manual check
 
-Assignment is automatic now (see `backend/tests/test_coordinator_assignment.py`),
-so exercising this story just needs one Coordinator to exist before an
-Organiser submits a request — sign up one Coordinator and promote them with
-a direct `update public.users set role = 'coordinator' where email = ...`,
-then submit a complete request as an Organiser.
+To exercise this story, submit a complete request as an Organiser, then sign
+in as an Event Coordinator Lead and assign it to an Event Coordinator. The
+request should move from the unassigned queue to **Under Review** and appear
+under **My assigned events** for that Coordinator.
 
 Sign in as that Coordinator and open **My assigned events** in the sidebar.
 

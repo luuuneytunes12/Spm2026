@@ -88,7 +88,7 @@ class BusyPeriod(BaseModel):
 
     event_* are set for bookings; event_name only for Venue Staff."""
 
-    kind: Literal["booking", "closure"]
+    kind: Literal["booking", "tentative_hold", "closure"]
     start: datetime
     end: datetime
     event_start: datetime | None = None
@@ -97,11 +97,8 @@ class BusyPeriod(BaseModel):
     # Closures only (SCRUM-93): why, and Venue Staff's optional details.
     reason_category: str | None = None
     reason: str | None = None
-
-
-class VenueAvailability(BaseModel):
-    venue_id: int
-    busy: list[BusyPeriod]
+    # Tentative holds only: when the hold lapses.
+    expires_at: datetime | None = None
 
 
 class UnavailabilityIn(BaseModel):
@@ -135,6 +132,70 @@ class AffectedBooking(BaseModel):
     start_time: datetime
     end_time: datetime
     flagged: bool
+
+
+class VenueAvailabilityItem(BaseModel):
+    id: int
+    kind: Literal["confirmed_booking", "tentative_hold", "unavailability"]
+    start_time: datetime
+    end_time: datetime
+    event_id: int | None = None
+    event_name: str | None = None
+    # The period it holds the venue for: the event widened by the venue's
+    # setup and turnaround (equal to start/end_time for a closure).
+    occupied_start: datetime | None = None
+    occupied_end: datetime | None = None
+    reason_category: str | None = None
+    reason: str | None = None
+    expires_at: datetime | None = None
+    conflicts_with_unavailability: bool = False
+
+
+class VenueAvailabilityOut(BaseModel):
+    venue_id: int
+    start: datetime
+    end: datetime
+    busy: list[BusyPeriod]
+    items: list[VenueAvailabilityItem]
+
+
+class VenueSuitabilityCheck(BaseModel):
+    category: Literal["capacity", "layout", "accessibility", "facility"]
+    requirement: str
+    available: str
+    met: bool
+    message: str
+
+
+class VenueSuitabilityOut(BaseModel):
+    venue_id: int
+    event_id: int
+    event_name: str | None
+    suitable: bool
+    checks: list[VenueSuitabilityCheck]
+
+
+class EventVenueSuitabilityItem(BaseModel):
+    booking_id: int
+    venue_id: int
+    venue_name: str
+    suitable: bool
+    checks: list[VenueSuitabilityCheck]
+
+
+class CombinedVenueCapacityCheck(BaseModel):
+    required_capacity: int | None
+    available_capacity: int
+    met: bool
+    message: str
+
+
+class EventVenueSuitabilityOut(BaseModel):
+    event_id: int
+    event_name: str | None
+    suitable: bool
+    venues: list[EventVenueSuitabilityItem]
+    combined_capacity: CombinedVenueCapacityCheck
 
 
 class UnavailabilityOut(BaseModel):

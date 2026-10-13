@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { AttendeeListSection } from '../../components/AttendeeListSection'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
+import { EventVenueSuitability } from '../../components/EventVenueSuitability'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
 import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
@@ -329,8 +330,7 @@ export function AssignedEventView() {
       <section className="card">
         <h2>Status</h2>
         <StatusTimeline status={event.status} activity={event.activity} />
-        {(event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR ||
-          event.status === EventStatus.UNDER_REVIEW) && (
+        {event.status === EventStatus.UNDER_REVIEW && (
           <div className="status-actions">
             <h3>Coordinator decision</h3>
             <div className="form-actions">
@@ -409,11 +409,14 @@ export function AssignedEventView() {
       </section>
 
       {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
-        <VenueBookingSection
-          eventId={event.id}
-          expectedAttendance={event.expected_attendance}
-          onChanged={() => void refreshEvent()}
-        />
+        <>
+          <VenueBookingSection
+            eventId={event.id}
+            expectedAttendance={event.expected_attendance}
+            onChanged={() => void refreshEvent()}
+          />
+          <EventVenueSuitability eventId={event.id} />
+        </>
       )}
 
       {(event.status === EventStatus.EVENT_APPROVED ||

@@ -13,6 +13,12 @@ import { ApiError } from '../../lib/api'
 import { VenueView } from './VenueView'
 import { Venues } from './Venues'
 
+// The suitability panel a Coordinator sees loads their assigned events.
+vi.mock('../../lib/events', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
+  return { ...actual, listAssignedEvents: vi.fn().mockResolvedValue([]) }
+})
+
 // listVenueFilterOptions: the list page also loads its filter choices
 // (Search and Filter Venues). Without it in the mock the page would call
 // undefined on mount.
@@ -149,6 +155,17 @@ describe('venue details', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Venue not found.')
   })
+
+  it('does not offer event suitability to Venue Staff', async () => {
+    signInAs('venue_staff')
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+
+    expect(await screen.findByRole('heading', { name: 'Marina Grand Ballroom' }))
+      .toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Check event suitability' }))
+      .not.toBeInTheDocument()
+  })
 })
 
 describe('SCRUM-78 setup and turnaround', () => {
@@ -250,6 +267,9 @@ describe('SCRUM-41 AC2 - the availability calendar', () => {
   it('does not show the venue available during an approved booking\'s occupied period', async () => {
     mockAvail.mockResolvedValue({
       venue_id: 4,
+      start: '2026-11-02T00:00:00Z',
+      end: '2026-11-03T00:00:00Z',
+      items: [],
       busy: [{ kind: 'booking', start: '2026-11-02T01:30:00Z', end: '2026-11-02T04:45:00Z', event_name: 'Alumni Gala' }],
     })
     await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
@@ -262,6 +282,9 @@ describe('SCRUM-41 AC2 - the availability calendar', () => {
   it('lists a closure', async () => {
     mockAvail.mockResolvedValue({
       venue_id: 4,
+      start: '2026-11-02T00:00:00Z',
+      end: '2026-11-03T00:00:00Z',
+      items: [],
       busy: [{ kind: 'closure', start: '2026-11-02T01:00:00Z', end: '2026-11-02T02:00:00Z' }],
     })
     await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
@@ -269,7 +292,13 @@ describe('SCRUM-41 AC2 - the availability calendar', () => {
   })
 
   it('says the venue is available when nothing is busy', async () => {
-    mockAvail.mockResolvedValue({ venue_id: 4, busy: [] })
+    mockAvail.mockResolvedValue({
+      venue_id: 4,
+      start: '2026-11-02T00:00:00Z',
+      end: '2026-11-03T00:00:00Z',
+      items: [],
+      busy: [],
+    })
     await checkRange('2026-11-02T00:00', '2026-11-03T00:00')
     expect(await screen.findByText('Available for the whole period.')).toBeInTheDocument()
   })

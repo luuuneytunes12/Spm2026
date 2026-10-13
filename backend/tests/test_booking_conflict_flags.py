@@ -1,8 +1,8 @@
 """Tests for "Flag Conflicting Bookings given Venue Setup & Turnaround" (SCRUM-92).
 
     AC1  saving a venue's setup/turnaround re-checks FUTURE approved bookings
-         (a Hold status does not exist yet, SCRUM-97); those that now clash
-         under the SCRUM-41 rule are flagged
+         and active tentative holds; those that now clash under the SCRUM-41
+         rule are flagged
     AC2  flagging never changes the booking's status; the Event's Coordinator
          is notified once per flag
     AC3  no clash, no flag; a flag that no longer applies is cleared and logged
@@ -50,7 +50,10 @@ def _world(client, db_session):
     }
 
 
-def _approved(db_session, w, start, end, coordinator="sam", status=BookingStatus.approved, venue=None, name="Gala"):
+def _approved(
+    db_session, w, start, end, coordinator="sam", status=BookingStatus.approved, venue=None, name="Gala",
+    expires_at=None,
+):
     """A booking of the venue for a new event, inserted directly."""
     organiser = _someone(db_session)
     event = Event(
@@ -62,6 +65,8 @@ def _approved(db_session, w, start, end, coordinator="sam", status=BookingStatus
     booking = VenueBooking(
         event_id=event.id, venue_id=(venue or w["venue"]).id, requested_by=organiser.id,
         start_time=start, end_time=end, status=status,
+        # a hold must carry an expiry (ck_venue_booking_hold_requires_expiry)
+        expires_at=expires_at or (datetime(2099, 1, 1, tzinfo=timezone.utc) if status == BookingStatus.tentative_hold else None),
     )
     db_session.add(booking)
     db_session.commit()
@@ -420,18 +425,18 @@ def test_ac6_a_kept_booking_is_not_reflagged_by_saving_the_same_values(client, d
 
 def test_ac1_an_active_hold_that_now_clashes_is_flagged_and_stays_a_hold(client, db_session):
     w = _world(client, db_session)
-    hold = _approved(db_session, w, _at(10), _at(12), status=BookingStatus.hold, name="Held")
+    hold = _approved(db_session, w, _at(10), _at(12), status=BookingStatus.tentative_hold, name="Held")
     approved = _approved(db_session, w, _at(13), _at(15))  # 12:30-12:45 shared under 30/45
     _put(client, w)
     # The hold is checked against approved bookings; a hold blocks nobody, so the approved one stays clear.
     assert _flagged(db_session, hold, approved) == [True, False]
-    assert db_session.get(VenueBooking, hold.id).status == BookingStatus.hold  # not cancelled or changed
+    assert db_session.get(VenueBooking, hold.id).status == BookingStatus.tentative_hold  # not cancelled or changed
     assert len(_notes(db_session, w["sam"].id)) == 1  # the hold's Coordinator is told
 
 
 def test_ac1_a_hold_that_does_not_clash_is_not_flagged(client, db_session):
     w = _world(client, db_session)
-    hold = _approved(db_session, w, _at(10), _at(12), status=BookingStatus.hold)
+    hold = _approved(db_session, w, _at(10), _at(12), status=BookingStatus.tentative_hold)
     far = _approved(db_session, w, _at(18), _at(20))
     _put(client, w)
     assert _flagged(db_session, hold, far) == [False, False]
@@ -439,7 +444,7 @@ def test_ac1_a_hold_that_does_not_clash_is_not_flagged(client, db_session):
 
 def test_ac1_a_past_hold_is_not_rechecked(client, db_session):
     w = _world(client, db_session)
-    past = _approved(db_session, w, _at(10, year=2020), _at(12, year=2020), status=BookingStatus.hold)
+    past = _approved(db_session, w, _at(10, year=2020), _at(12, year=2020), status=BookingStatus.tentative_hold)
     _approved(db_session, w, _at(13, year=2020), _at(15, year=2020))
     _put(client, w)
     assert _flagged(db_session, past) == [False]
@@ -562,3 +567,14 @@ def test_frozen_approve_still_refuses_a_clash_and_pending_conflicts_still_show(c
     assert [c["booking_id"] for c in row["conflicts"]] == [a.id] and row["conflict_flagged"] is False
     res = client.post(f"/venue-bookings/{pending.id}/approve", headers=w["staff_h"])
     assert res.status_code == 409 and "already booked" in res.json()["detail"]
+
+
+def test_ac1_an_expired_hold_is_not_flagged(client, db_session):
+    w = _world(client, db_session)
+    _approved(db_session, w, _at(10), _at(12))
+    expired = _approved(
+        db_session, w, _at(13), _at(15), status=BookingStatus.tentative_hold,
+        expires_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    assert _put(client, w).status_code == 200
+    assert _flagged(db_session, expired) == [False]

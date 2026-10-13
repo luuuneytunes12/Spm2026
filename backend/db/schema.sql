@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'approved', 'rejected', 'cancelled', 'hold'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -183,6 +183,7 @@ create table venue_bookings (
     start_time timestamptz not null,
     end_time timestamptz not null,
     status booking_status not null default 'pending',
+    expires_at timestamptz,
     decision_notes text,
     -- What Venue Staff offer instead when rejecting; see sql/014.
     suggested_alternative text,
@@ -199,7 +200,8 @@ create table venue_bookings (
     facilities_needs text,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
-    check (end_time > start_time)
+    check (end_time > start_time),
+    check (status <> 'tentative_hold' or expires_at is not null)
 );
 
 create index idx_venue_bookings_event on venue_bookings (event_id);
@@ -207,10 +209,10 @@ create index idx_venue_bookings_venue_time on venue_bookings (venue_id, start_ti
 create index idx_venue_bookings_conflict_flagged on venue_bookings (start_time)
     where conflict_flagged_at is not null;
 
--- An event may hold several live (pending or approved) requests, but only one
+-- An event may hold several live (pending, held or approved) requests, but only one
 -- per venue; see sql/019 (which replaced sql/013).
 create unique index uq_venue_bookings_one_live_per_event_venue
-    on venue_bookings (event_id, venue_id) where status in ('pending', 'approved');
+    on venue_bookings (event_id, venue_id) where status in ('pending', 'tentative_hold', 'approved');
 
 create table venue_unavailability (
     id bigint generated always as identity primary key,

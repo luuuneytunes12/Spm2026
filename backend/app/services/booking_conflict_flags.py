@@ -19,21 +19,18 @@ from app.models.events import EventStatusHistory
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
 from app.services.notifications import notify
+from app.services.venue_holds import active_hold_filter
 
-# Bookings that hold the venue and so can be flagged: approved bookings and,
-# once SCRUM-97 adds the status, active holds (SCRUM-92 AC1). Until then the
-# else branch keeps it to approved bookings only.
-_HOLD = getattr(BookingStatus, "hold", None)
-if _HOLD is not None:
-    FLAGGABLE_STATUSES = (BookingStatus.approved, _HOLD)
-else:
-    FLAGGABLE_STATUSES = (BookingStatus.approved,)
+# Bookings that hold the venue and so can be flagged: approved bookings and
+# active tentative holds (SCRUM-92 AC1). A hold past its expiry is skipped.
+FLAGGABLE_STATUSES = (BookingStatus.approved, BookingStatus.tentative_hold)
 
 # A flagged booking in one of these is no longer something to resolve.
 INACTIVE_STATUSES = (BookingStatus.rejected, BookingStatus.cancelled)
 
 # What a flagged booking is compared against: other APPROVED bookings only
-# (the SCRUM-41 rule). A hold does not block anyone, so it is not added here.
+# (the SCRUM-41 rule). A hold is soft for flagging: it never makes another
+# booking conflict, though it does show as occupied on the calendar and search.
 BLOCKING_STATUSES = (BookingStatus.approved,)
 
 
@@ -141,7 +138,13 @@ def booking_changed(db: Session, booking: VenueBooking, actor: User, *, now: dat
 
 
 def recheck_venue(
-    db: Session, venue: Venue, actor: User, *, may_flag: bool = True, now: datetime | None = None
+    db: Session,
+    venue: Venue,
+    actor: User,
+    *,
+    may_flag: bool = True,
+    now: datetime | None = None,
+    notify_on_clear: bool = False,
 ) -> tuple[int, int]:
     """Re-check the venue's future bookings; returns (newly flagged, cleared).
 
@@ -149,6 +152,9 @@ def recheck_venue(
     clashes is left alone (no second notification); one that no longer
     clashes is un-flagged with an Activity Log line. `may_flag=False` only
     un-flags (used when a booking elsewhere was rejected or cancelled).
+    `notify_on_clear` also tells the Coordinator when a flag is lifted; only an
+    unavailability change sets it (SCRUM-94 AC5): a setup/turnaround save
+    clears quietly (SCRUM-92).
     """
     now = now or datetime.now(timezone.utc)
     db.flush()  # see a status the caller just changed
@@ -172,6 +178,7 @@ def recheck_venue(
         .where(
             VenueBooking.venue_id == venue.id,
             VenueBooking.status.in_(FLAGGABLE_STATUSES),
+            active_hold_filter(now),
             VenueBooking.start_time > now,
         )
         .options(joinedload(VenueBooking.event))
@@ -188,9 +195,13 @@ def recheck_venue(
                     f"Venue booking '{venue.name}' flagged: the venue was marked temporarily "
                     "unavailable during this booking. The Event is not cancelled."
                 )
+                closure = next(c for c in closures if closure_overlaps(booking, c))
                 tell = (
-                    f"Your venue booking '{venue.name}' for '{event.name or 'Untitled event'}' "
-                    "falls in a period the venue is unavailable. Venue Staff will resolve it."
+                    f"{venue.name} is unavailable from {as_utc(closure.start_time):%d %b %Y %H:%M} to "
+                    f"{as_utc(closure.end_time):%d %b %Y %H:%M} ({closure.reason_category}"
+                    f"{': ' + closure.reason if closure.reason else ''}), which affects your booking for "
+                    f"'{event.name or 'Untitled event'}'. Venue Unavailable - Action Required: alternative "
+                    "arrangements are required. The Event has not been cancelled."
                 )
             else:
                 log_text = (
@@ -218,4 +229,15 @@ def recheck_venue(
             "it no longer overlaps another booking or an unavailable period.",
         ):
             cleared += 1
+            if notify_on_clear and booking.event.coordinator_id is not None:
+                notify(
+                    db,
+                    user_id=booking.event.coordinator_id,
+                    event_id=booking.event_id,
+                    type=NotificationType.venue_booking_conflict,
+                    message=(
+                        f"The conflict on your venue booking '{venue.name}' for "
+                        f"'{booking.event.name or 'Untitled event'}' is cleared: no further action is needed."
+                    ),
+                )
     return flagged, cleared

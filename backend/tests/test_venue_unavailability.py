@@ -16,6 +16,7 @@ import pytest
 
 from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event
+from app.models.notifications import Notification
 from app.models.venues import VenueBooking, VenueUnavailability
 from tests.test_booking_conflict_flags import _approved, _flagged, _log, _notes, _world
 
@@ -329,3 +330,46 @@ def test_ac7_an_attendee_cannot_read_or_write(client, db_session):
     _, att_h = user(client, db_session, Role.ATTENDEE, "att@example.com", "Ann Attendee")
     assert _post(client, w, headers=att_h).status_code == 403
     assert client.get(f"/venues/{w['venue'].id}/unavailability", headers=att_h).status_code == 403
+
+
+# --- SCRUM-94: Coordinators are told, nothing is cancelled -----------------------
+
+
+def test_scrum94_a_pending_requests_coordinator_is_notified_and_the_event_is_untouched(client, db_session):
+    w = _world(client, db_session)
+    pending = _approved(db_session, w, _at(10), _at(12), status=BookingStatus.pending, name="Talk")
+    assert _post(client, w, _body(category="Renovation", reason="New floor")).status_code == 201
+    db_session.expire_all()
+    [note] = db_session.query(Notification).filter_by(
+        user_id=w["sam"].id, type="venue_unavailability_recorded"
+    ).all()
+    assert "unavailable" in note.message and "Renovation: New floor" in note.message
+    assert "Alternative arrangements" in note.message
+    db_session.expire_all()
+    assert db_session.get(VenueBooking, pending.id).status == BookingStatus.pending
+    assert db_session.get(Event, pending.event_id).status == EventStatus.planning_event
+
+
+def test_scrum94_an_active_hold_inside_the_period_is_flagged_and_an_expired_one_is_not(client, db_session):
+    w = _world(client, db_session)
+    active = _approved(db_session, w, _at(10), _at(11), status=BookingStatus.tentative_hold)
+    expired = _approved(
+        db_session, w, _at(12), _at(13), status=BookingStatus.tentative_hold,
+        expires_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    body = _post(client, w).json()
+    assert [a["booking_id"] for a in body["affected_bookings"]] == [active.id]
+    assert _flagged(db_session, active) == [True]
+    db_session.expire_all()
+    assert db_session.get(VenueBooking, expired.id).status == BookingStatus.cancelled
+
+
+def test_scrum94_ending_or_editing_the_period_tells_the_coordinator_the_mark_is_gone(client, db_session):
+    w = _world(client, db_session)
+    inside = _approved(db_session, w, _at(10), _at(12))
+    pid = _post(client, w).json()["id"]
+    assert "Action Required" in _notes(db_session, w["sam"].id)[0].message
+    assert "alternative arrangements" in _notes(db_session, w["sam"].id)[0].message
+    assert _put(client, w, pid, _body(_at(14), _at(18))).json()["recheck"]["cleared"] == 1
+    assert _flagged(db_session, inside) == [False]
+    assert "cleared" in _notes(db_session, w["sam"].id)[-1].message

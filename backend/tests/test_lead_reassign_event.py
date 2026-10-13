@@ -136,7 +136,7 @@ def test_ac3_the_activity_log_records_the_lead_both_coordinators_and_the_time(cl
     assert "Sam Tan" in line["note"] and "Priya Nair" in line["note"]
     assert line["note"] == "Reassigned from Sam Tan to Priya Nair."
     assert line["created_at"]
-    assert line["from_status"] == line["to_status"] == "under_review"  # a same-status entry
+    assert line["from_status"] == line["to_status"] == "under_review"
 
 
 def test_ac3_a_second_reassignment_adds_a_second_line(client, w):

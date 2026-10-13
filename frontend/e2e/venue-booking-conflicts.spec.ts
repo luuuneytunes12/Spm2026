@@ -162,7 +162,8 @@ test('TC-BC-A2: the availability fields and button are keyboard-reachable with v
   const staff = await openAs(browser, STAFF)
   await staff.goto(`/venues/${venueId}`)
   const focused = new Set<string>()
-  for (let i = 0; i < 40; i++) {
+  // The venue page has grown (setup form, unavailability form, suitability), so allow more Tab stops.
+  for (let i = 0; i < 90; i++) {
     await staff.keyboard.press('Tab')
     // The focus ring fades in (box-shadow transition); read it once settled.
     await staff.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))))

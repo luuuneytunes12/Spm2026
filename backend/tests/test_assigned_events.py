@@ -10,13 +10,9 @@ docstrings, and docs/test-cases-coordinator-assigned-events.md).
 """
 
 from app.core.roles import Role
-from app.models.events import Event
+from app.models.enums import EventStatus
+from app.models.events import Event, EventStatusHistory
 from app.models.user import User
-import pytest
-
-# These tests start from an event that already has a Coordinator; assignment is
-# now the Lead's job, so submit alone no longer provides one (see conftest).
-pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 # A request with every mandatory field filled in, plus the optional ones, so
 # that "the Coordinator can see every requirement" is testable against a
@@ -76,14 +72,23 @@ def _submitted_event(client, organiser_headers, **overrides) -> int:
     return event_id
 
 
-def _assign(db_session, event_id: int, coordinator: User) -> None:
-    """Put `coordinator` on the event.
-
-    Written directly because there is no "assign a Coordinator" endpoint yet
-    -- that is its own story. This sets exactly the column that story will
-    set, so these tests do not need rewriting when it lands.
-    """
-    db_session.get(Event, event_id).coordinator_id = coordinator.id
+def _assign(
+    db_session, event_id: int, coordinator: User, actor: User | None = None
+) -> None:
+    """Put a Coordinator on the event and model the assignment status change."""
+    event = db_session.get(Event, event_id)
+    event.coordinator_id = coordinator.id
+    if event.status == EventStatus.submitted_awaiting_coordinator:
+        event.status = EventStatus.under_review
+        db_session.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=(actor or coordinator).id,
+                from_status=EventStatus.submitted_awaiting_coordinator,
+                to_status=EventStatus.under_review,
+                note=f"Assigned to {coordinator.name}; review started.",
+            )
+        )
     db_session.commit()
 
 
@@ -91,14 +96,8 @@ def _setup(client, db_session):
     """The common fixture: one Organiser, one Coordinator, one event
     submitted by the former and assigned to the latter.
 
-    The Coordinator is created and assigned AFTER submission, not before:
-    since the "Mark myself unavailable" story, submitting auto-assigns
-    whichever Coordinator is available at that moment (see
-    app/services/assignment.py), and having one already exist here would
-    have it picked up automatically -- which is exactly what several tests
-    below need NOT to happen, so they can assign deliberately instead. With
-    no Coordinator around yet, submission leaves the event unassigned, same
-    as always.
+    The event is submitted before its Coordinator is assigned so the setup
+    exercises the unassigned-to-under-review transition explicitly.
     """
     organiser, organiser_headers = _user(
         client, db_session, Role.ORGANISER, "priya@connectsphere.test", name="Priya Menon"
@@ -107,7 +106,10 @@ def _setup(client, db_session):
     coordinator, coordinator_headers = _user(
         client, db_session, Role.COORDINATOR, "sam@connectsphere.test", name="Sam Tan"
     )
-    _assign(db_session, event_id, coordinator)
+    lead, _ = _user(
+        client, db_session, Role.COORDINATOR_LEAD, "lena@connectsphere.test", name="Lena Lead"
+    )
+    _assign(db_session, event_id, coordinator, lead)
     return organiser, organiser_headers, coordinator, coordinator_headers, event_id
 
 
@@ -192,7 +194,7 @@ def test_assigned_event_reports_its_current_status(client, db_session):
 
     body = client.get(f"/events/assigned/{event_id}", headers=coordinator_headers).json()
 
-    assert body["status"] == "submitted_awaiting_coordinator"
+    assert body["status"] == "under_review"
     assert body["submitted_at"] is not None
 
 
@@ -207,13 +209,20 @@ def test_assigned_event_includes_its_activity_log(client, db_session):
 
     body = client.get(f"/events/assigned/{event_id}", headers=coordinator_headers).json()
 
-    assert len(body["activity"]) == 1
-    entry = body["activity"][0]
-    assert entry["from_status"] == "draft"
-    assert entry["to_status"] == "submitted_awaiting_coordinator"
-    assert entry["changed_by_name"] == organiser.name
-    assert entry["note"] == "Submitted by organiser."
-    assert entry["created_at"] is not None
+    assert len(body["activity"]) == 2
+    assignment, submission = body["activity"]
+    assert (assignment["from_status"], assignment["to_status"]) == (
+        "submitted_awaiting_coordinator",
+        "under_review",
+    )
+    assert assignment["changed_by_name"] == "Lena Lead"
+    assert assignment["note"] == "Assigned to Sam Tan; review started."
+    assert assignment["created_at"] is not None
+    assert submission["from_status"] == "draft"
+    assert submission["to_status"] == "submitted_awaiting_coordinator"
+    assert submission["changed_by_name"] == organiser.name
+    assert submission["note"] == "Submitted by organiser."
+    assert submission["created_at"] is not None
 
 
 def test_activity_log_is_newest_first(client, db_session):
@@ -226,7 +235,7 @@ def test_activity_log_is_newest_first(client, db_session):
         EventStatusHistory(
             event_id=event_id,
             changed_by=coordinator.id,
-            from_status="submitted_awaiting_coordinator",
+            from_status="under_review",
             to_status="under_review",
             note="Picked up for review.",
         )
@@ -235,7 +244,11 @@ def test_activity_log_is_newest_first(client, db_session):
 
     body = client.get(f"/events/assigned/{event_id}", headers=coordinator_headers).json()
 
-    assert [e["to_status"] for e in body["activity"]] == ["under_review", "submitted_awaiting_coordinator"]
+    assert [e["to_status"] for e in body["activity"]] == [
+        "under_review",
+        "under_review",
+        "submitted_awaiting_coordinator",
+    ]
     assert body["activity"][0]["changed_by_name"] == "Sam Tan"
 
 
@@ -296,24 +309,22 @@ def test_assigned_list_contains_only_my_events(client, db_session):
     as the detail view -- one Coordinator's assignment never bleeds into
     another's list.
 
-    A second submitted request, made once a second Coordinator exists, is
-    auto-assigned to THEM (the lighter-loaded one, per
-    app/services/assignment.py) rather than to `coordinator` -- see the
-    "Mark myself unavailable" story. That is exactly the scoping this test
-    checks: each Coordinator's list holds only what is actually theirs.
+    A second submitted request is assigned to a different Coordinator, and
+    each Coordinator's list contains only the events assigned to them.
     """
     _, organiser_headers, coordinator, coordinator_headers, mine = _setup(client, db_session)
-    _, other_coordinator_headers = _user(
+    other_coordinator, other_coordinator_headers = _user(
         client, db_session, Role.COORDINATOR, "other2@connectsphere.test"
     )
-    other_event_id = _submitted_event(client, organiser_headers)  # auto-assigned to other2
+    other_event_id = _submitted_event(client, organiser_headers)
+    _assign(db_session, other_event_id, other_coordinator)
 
     res = client.get("/events/assigned", headers=coordinator_headers)
 
     assert res.status_code == 200
     assert [e["id"] for e in res.json()] == [mine]
-    # The other Coordinator sees the request auto-assigned to them, and
-    # nothing that belongs to `coordinator`.
+    # The other Coordinator sees their assigned request, and nothing that
+    # belongs to `coordinator`.
     assert [e["id"] for e in client.get("/events/assigned", headers=other_coordinator_headers).json()] == [
         other_event_id
     ]

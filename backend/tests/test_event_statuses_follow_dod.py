@@ -8,7 +8,14 @@ the Python enum, the database enum in db/schema.sql and the frontend labels.
 import re
 from pathlib import Path
 
-from app.models.enums import EventStatus
+from app.models.enums import (
+    ACTIVE_ASSIGNMENT_STATUSES,
+    CHANGE_REQUEST_ALLOWED_STATUSES,
+    CHANGE_REQUEST_DISALLOWED_STATUSES,
+    PLANNING_STATUSES,
+    TERMINAL_EVENT_STATUSES,
+    EventStatus,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,3 +55,26 @@ def test_frontend_labels_are_exactly_the_dod_names():
 def test_the_down_migration_exists_beside_the_up_migration():
     assert (ROOT / "backend/sql/018_event_statuses_follow_dod.sql").exists()
     assert (ROOT / "backend/sql/down/018_event_statuses_follow_dod.sql").exists()
+
+
+def test_shared_status_groups_cover_the_current_workflow():
+    assert EventStatus.awaiting_safety_check in CHANGE_REQUEST_ALLOWED_STATUSES
+    assert set(CHANGE_REQUEST_DISALLOWED_STATUSES) == {
+        EventStatus.draft,
+        EventStatus.event_completed,
+        EventStatus.event_cancelled,
+        EventStatus.event_rejected,
+    }
+    assert set(CHANGE_REQUEST_ALLOWED_STATUSES) == set(EventStatus) - set(
+        CHANGE_REQUEST_DISALLOWED_STATUSES
+    )
+    assert set(TERMINAL_EVENT_STATUSES) == {
+        EventStatus.event_completed,
+        EventStatus.event_cancelled,
+        EventStatus.event_rejected,
+    }
+    assert set(ACTIVE_ASSIGNMENT_STATUSES) == set(EventStatus) - {
+        EventStatus.draft,
+        *TERMINAL_EVENT_STATUSES,
+    }
+    assert PLANNING_STATUSES == (EventStatus.event_approved, EventStatus.planning_event)

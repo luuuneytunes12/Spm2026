@@ -234,7 +234,7 @@ def test_ac6_safety_check_booking_shows_buffers_and_occupied_period(client, db_s
 
     s = _setup(client, db_session)
     detail = client.get(f"/safety-checks/{s['event_id']}", headers=s["officer_h"]).json()
-    vb = detail["venue_booking"]
+    vb = detail["venue_bookings"][0]
     assert (vb["setup_minutes"], vb["turnaround_minutes"]) == (0, 0)
     assert vb["occupied_start"][:19] == vb["start_time"][:19]
 
@@ -243,6 +243,10 @@ def test_ac6_safety_check_booking_shows_buffers_and_occupied_period(client, db_s
     db_session.get(Venue, vb["venue"]["id"]).setup_minutes = 30
     db_session.get(Venue, vb["venue"]["id"]).turnaround_minutes = 45
     db_session.commit()
-    vb = client.get(f"/safety-checks/{s['event_id']}", headers=s["officer_h"]).json()["venue_booking"]
+    vb = next(
+        b
+        for b in client.get(f"/safety-checks/{s['event_id']}", headers=s["officer_h"]).json()["venue_bookings"]
+        if b["id"] == vb["id"]
+    )
     assert (vb["setup_minutes"], vb["turnaround_minutes"]) == (30, 45)
     assert vb["occupied_start"] < vb["start_time"] and vb["occupied_end"] > vb["end_time"]

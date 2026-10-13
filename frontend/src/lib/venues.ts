@@ -60,6 +60,69 @@ export interface VenueFilterOptions {
   accessibility_features: string[]
 }
 
+/** One calendar entry. `start_time`/`end_time` are the event itself;
+ *  `occupied_*` add the venue's setup and turnaround (the period it really
+ *  holds the venue). `event_id`/`event_name` are null unless the caller is
+ *  Venue Staff or the event's own Coordinator. */
+export interface VenueAvailabilityItem {
+  id: number
+  kind: 'confirmed_booking' | 'tentative_hold' | 'unavailability'
+  start_time: string
+  end_time: string
+  occupied_start?: string | null
+  occupied_end?: string | null
+  event_id: number | null
+  event_name: string | null
+  reason_category?: string | null
+  reason: string | null
+  expires_at: string | null
+  conflicts_with_unavailability: boolean
+}
+
+/** `busy` and `items` describe the same periods; see the server docstring. */
+export interface VenueAvailability {
+  venue_id: number
+  start: string
+  end: string
+  busy: BusyPeriod[]
+  items: VenueAvailabilityItem[]
+}
+
+export interface VenueSuitabilityCheck {
+  category: 'capacity' | 'layout' | 'accessibility' | 'facility'
+  requirement: string
+  available: string
+  met: boolean
+  message: string
+}
+
+export interface VenueSuitability {
+  venue_id: number
+  event_id: number
+  event_name: string | null
+  suitable: boolean
+  checks: VenueSuitabilityCheck[]
+}
+
+export interface EventVenueSuitability {
+  event_id: number
+  event_name: string | null
+  suitable: boolean
+  venues: {
+    booking_id: number
+    venue_id: number
+    venue_name: string
+    suitable: boolean
+    checks: VenueSuitabilityCheck[]
+  }[]
+  combined_capacity: {
+    required_capacity: number | null
+    available_capacity: number
+    met: boolean
+    message: string
+  }
+}
+
 /** The query string for a search. Empty criteria are left out entirely, so
  *  a cleared filter means "no filter" rather than "match the empty string".
  *  Lists become repeated parameters (`facilities=a&facilities=b`), which is
@@ -144,7 +207,7 @@ export function saveSetupTurnaround(id: number, values: SetupTurnaround): Promis
  *  OCCUPIED one (event plus setup and turnaround); `event_*` give the event
  *  itself. `event_name` is null unless the caller is Venue Staff. */
 export interface BusyPeriod {
-  kind: 'booking' | 'closure'
+  kind: 'booking' | 'tentative_hold' | 'closure'
   start: string
   end: string
   event_start?: string | null
@@ -153,11 +216,8 @@ export interface BusyPeriod {
   /** Closures only (SCRUM-93): why the venue is unavailable. */
   reason_category?: string | null
   reason?: string | null
-}
-
-export interface VenueAvailability {
-  venue_id: number
-  busy: BusyPeriod[]
+  /** Tentative holds only: when the hold lapses. */
+  expires_at?: string | null
 }
 
 /** Coordinator and Venue Staff. The window is [start, end), ISO 8601. */
@@ -197,6 +257,10 @@ export function describeBusyPeriod(p: BusyPeriod): string {
   if (p.kind === 'closure') {
     const why = p.reason_category ? ` - ${p.reason_category}${p.reason ? `: ${p.reason}` : ''}` : ''
     return `Unavailable (closed): ${when}${why}`
+  }
+  if (p.kind === 'tentative_hold') {
+    const until = p.expires_at ? ` (expires ${new Date(p.expires_at).toLocaleString()})` : ''
+    return `${p.event_name ? `Tentative hold for ${p.event_name}` : 'Tentative hold'}: ${when}${until}`
   }
   return p.event_name ? `Booked for ${p.event_name}: ${when}` : `Booked: ${when}`
 }
@@ -305,4 +369,12 @@ export function endUnavailabilityEarly(venueId: number, id: number): Promise<Una
 
 export function deleteUnavailability(venueId: number, id: number): Promise<void> {
   return apiFetch(`/venues/${venueId}/unavailability/${id}`, { method: 'DELETE' }) as Promise<void>
+}
+
+export function checkVenueSuitability(id: number, eventId: number): Promise<VenueSuitability> {
+  return apiFetch(`/venues/${id}/suitability/${eventId}`) as Promise<VenueSuitability>
+}
+
+export function checkEventVenueSuitability(eventId: number): Promise<EventVenueSuitability> {
+  return apiFetch(`/venues/events/${eventId}/suitability`) as Promise<EventVenueSuitability>
 }

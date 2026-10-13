@@ -5,6 +5,7 @@ bookings overlap without both being flagged."""
 
 import threading
 
+from datetime import datetime, timezone
 import pytest
 
 from app.models.enums import BookingStatus
@@ -100,18 +101,19 @@ def test_a_setup_save_racing_an_approval_never_leaves_an_unflagged_clash(
 def test_ac1_ac6_an_active_hold_is_flagged_and_a_flagged_booking_can_be_cancelled_on_postgres(
     client, make_user, db
 ):
-    """'hold' must exist in the native booking_status enum (db/schema.sql)."""
+    """'tentative_hold' must exist in the native booking_status enum (db/schema.sql)."""
     _, staff_h, venue_id, [first, second] = _world(client, make_user, db, 0, 0, [10, 13])
     assert _approve(client, staff_h, first).status_code == 200
     assert _approve(client, staff_h, second).status_code == 200
-    db.get(VenueBooking, second).status = BookingStatus.hold
+    db.get(VenueBooking, second).status = BookingStatus.tentative_hold
+    db.get(VenueBooking, second).expires_at = datetime(2099, 1, 1, tzinfo=timezone.utc)
     db.commit()
 
     res = _save(client, staff_h, venue_id, CLASH)
     assert res.status_code == 200 and res.json()["recheck"]["flagged"] == 1
     assert _flags(db, [first, second]) == [False, True]  # a hold blocks nobody; the hold is flagged
     db.expire_all()
-    assert db.get(VenueBooking, second).status == BookingStatus.hold  # kept as a hold, not cancelled
+    assert db.get(VenueBooking, second).status == BookingStatus.tentative_hold  # kept as a hold, not cancelled
 
     assert client.post(f"/venue-bookings/{first}/cancel-flagged", json={"reason": "x"}, headers=staff_h).status_code == 409
     done = client.post(f"/venue-bookings/{second}/cancel-flagged", json={"reason": "Not needed"}, headers=staff_h)

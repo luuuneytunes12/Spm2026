@@ -1,8 +1,11 @@
 from collections.abc import Iterable
 from datetime import datetime, timezone
+import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import exists, or_, select
+from sqlalchemy import and_, exists, or_, select
+from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.datetimes import as_utc
@@ -10,24 +13,35 @@ from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
 from app.domain.venue_occupancy import occupied_window
-from app.models.enums import BookingStatus
+from app.models.enums import BookingStatus, NotificationType
+from app.models.events import Event
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
 from app.services.booking_conflict_flags import effective_buffers, recheck_venue
+from app.services.notifications import notify
+from app.services.venue_holds import active_hold_filter as _active_hold_filter
+from app.services.venue_holds import expire_tentative_holds
 from app.schemas.venue import (
-    BusyPeriod,
     AffectedBooking,
+    BusyPeriod,
+    CombinedVenueCapacityCheck,
+    EventVenueSuitabilityItem,
+    EventVenueSuitabilityOut,
     RecheckSummary,
     SetupTurnaroundUpdate,
     UnavailabilityIn,
     UnavailabilityOut,
-    VenueAvailability,
+    VenueAvailabilityItem,
+    VenueAvailabilityOut,
     VenueDetail,
     VenueFilterOptions,
+    VenueSuitabilityCheck,
+    VenueSuitabilityOut,
     VenueSummary,
 )
 
 router = APIRouter(prefix="/venues", tags=["venues"])
+logger = logging.getLogger(__name__)
 
 # Gated on role, not on VENUE_READ. The story is for INTERNAL users
 # (Event Coordinators and Venue Staff), and VENUE_READ is also held by
@@ -35,19 +49,16 @@ router = APIRouter(prefix="/venues", tags=["venues"])
 # details the story never meant them to see.
 _internal = require_role(Role.COORDINATOR, Role.VENUE_STAFF)
 _venue_staff = require_role(Role.VENUE_STAFF)
+_coordinator = require_role(Role.COORDINATOR)
 
 # Which bookings take a venue out of a date search.
 #
-# Only a confirmed booking: W4 p4, Booking Conflict Detection -- "A
-# confirmed booking should affect whether that venue is considered
-# available." Rejected and cancelled bookings never will be confirmed, and a
-# pending one is not yet.
-#
-# PROVISIONAL for pending. Venue Booking Request and Approval are separate
-# stories, not built yet. If they decide a pending request should hold the
-# venue, add BookingStatus.pending here and flip the matching test case in
-# tests/test_venue_search.py.
-_BLOCKING_BOOKING_STATUSES = (BookingStatus.approved,)
+# A confirmed booking (W4 p4, Booking Conflict Detection) and a tentative hold
+# that has not expired (SCRUM-97: "the held window is treated as occupied").
+# Rejected, cancelled and expired ones never are; a pending one is not yet.
+# Always pair this with _active_hold_filter(now): a hold past its expiry but
+# not yet swept must not block.
+_BLOCKING_BOOKING_STATUSES = (BookingStatus.approved, BookingStatus.tentative_hold)
 
 
 def _reject(field: str, message: str) -> None:
@@ -87,6 +98,91 @@ def _distinct(values: Iterable[str]) -> list[str]:
     for value in sorted((v.strip() for v in values if v and v.strip()), key=lambda v: (v.casefold(), v)):
         kept.setdefault(value.casefold(), value)
     return list(kept.values())
+
+
+def _requirement_items(value: str | None) -> list[str]:
+    """Read the existing free-text fields as comma/semicolon/newline lists."""
+    return [item.strip() for item in re.split(r"[,;\n]", value or "") if item.strip()]
+
+
+def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityCheck]:
+    checks: list[VenueSuitabilityCheck] = []
+    if event.expected_attendance is None:
+        checks.append(
+            VenueSuitabilityCheck(
+                category="capacity",
+                requirement="Expected attendance is not recorded",
+                available=f"{venue.capacity} people",
+                met=False,
+                message="Cannot confirm capacity until the event attendance is recorded.",
+            )
+        )
+    else:
+        capacity_met = venue.capacity >= event.expected_attendance
+        checks.append(
+            VenueSuitabilityCheck(
+                category="capacity",
+                requirement=f"{event.expected_attendance} people",
+                available=f"{venue.capacity} people",
+                met=capacity_met,
+                message=(
+                    "Capacity is sufficient."
+                    if capacity_met
+                    else f"Insufficient capacity: {venue.capacity} available; "
+                    f"{event.expected_attendance} required."
+                ),
+            )
+        )
+
+    layout = (event.room_layout_preference or "").strip()
+    if layout:
+        layout_met = layout.casefold() in _folded(venue.supported_layouts)
+        checks.append(
+            VenueSuitabilityCheck(
+                category="layout",
+                requirement=layout,
+                available=", ".join(venue.supported_layouts or []) or "None recorded",
+                met=layout_met,
+                message=(
+                    f"Layout '{layout}' is supported."
+                    if layout_met
+                    else f"Unsupported layout: '{layout}' is not offered by this venue."
+                ),
+            )
+        )
+
+    for requirement in _requirement_items(event.accessibility_needs):
+        met = requirement.casefold() in _folded(venue.accessibility_features)
+        checks.append(
+            VenueSuitabilityCheck(
+                category="accessibility",
+                requirement=requirement,
+                available=", ".join(venue.accessibility_features or []) or "None recorded",
+                met=met,
+                message=(
+                    f"Accessibility feature '{requirement}' is available."
+                    if met
+                    else f"Missing accessibility feature: '{requirement}'."
+                ),
+            )
+        )
+
+    for requirement in _requirement_items(event.venue_requirements):
+        met = requirement.casefold() in _folded(venue.facilities)
+        checks.append(
+            VenueSuitabilityCheck(
+                category="facility",
+                requirement=requirement,
+                available=", ".join(venue.facilities or []) or "None recorded",
+                met=met,
+                message=(
+                    f"Facility '{requirement}' is available."
+                    if met
+                    else f"Missing facility: '{requirement}'."
+                ),
+            )
+        )
+    return checks
 
 
 # Declared before "/{venue_id}". That route takes an int, so "filter-options"
@@ -148,6 +244,7 @@ def list_venues(
     if start is not None and end is not None and as_utc(end) <= as_utc(start):
         _reject("end", "The end must be after the start.")
 
+    expire_tentative_holds(db)
     stmt = select(Venue)
 
     if q and q.strip():
@@ -213,6 +310,7 @@ def _free_of_bookings(db: Session, venues: list[Venue], start: datetime, end: da
         select(VenueBooking).where(
             VenueBooking.venue_id.in_([v.id for v in venues]),
             VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
+            _active_hold_filter(datetime.now(timezone.utc)),
         )
     ):
         by_venue.setdefault(booking.venue_id, []).append(booking)
@@ -240,18 +338,23 @@ def get_venue(
     return VenueDetail.model_validate(venue)
 
 
-@router.get("/{venue_id}/availability", response_model=VenueAvailability)
+@router.get("/{venue_id}/availability", response_model=VenueAvailabilityOut)
 def venue_availability(
     venue_id: int,
     start: datetime | None = Query(None, description="Start of the range, ISO 8601."),
     end: datetime | None = Query(None, description="End of the range, ISO 8601."),
     db: Session = Depends(get_db),
     user: User = Depends(_internal),
-) -> VenueAvailability:
-    """When the venue is NOT available within a range: the occupied period
-    (event plus setup/turnaround) of every approved booking that overlaps it,
-    and every recorded closure. Anything not listed is free. Pending,
-    rejected and cancelled bookings never appear.
+) -> VenueAvailabilityOut:
+    """When the venue is NOT available within a range.
+
+    `busy` and `items` describe the same periods for two readers:
+      * `busy`: the OCCUPIED period (event plus setup/turnaround) of every
+        approved booking and active tentative hold, and every closure;
+      * `items`: the same, as calendar entries carrying the event window, the
+        occupied window, the hold's expiry and a closure's reason.
+    Anything not listed is free. Pending, rejected, cancelled and expired
+    bookings never appear.
 
     Only Venue Staff are told which event holds the venue; a Coordinator
     sees that it is taken, not by whom.
@@ -261,50 +364,121 @@ def venue_availability(
     window = occupied_window(start, end, 0, 0)
     if window.end <= window.start:
         _reject("end", "The end must be after the start.")
-    venue = db.get(Venue, venue_id)
-    if venue is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
+    try:
+        venue = db.get(Venue, venue_id)
+        if venue is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
 
-    show_names = user.role == Role.VENUE_STAFF.value
-    busy: list[BusyPeriod] = []
-    approved = db.scalars(
-        select(VenueBooking)
-        .where(VenueBooking.venue_id == venue.id, VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES))
-        .options(joinedload(VenueBooking.event))
-    ).unique()
-    for booking in approved:
-        occupied = occupied_window(
-            booking.start_time, booking.end_time, venue.setup_minutes, venue.turnaround_minutes
-        )
-        if occupied.overlaps(window):
+        now = datetime.now(timezone.utc)
+        expire_tentative_holds(db)
+        show_names = user.role == Role.VENUE_STAFF.value
+        closures = db.scalars(
+            select(VenueUnavailability).where(
+                VenueUnavailability.venue_id == venue.id,
+                VenueUnavailability.start_time < window.end,
+                VenueUnavailability.end_time > window.start,
+            )
+        ).all()
+        bookings = db.scalars(
+            select(VenueBooking)
+            .where(
+                VenueBooking.venue_id == venue.id,
+                VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
+                _active_hold_filter(now),
+            )
+            .options(joinedload(VenueBooking.event))
+        ).unique()
+
+        busy: list[BusyPeriod] = []
+        items: list[VenueAvailabilityItem] = []
+        for booking in bookings:
+            occupied = occupied_window(
+                booking.start_time, booking.end_time, venue.setup_minutes, venue.turnaround_minutes
+            )
+            if not occupied.overlaps(window):
+                continue
+            held = booking.status == BookingStatus.tentative_hold
+            # Which event holds the venue is Venue Staff's to know (SCRUM-41);
+            # a Coordinator only sees that it is taken.
+            visible = show_names
+            name = (booking.event.name or "Untitled event") if visible else None
+            event_start, event_end = as_utc(booking.start_time), as_utc(booking.end_time)
             busy.append(
                 BusyPeriod(
-                    kind="booking",
+                    kind="tentative_hold" if held else "booking",
                     start=occupied.start,
                     end=occupied.end,
-                    event_start=as_utc(booking.start_time),
-                    event_end=as_utc(booking.end_time),
-                    event_name=(booking.event.name or "Untitled event") if show_names else None,
+                    event_start=event_start,
+                    event_end=event_end,
+                    event_name=name,
+                    expires_at=booking.expires_at if held else None,
                 )
             )
-    for closure in db.scalars(
-        select(VenueUnavailability).where(
-            VenueUnavailability.venue_id == venue.id,
-            VenueUnavailability.start_time < window.end,
-            VenueUnavailability.end_time > window.start,
-        )
-    ):
-        busy.append(
-            BusyPeriod(
-                kind="closure",
-                start=as_utc(closure.start_time),
-                end=as_utc(closure.end_time),
-                reason_category=closure.reason_category,
-                reason=closure.reason,
+            items.append(
+                VenueAvailabilityItem(
+                    id=booking.id,
+                    kind="tentative_hold" if held else "confirmed_booking",
+                    start_time=event_start,
+                    end_time=event_end,
+                    occupied_start=occupied.start,
+                    occupied_end=occupied.end,
+                    event_id=booking.event_id if visible else None,
+                    event_name=name,
+                    expires_at=booking.expires_at if held else None,
+                    conflicts_with_unavailability=any(
+                        as_utc(c.start_time) < event_end and as_utc(c.end_time) > event_start
+                        for c in closures
+                    ),
+                )
             )
+        for closure in closures:
+            busy.append(
+                BusyPeriod(
+                    kind="closure",
+                    start=as_utc(closure.start_time),
+                    end=as_utc(closure.end_time),
+                    reason_category=closure.reason_category,
+                    reason=closure.reason,
+                )
+            )
+            items.append(
+                VenueAvailabilityItem(
+                    id=closure.id,
+                    kind="unavailability",
+                    start_time=as_utc(closure.start_time),
+                    end_time=as_utc(closure.end_time),
+                    occupied_start=as_utc(closure.start_time),
+                    occupied_end=as_utc(closure.end_time),
+                    reason_category=closure.reason_category,
+                    reason=closure.reason,
+                )
+            )
+        busy.sort(key=lambda b: (b.start, b.end))
+        items.sort(key=lambda i: (i.occupied_start or i.start_time, i.kind, i.id))
+        return VenueAvailabilityOut(
+            venue_id=venue.id, start=as_utc(start), end=as_utc(end), busy=busy, items=items
         )
-    busy.sort(key=lambda b: (b.start, b.end))
-    return VenueAvailability(venue_id=venue.id, busy=busy)
+    except ProgrammingError as exc:
+        logger.exception("Failed to retrieve venue availability (venue_id=%s)", venue_id)
+        if "venue_bookings.expires_at" in str(exc.orig) and "does not exist" in str(exc.orig):
+            detail = (
+                "The database is missing venue_bookings.expires_at. Apply "
+                "backend/sql/019_multi_venue_tentative_holds.sql to the configured "
+                "database, then retry."
+            )
+        else:
+            detail = (
+                "Availability could not be retrieved because a database query failed. "
+                "Check the backend logs for the error details."
+            )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Failed to retrieve venue availability (venue_id=%s)", venue_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Availability could not be retrieved because a database query failed. "
+            "Check the backend logs for the error details.",
+        ) from exc
 
 
 @router.put("/{venue_id}/setup-turnaround", response_model=VenueDetail)
@@ -327,9 +501,7 @@ def save_setup_turnaround(
     cancelled, and earlier flags that no longer apply are cleared. Saving the
     same values again re-checks nothing, so nobody is notified twice.
     """
-    venue = db.get(Venue, venue_id, with_for_update=True)
-    if venue is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
+    venue = _locked_venue(db, venue_id)
     before = effective_buffers(venue)
     venue.setup_minutes = body.setup_minutes
     venue.turnaround_minutes = body.turnaround_minutes
@@ -353,7 +525,7 @@ def save_setup_turnaround(
 # Event.
 
 # Bookings that hold, or are asking for, the venue.
-_AFFECTED_STATUSES = (BookingStatus.pending, BookingStatus.approved)
+_AFFECTED_STATUSES = (BookingStatus.pending, BookingStatus.approved, BookingStatus.tentative_hold)
 
 
 def _check_range(body: UnavailabilityIn) -> None:
@@ -371,6 +543,7 @@ def _affected(db: Session, period: VenueUnavailability, now: datetime) -> list[A
         .where(
             VenueBooking.venue_id == period.venue_id,
             VenueBooking.status.in_(_AFFECTED_STATUSES),
+            _active_hold_filter(now),
             VenueBooking.start_time > now,
             VenueBooking.start_time < as_utc(period.end_time),
             VenueBooking.end_time > as_utc(period.start_time),
@@ -404,6 +577,8 @@ def _period_out(
 
 
 def _locked_venue(db: Session, venue_id: int) -> Venue:
+    # Sweep expired holds first: the sweep commits, which would drop the lock.
+    expire_tentative_holds(db)
     venue = db.get(Venue, venue_id, with_for_update=True)
     if venue is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
@@ -419,8 +594,45 @@ def _locked_period(db: Session, venue_id: int, period_id: int) -> VenueUnavailab
 
 def _after_change(db: Session, venue: Venue, user: User) -> RecheckSummary:
     db.flush()
-    flagged, cleared = recheck_venue(db, venue, user)
+    flagged, cleared = recheck_venue(db, venue, user, notify_on_clear=True)
     return RecheckSummary(flagged=flagged, cleared=cleared)
+
+
+def _notify_pending_coordinators(db: Session, venue: Venue, period: VenueUnavailability) -> None:
+    """SCRUM-94: tell the Coordinator of each PENDING request inside the period.
+
+    Approved bookings and holds are flagged by the re-check, which notifies
+    their Coordinators itself (once); pending requests are not flaggable, so
+    without this their Coordinator would not hear. The Event is untouched.
+    """
+    pending = db.scalars(
+        select(VenueBooking)
+        .where(
+            VenueBooking.venue_id == venue.id,
+            VenueBooking.status == BookingStatus.pending,
+            VenueBooking.start_time > datetime.now(timezone.utc),
+            VenueBooking.start_time < as_utc(period.end_time),
+            VenueBooking.end_time > as_utc(period.start_time),
+        )
+        .options(joinedload(VenueBooking.event))
+    ).unique()
+    for booking in pending:
+        coordinator_id = booking.event.coordinator_id
+        if coordinator_id is None:
+            continue
+        notify(
+            db,
+            user_id=coordinator_id,
+            event_id=booking.event_id,
+            type=NotificationType.venue_unavailability_recorded,
+            message=(
+                f"{venue.name} is unavailable from {as_utc(period.start_time):%d %b %Y %H:%M} to "
+                f"{as_utc(period.end_time):%d %b %Y %H:%M} ({period.reason_category}"
+                f"{': ' + period.reason if period.reason else ''}), which overlaps your request for "
+                f"'{booking.event.name or 'your event'}'. Alternative arrangements are required; "
+                "the event has not been cancelled."
+            ),
+        )
 
 
 @router.get("/{venue_id}/unavailability", response_model=list[UnavailabilityOut])
@@ -467,6 +679,7 @@ def create_unavailability(
     )
     db.add(period)
     recheck = _after_change(db, venue, user)
+    _notify_pending_coordinators(db, venue, period)
     db.commit()
     db.refresh(period)
     return _period_out(db, period, user, recheck)
@@ -536,3 +749,91 @@ def delete_unavailability(
     db.delete(period)
     _after_change(db, venue, user)
     db.commit()
+
+
+@router.get(
+    "/{venue_id}/suitability/{event_id}",
+    response_model=VenueSuitabilityOut,
+)
+def check_venue_suitability(
+    venue_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_coordinator),
+) -> VenueSuitabilityOut:
+    """Compare one of the caller's assigned events against a venue."""
+    venue = db.get(Venue, venue_id)
+    if venue is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
+    event = db.get(Event, event_id)
+    if event is None or event.coordinator_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    checks = _suitability_checks(event, venue)
+    return VenueSuitabilityOut(
+        venue_id=venue.id,
+        event_id=event.id,
+        event_name=event.name,
+        suitable=all(check.met for check in checks),
+        checks=checks,
+    )
+
+
+@router.get("/events/{event_id}/suitability", response_model=EventVenueSuitabilityOut)
+def check_event_venue_suitability(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_coordinator),
+) -> EventVenueSuitabilityOut:
+    """Check each active venue on an assigned event and its combined capacity."""
+    event = db.get(Event, event_id)
+    if event is None or event.coordinator_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    now = datetime.now(timezone.utc)
+    expire_tentative_holds(db, now)
+    bookings = db.scalars(
+        select(VenueBooking)
+        .options(joinedload(VenueBooking.venue))
+        .where(
+            VenueBooking.event_id == event.id,
+            VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
+            _active_hold_filter(now),
+        )
+        .order_by(VenueBooking.id)
+    ).unique().all()
+    venue_results = [
+        EventVenueSuitabilityItem(
+            booking_id=booking.id,
+            venue_id=booking.venue.id,
+            venue_name=booking.venue.name,
+            suitable=all(check.met for check in _suitability_checks(event, booking.venue)),
+            checks=_suitability_checks(event, booking.venue),
+        )
+        for booking in bookings
+    ]
+    available_capacity = sum({booking.venue.id: booking.venue.capacity for booking in bookings}.values())
+    if event.expected_attendance is None:
+        combined = CombinedVenueCapacityCheck(
+            required_capacity=None,
+            available_capacity=available_capacity,
+            met=False,
+            message="Cannot confirm combined capacity until expected attendance is recorded.",
+        )
+    else:
+        capacity_met = available_capacity > event.expected_attendance
+        combined = CombinedVenueCapacityCheck(
+            required_capacity=event.expected_attendance,
+            available_capacity=available_capacity,
+            met=capacity_met,
+            message=(
+                f"Combined capacity is {available_capacity}; it must exceed "
+                f"{event.expected_attendance} attendees."
+            ),
+        )
+    return EventVenueSuitabilityOut(
+        event_id=event.id,
+        event_name=event.name,
+        suitable=bool(venue_results) and all(result.suitable for result in venue_results) and combined.met,
+        venues=venue_results,
+        combined_capacity=combined,
+    )

@@ -40,23 +40,26 @@ const DETAIL: SafetyCheckDetail = {
   special_arrangements: null,
   organiser: { id: 1, name: 'Olive Organiser', email: 'o@example.com' },
   coordinator: { id: 2, name: 'Cody Coordinator', email: 'c@example.com' },
-  venue_booking: {
-    id: 11,
-    status: 'approved',
-    start_time: '2026-11-02T09:00:00Z',
-    end_time: '2026-11-02T17:00:00Z',
-    safety_recheck_reason: null,
-    venue: {
-      id: 3,
-      name: 'Marina Hall',
-      location: '10 Bayfront Ave',
-      capacity: 250,
-      supported_layouts: ['Theatre'],
-      accessibility_features: ['Wheelchair access'],
-      emergency_access: 'Two fire exits on the east side',
-      known_restrictions: 'No open flames',
+  venue_bookings: [
+    {
+      id: 11,
+      event_id: 7,
+      status: 'approved',
+      start_time: '2026-11-02T09:00:00Z',
+      end_time: '2026-11-02T17:00:00Z',
+      safety_recheck_reason: null,
+      venue: {
+        id: 3,
+        name: 'Marina Hall',
+        location: '10 Bayfront Ave',
+        capacity: 250,
+        supported_layouts: ['Theatre'],
+        accessibility_features: ['Wheelchair access'],
+        emergency_access: 'Two fire exits on the east side',
+        known_restrictions: 'No open flames',
+      },
     },
-  },
+  ],
   equipment: [
     {
       id: 21,
@@ -122,6 +125,28 @@ describe('S1 - Safety Checks queue and detail', () => {
     ]) {
       expect((await screen.findAllByText(text)).length).toBeGreaterThan(0)
     }
+  })
+
+  it('renders every venue booking attached to the same event', async () => {
+    vi.mocked(getSafetyCheck).mockResolvedValue({
+      ...DETAIL,
+      venue_bookings: [
+        ...DETAIL.venue_bookings,
+        {
+          ...DETAIL.venue_bookings[0],
+          id: 12,
+          venue: {
+            ...DETAIL.venue_bookings[0].venue,
+            id: 4,
+            name: 'Garden Pavilion',
+          },
+        },
+      ],
+    })
+    renderView()
+
+    expect(await screen.findByText(/Marina Hall/)).toBeInTheDocument()
+    expect(screen.getByText(/Garden Pavilion/)).toBeInTheDocument()
   })
 })
 

@@ -10,14 +10,26 @@ import { VenueBookingQueue } from './VenueBookingQueue'
 
 vi.mock('../../lib/venueBookings', async () => {
   const actual = await vi.importActual<typeof import('../../lib/venueBookings')>('../../lib/venueBookings')
-  return { ...actual, listVenueBookingQueue: vi.fn(), approveVenueBooking: vi.fn(), rejectVenueBooking: vi.fn() }
+  return {
+    ...actual,
+    listVenueBookingQueue: vi.fn(),
+    approveVenueBooking: vi.fn(),
+    rejectVenueBooking: vi.fn(),
+    holdVenueBooking: vi.fn(),
+  }
 })
-import { approveVenueBooking, listVenueBookingQueue, rejectVenueBooking } from '../../lib/venueBookings'
+import {
+  approveVenueBooking,
+  holdVenueBooking,
+  listVenueBookingQueue,
+  rejectVenueBooking,
+} from '../../lib/venueBookings'
 import type { VenueBooking } from '../../lib/venueBookings'
 
 const mockQueue = vi.mocked(listVenueBookingQueue)
 const mockApprove = vi.mocked(approveVenueBooking)
 const mockReject = vi.mocked(rejectVenueBooking)
+const mockHold = vi.mocked(holdVenueBooking)
 
 const BOOKING: VenueBooking = {
   id: 1,
@@ -31,6 +43,7 @@ const BOOKING: VenueBooking = {
   turnaround_minutes: 45,
   occupied_start: '2026-11-02T08:30:00Z',
   occupied_end: '2026-11-02T17:45:00Z',
+  expires_at: null,
   expected_attendance: 120,
   room_layout_preference: 'Theatre',
   accessibility_needs: 'Step-free access',
@@ -107,6 +120,20 @@ describe('AC2 - Venue Staff can approve or reject a request', () => {
       expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
       expect(card.getByRole('button', { name: 'Reject' })).toBeEnabled()
     }
+  })
+
+  it('can place a pending request on a temporary hold', async () => {
+    const held = { ...BOOKING, status: 'tentative_hold' as const, expires_at: '2026-10-03T03:00:00Z' }
+    mockQueue.mockResolvedValue([BOOKING])
+    mockHold.mockResolvedValue(held)
+    render(<VenueBookingQueue />)
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Place 24-hour hold' }),
+    )
+
+    expect(mockHold).toHaveBeenCalledWith(BOOKING.id)
+    expect(await screen.findByRole('status')).toHaveTextContent('Tentative hold')
   })
 
   it('approves the request, takes it out of the queue and confirms the decision', async () => {

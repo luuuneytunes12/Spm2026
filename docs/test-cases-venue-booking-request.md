@@ -13,8 +13,8 @@
 | Wrong role (venue staff / organiser / anonymous) cannot submit; coordinator cannot read the queue | `test_only_a_coordinator_can_submit`, `test_the_queue_and_detail_are_for_venue_staff_only`; e2e "a Coordinator cannot open the Venue Staff queue" |
 | Event assigned to another coordinator | `test_a_coordinator_cannot_book_for_an_event_assigned_to_someone_else`; Postgres `…another_coordinator_cannot_book_or_read_it` |
 | Invalid state (event not yet approved) blocked, nothing saved | `test_a_venue_cannot_be_requested_before_the_event_is_approved`; Vitest "is not offered while the request is still awaiting review" |
-| Duplicate / repeat action | `test_a_second_request_for_the_same_event_is_refused`; `…after_a_rejection_…_another_venue` |
-| Concurrent submits (double-click) on Postgres | `scrum39_a_submit_fired_many_times_at_once_creates_exactly_one_request`; DB index `…the_database_itself_refuses_a_second_live_request…` |
+| Multiple venues per event; duplicate live request to the same venue is refused | `test_an_event_can_request_multiple_venues_but_not_duplicate_a_live_venue`; Postgres `test_scrum39_an_event_can_have_multiple_live_venue_requests` |
+| Concurrent duplicate submits (double-click) for the same venue on Postgres | `scrum39_a_submit_fired_many_times_at_once_creates_exactly_one_request`; the event row lock serialises requests |
 
 ## Audit, persistence, accessibility
 

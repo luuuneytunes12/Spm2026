@@ -22,6 +22,9 @@ import { AssignedEventView } from './AssignedEventView'
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
+vi.mock('../../components/EventVenueSuitability', () => ({
+  EventVenueSuitability: () => <section aria-label="event venue suitability stub" />,
+}))
 // The card has its own tests (EquipmentRequirementsSection.test.tsx). Here
 // it only needs to show what the page hands it, so the stub echoes its props.
 vi.mock('../../components/EquipmentRequirementsSection', () => ({
@@ -152,6 +155,13 @@ beforeEach(() => {
 })
 
 describe('AC1 - the full requirements are visible', () => {
+  it('shows the event-wide venue assessment once venue planning is available', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event' })
+    renderView()
+
+    expect(await screen.findByLabelText('event venue suitability stub')).toBeInTheDocument()
+  })
+
   it('TC-S3-1b: shows every field named in the acceptance criterion', async () => {
     renderView()
 
@@ -281,6 +291,7 @@ describe('change requests - coordinator review and planning impact', () => {
   it('shows an important proposal and existing commitments, then offers a decision', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
+      status: 'under_review',
       change_requests: [
         {
           id: 11,
@@ -552,12 +563,13 @@ describe('AC4 - the activity log', () => {
   it('renders an assignment as "Assignment", not a status change into itself', async () => {
     mockGet.mockResolvedValue({
       ...EVENT,
+      status: 'under_review',
       activity: [
         {
-          from_status: 'submitted_awaiting_coordinator',
-          to_status: 'submitted_awaiting_coordinator',
-          note: 'Assigned to Sam Tan.',
-          changed_by_name: 'Priya Menon',
+          from_status: 'under_review',
+          to_status: 'under_review',
+          note: 'Reassigned from Alex Chen to Sam Tan.',
+          changed_by_name: 'Lena Lead',
           created_at: '2026-09-10T02:05:00Z',
         },
         ...EVENT.activity,
@@ -568,8 +580,8 @@ describe('AC4 - the activity log', () => {
     const log = await screen.findByRole('list', { name: 'Activity log' })
     const [entry] = within(log).getAllByRole('listitem')
     expect(entry).toHaveTextContent('Assignment')
-    expect(entry).toHaveTextContent('Assigned to Sam Tan.')
-    // Not rendered as "Submitted -> Submitted".
+    expect(entry).toHaveTextContent('Reassigned from Alex Chen to Sam Tan.')
+    // Not rendered as "Under Review -> Under Review".
     expect(within(entry).queryByText('→')).toBeNull()
   })
 
@@ -642,9 +654,10 @@ describe('what this screen deliberately does not offer', () => {
 
 describe('Coordinator decisions', () => {
   it('approves the assigned request and refreshes its activity', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
     const approved = { ...EVENT, status: 'event_approved' as const }
     mockApprove.mockResolvedValue(approved)
-    mockGet.mockResolvedValueOnce(EVENT).mockResolvedValueOnce({
+    mockGet.mockResolvedValueOnce({ ...EVENT, status: 'under_review' }).mockResolvedValueOnce({
       ...approved,
       activity: [
         {
@@ -668,6 +681,7 @@ describe('Coordinator decisions', () => {
   })
 
   it('requires a reason before rejecting and submits the recorded reason', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
     mockReject.mockResolvedValue({ ...EVENT, status: 'event_rejected' })
     renderView()
 
@@ -682,6 +696,15 @@ describe('Coordinator decisions', () => {
 
   it('does not offer decision controls once the request has been decided', async () => {
     mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
+    renderView()
+
+    await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+    expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reject request' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer approval or rejection while the event awaits coordinator assignment', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'submitted_awaiting_coordinator' })
     renderView()
 
     await screen.findByRole('heading', { name: 'Regional Partner Conference' })
@@ -772,4 +795,3 @@ describe('ER AC1 - the equipment requirements card', () => {
     expect(screen.getByText('Equipment requirements')).toBeInTheDocument()
   })
 })
-

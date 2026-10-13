@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ApiError } from '../../lib/api'
 import { useAuth } from '../../auth/useAuth'
+import { ApiError } from '../../lib/api'
 import { Role } from '../../lib/roles'
 import {
   UNAVAILABILITY_REASONS,
@@ -22,6 +22,7 @@ import {
   updateUnavailability,
 } from '../../lib/venues'
 import type { BusyPeriod, Recheck, Unavailability, VenueDetail } from '../../lib/venues'
+import { VenueSuitability } from './VenueSuitability'
 
 /** A list field as chips, or an explicit "None recorded" -- an empty list
  *  must read as "nothing recorded", not as a missing row. */
@@ -585,7 +586,6 @@ export function VenueView() {
   const [venue, setVenue] = useState<VenueDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-
   useEffect(() => {
     if (!id) return
     let cancelled = false
@@ -595,6 +595,7 @@ export function VenueView() {
       })
       .catch((err: unknown) => {
         if (cancelled) return
+        console.error('Failed to load venue details.', { venueId: Number(id), error: err })
         setError(
           err instanceof ApiError && err.status === 404
             ? 'Venue not found.'
@@ -710,6 +711,14 @@ export function VenueView() {
       <UnavailabilitySection venueId={venue.id} canEdit={canEdit} />
 
       <AvailabilitySection venueId={venue.id} />
+
+      {user?.role === Role.COORDINATOR && (
+        <VenueSuitability venueId={venue.id} venueName={venue.name} />
+      )}
+
+      <p>
+        <Link to={`/venues/${venue.id}/availability`}>View availability calendar →</Link>
+      </p>
 
       {back}
     </div>

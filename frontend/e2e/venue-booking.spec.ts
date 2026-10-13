@@ -51,7 +51,7 @@ test('SCRUM-39 AC1: submitting with no venue selected shows an error and creates
 
   await sam.goto(`/coordinator/events/${eventId}`)
   await sam.getByRole('button', { name: 'Submit booking request' }).click()
-  await expect(sam.getByRole('alert')).toContainText('Select a venue')
+  await expect(sam.getByRole('alert').filter({ hasText: 'Select a venue' })).toBeVisible()
 
   await vera.goto('/venue-staff/bookings')
   await expect(vera.getByText('No pending booking requests.')).toBeVisible()

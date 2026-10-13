@@ -24,6 +24,9 @@ vi.mock('../../components/VenueBookingSection', () => ({
 vi.mock('../../components/EquipmentRequirementsSection', () => ({
   EquipmentRequirementsSection: () => <section aria-label="equipment requirements stub" />,
 }))
+vi.mock('../../components/EventVenueSuitability', () => ({
+  EventVenueSuitability: () => <section aria-label="event venue suitability stub" />,
+}))
 vi.mock('../../lib/events', async () => {
   const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
   return { ...actual, getAssignedEvent: vi.fn(), submitForSafetyCheck: vi.fn() }

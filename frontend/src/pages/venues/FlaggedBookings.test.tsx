@@ -30,6 +30,7 @@ const FLAGGED: VenueBooking = {
   turnaround_minutes: 45,
   occupied_start: '2026-11-02T08:30:00Z',
   occupied_end: '2026-11-02T17:45:00Z',
+  expires_at: null,
   expected_attendance: 120,
   room_layout_preference: null,
   accessibility_needs: null,

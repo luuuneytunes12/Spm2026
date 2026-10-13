@@ -1,7 +1,7 @@
 """Backend tests for SCRUM-80, "Assign Event Request to an Event Coordinator as
 Coordinator Lead".
 
-  AC1 - assigning removes the request from the queue, makes it Under Review and
+  AC1 - assigning removes the request from the queue, moves it Under Review and
         puts it in that Coordinator's assigned Events
   AC2 - the Coordinator list shows each name and their active-Event count
         (anything not Event Rejected, Cancelled or Completed)
@@ -49,7 +49,7 @@ def assign(client, w, event, coordinator, headers=None):
 # --- AC1 -------------------------------------------------------------------
 
 
-def test_ac1_assigning_takes_it_out_of_the_queue_and_makes_it_under_review(client, w):
+def test_ac1_assigning_takes_it_out_of_the_queue_and_moves_it_under_review(client, w):
     e = queued(w)
     res = assign(client, w, e, w["sam"])
     assert res.status_code == 200
@@ -112,7 +112,10 @@ def test_ac3_the_activity_log_records_the_lead_the_coordinator_and_the_time(clie
     line = log[0]  # newest first
     assert line["changed_by_name"] == "Lena Lead"
     assert "Sam Tan" in line["note"]
-    assert (line["from_status"], line["to_status"]) == ("submitted_awaiting_coordinator", "under_review")
+    assert (line["from_status"], line["to_status"]) == (
+        "submitted_awaiting_coordinator",
+        "under_review",
+    )
     assert line["created_at"]
     # and the Organiser can read the same record
     org_log = client.get(f"/events/{e.id}/activity", headers=w["org_h"]).json()
