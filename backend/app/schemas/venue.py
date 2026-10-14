@@ -33,6 +33,11 @@ class VenueDetail(VenueSummary):
     supported_layouts: list[str]
     accessibility_features: list[str]
     operating_hours: str | None
+    # Minutes kept free before and after every event here. The date search
+    # counts them, so they explain why a venue can be left out of a window
+    # that, by the published times alone, looks free.
+    setup_minutes: int
+    turnaround_minutes: int
 
 
 class VenueFilterOptions(BaseModel):

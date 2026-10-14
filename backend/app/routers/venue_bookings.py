@@ -10,8 +10,13 @@ from app.core.roles import Role
 from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event
 from app.models.user import User
-from app.models.venues import Venue, VenueBooking, VenueUnavailability
+from app.models.venues import Venue, VenueBooking
 from app.schemas.venue_booking import VenueBookingCreate, VenueBookingOut, VenueBookingRejection
+from app.services.venue_availability import (
+    CONFIRMED_BOOKING_STATUSES,
+    blocked_venue_ids,
+    booked_venue_ids,
+)
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
@@ -232,32 +237,25 @@ def approve_venue_booking(
     venue and time, approved at the same moment, cannot both get through.
     """
     booking = _pending_for_decision(booking_id, db)
-    db.get(Venue, booking.venue_id, with_for_update=True)
+    venue = db.get(Venue, booking.venue_id, with_for_update=True)
 
-    # Same overlap rule as the venue search: each starts before the other
-    # ends, so back-to-back bookings do not clash.
-    taken = db.scalar(
-        select(VenueBooking.id).where(
-            VenueBooking.venue_id == booking.venue_id,
-            VenueBooking.id != booking.id,
-            VenueBooking.status == BookingStatus.approved,
-            VenueBooking.start_time < booking.end_time,
-            VenueBooking.end_time > booking.start_time,
-        )
-    )
-    if taken is not None:
+    # The venue search's own overlap rule, setup and turnaround time included,
+    # so a venue the search shows as taken cannot be confirmed either. Only
+    # CONFIRMED bookings count here: another Coordinator's tentative hold on
+    # the same slot must not stop either request from ever being approved.
+    if booked_venue_ids(
+        db,
+        [venue],
+        booking.start_time,
+        booking.end_time,
+        statuses=CONFIRMED_BOOKING_STATUSES,
+        ignore_booking_id=booking.id,
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The venue is already booked for another event at that time.",
         )
-    blocked = db.scalar(
-        select(VenueUnavailability.id).where(
-            VenueUnavailability.venue_id == booking.venue_id,
-            VenueUnavailability.start_time < booking.end_time,
-            VenueUnavailability.end_time > booking.start_time,
-        )
-    )
-    if blocked is not None:
+    if blocked_venue_ids(db, [venue], booking.start_time, booking.end_time):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The venue is marked unavailable at that time.",

@@ -1,16 +1,16 @@
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import exists, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
-from app.models.enums import BookingStatus
-from app.models.venues import Venue, VenueBooking, VenueUnavailability
+from app.models.venues import Venue
 from app.schemas.venue import VenueDetail, VenueFilterOptions, VenueSummary
+from app.services.venue_availability import as_utc, blocked_venue_ids, booked_venue_ids
 
 router = APIRouter(prefix="/venues", tags=["venues"])
 
@@ -20,34 +20,12 @@ router = APIRouter(prefix="/venues", tags=["venues"])
 # details the story never meant them to see.
 _internal = require_role(Role.COORDINATOR, Role.VENUE_STAFF)
 
-# Which bookings take a venue out of a date search.
-#
-# Only a confirmed booking: W4 p4, Booking Conflict Detection -- "A
-# confirmed booking should affect whether that venue is considered
-# available." Rejected and cancelled bookings never will be confirmed, and a
-# pending one is not yet.
-#
-# PROVISIONAL for pending. Venue Booking Request and Approval are separate
-# stories, not built yet. If they decide a pending request should hold the
-# venue, add BookingStatus.pending here and flip the matching test case in
-# tests/test_venue_search.py.
-_BLOCKING_BOOKING_STATUSES = (BookingStatus.approved,)
-
-
 def _reject(field: str, message: str) -> None:
     """A 422 in FastAPI's own shape, naming the query parameter at fault."""
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail=[{"loc": ["query", field], "msg": message}],
     )
-
-
-def _utc(moment: datetime) -> datetime:
-    """Normalise to UTC. A time sent without a zone is read as UTC -- the
-    frontend always sends one, so this only matters for hand-typed calls."""
-    if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc)
 
 
 def _folded(values: Iterable[str] | None) -> set[str]:
@@ -118,7 +96,11 @@ def list_venues(
     accessibility: list[str] = Query(
         default=[], description="Repeat for each; the venue must have every one."
     ),
-    start: datetime | None = Query(None, description="Start of the window, ISO 8601."),
+    start: datetime | None = Query(
+        None,
+        description="Start of the window, ISO 8601. Venues booked, tentatively held or "
+        "unavailable in it -- setup and turnaround time included -- are excluded.",
+    ),
     end: datetime | None = Query(None, description="End of the window, ISO 8601."),
     db: Session = Depends(get_db),
     _: object = Depends(_internal),
@@ -137,7 +119,7 @@ def list_venues(
     # venues as free for a period nobody actually asked about.
     if (start is None) != (end is None):
         _reject("end" if end is None else "start", "Give both a start and an end.")
-    if start is not None and end is not None and _utc(end) <= _utc(start):
+    if start is not None and end is not None and as_utc(end) <= as_utc(start):
         _reject("end", "The end must be after the start.")
 
     stmt = select(Venue)
@@ -157,35 +139,23 @@ def list_venues(
         # A venue that holds exactly the expected attendance fits it.
         stmt = stmt.where(Venue.capacity >= min_capacity)
 
-    if start is not None and end is not None:
-        window_start, window_end = _utc(start), _utc(end)
-        # Two periods overlap when each starts before the other ends. Strict
-        # comparisons, so back-to-back is not an overlap: a session ending at
-        # 09:00 leaves the room free for one starting at 09:00.
-        booked = exists().where(
-            VenueBooking.venue_id == Venue.id,
-            VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
-            VenueBooking.start_time < window_end,
-            VenueBooking.end_time > window_start,
-        )
-        # A recorded closure (maintenance, renovation, ...) has no status:
-        # once recorded, it blocks.
-        blocked = exists().where(
-            VenueUnavailability.venue_id == Venue.id,
-            VenueUnavailability.start_time < window_end,
-            VenueUnavailability.end_time > window_start,
-        )
-        stmt = stmt.where(~booked, ~blocked)
-
     venues = db.execute(stmt.order_by(Venue.name, Venue.id)).scalars().all()
+
+    if start is not None and end is not None:
+        # Approved bookings, tentative holds and recorded unavailability that
+        # clash with the window, each venue's setup and turnaround time
+        # included. The rule lives in app/services/venue_availability.py so
+        # that approving a booking applies exactly the same one.
+        taken = booked_venue_ids(db, venues, start, end) | blocked_venue_ids(db, venues, start, end)
+        venues = [v for v in venues if v.id not in taken]
 
     # Layout, facilities and accessibility are matched here rather than in
     # SQL. They are Postgres arrays in production but JSON in the SQLite the
     # tests run on, and case-insensitive matching inside an array has no
-    # expression that works the same on both. Keyword, capacity and the date
-    # window -- the parts that shrink the list most -- stay in SQL. Fine at
-    # the hundreds of venues ConnectSphere has; revisit if that becomes many
-    # thousands.
+    # expression that works the same on both. Keyword and capacity -- the
+    # parts that shrink the list most -- stay in SQL, and the date window is
+    # narrowed in SQL before its exact check. Fine at the hundreds of venues
+    # ConnectSphere has; revisit if that becomes many thousands.
     if layout and layout.strip():
         venues = [v for v in venues if _has_all(v.supported_layouts, [layout])]
     if _folded(facilities):

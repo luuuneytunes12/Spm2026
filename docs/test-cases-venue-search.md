@@ -6,6 +6,12 @@ Covers one product backlog item:
   venues by keyword and filter them by my event's requirements, so that I can
   quickly narrow down venues worth reviewing.*
 
+> **Extended by** *Filter Venues by Date and Time*
+> ([test-cases-venue-date-filter.md](test-cases-venue-date-filter.md)): a
+> pending request now counts as a tentative hold, each venue's setup and
+> turnaround time is counted, and the window is entered as a date plus a
+> start and end time. The date rules below are superseded where they differ.
+
 Every acceptance criterion maps to at least one test, and every automated test
 is named after the criterion it proves. Edge cases — boundaries, invalid input,
 the overlap rule — are covered as **test cases**, not as extra criteria.
@@ -56,18 +62,21 @@ end-to-end CI job is disabled for now.
 | Filter values match in any case | Values are free text typed by Venue Staff | `test_ac2_facility_matching_ignores_case` |
 | Capacity **equal** to the attendance is included | AC3 "below … excluded" | `test_ac3_a_venue_exactly_at_the_expected_attendance_is_included` |
 | An **approved** booking overlapping the window excludes a venue | W4 p4: *"A confirmed booking should affect whether that venue is considered available"* | `test_ac3_an_approved_booking_*` |
-| `pending`, `rejected`, `cancelled` bookings do **not** — ⚠ *provisional, see below* | Only a confirmed booking blocks | `test_ac3_a_booking_that_is_not_approved_does_not_block` |
+| `rejected`, `cancelled`, `hold_expired` bookings do **not**; a `pending` one (a tentative hold) **does** | Settled by *Filter Venues by Date and Time* | `test_ac3_a_booking_that_holds_nothing_does_not_block` |
 | A recorded unavailability period overlapping the window excludes a venue | W4 p3: *"other recorded periods of unavailability should be reflected"* | `test_ac3_a_recorded_unavailability_*` |
 | Overlap means `existing.start < end AND existing.end > start` — **back-to-back is free** | A session ending 09:00 leaves the room free at 09:00 | `test_ac3_back_to_back_is_not_an_overlap` |
 | Half a window, or an end not after its start, is rejected (422) | A mistake, not a search | `test_ac3_an_invalid_time_window_is_rejected` |
 | Inactive venues stay in results, flagged | Consistent with *View Venue Details* | `test_ac4_an_inactive_venue_*` |
 | Filter choices are the distinct values recorded, deduplicated ignoring case | Columns are free text, not a fixed vocabulary | `test_filter_options_*` |
 
-**Out of scope:** setup and turnaround time between events (a separate
-briefing feature, not in the core 20) and operating hours (recorded as free
+**Out of scope:** operating hours (recorded as free
 text such as *"Mon-Fri 08:00-23:00"*, which cannot be compared reliably).
 
-### ⚠ Open dependency — booking statuses
+### Booking statuses (resolved)
+
+*Resolved by Filter Venues by Date and Time:* a `pending` request is a
+tentative hold and blocks; `hold_expired` was added and does not. The note
+below is kept as the history of the decision.
 
 Venue Booking Request and Venue Booking Approval are **not built on any
 branch yet**, and nothing writes `venue_bookings` or `venue_unavailability`.
@@ -121,7 +130,7 @@ Event* (8 Oct 2026, 16:46–19:46 Singapore time).
 | `test_ac3_a_venue_exactly_at_the_expected_attendance_is_included` — **boundary** | pytest |
 | `test_ac3_an_attendance_that_is_not_a_positive_number_is_rejected` (0, −5, text) | pytest |
 | `test_ac3_an_approved_booking_overlapping_the_window_excludes_the_venue` | pytest |
-| `test_ac3_a_booking_that_is_not_approved_does_not_block` (pending, rejected, cancelled) | pytest |
+| `test_ac3_a_booking_that_holds_nothing_does_not_block` (rejected, cancelled, hold expired) | pytest |
 | `test_ac3_a_recorded_unavailability_overlapping_the_window_excludes_the_venue` | pytest |
 | `test_ac3_every_kind_of_overlap_excludes_the_venue` (4 shapes) | pytest |
 | `test_ac3_a_booking_outside_the_window_does_not_block` (3 cases) | pytest |
@@ -129,7 +138,7 @@ Event* (8 Oct 2026, 16:46–19:46 Singapore time).
 | `test_ac3_a_booking_of_another_venue_changes_nothing` | pytest |
 | `test_ac3_an_invalid_time_window_is_rejected` (5 cases) | pytest |
 | *searches for venues that hold at least that many people* · *ignores an attendance that is not a positive number* | Vitest |
-| *searches for venues free across the window entered* · *refuses a window that ends before it starts…* · *asks for the other half of the window…* | Vitest |
+| Moved to *Filter Venues by Date and Time* (`DT AC1`, `DT AC3`) | Vitest |
 
 ### AC4 — what each result shows
 
@@ -180,9 +189,9 @@ approved booking, one maintenance block).
 | 4 | Clear, tick **Projector** | 5 venues |
 | 5 | Also tick **Video conferencing** | 3 venues — only those with **both** |
 | 6 | Pick layout **Theatre** with step 5's facilities | The results narrow further |
-| 7 | Clear, then set *Available from* 8 Oct 2026 16:00 and *Available until* 8 Oct 2026 20:00 | 10 venues — *Harbourfront Seminar Room 2* (booked) and *Raffles Place Training Studio* (closed for maintenance) are gone |
+| 7 | Clear, then set *Date* 8 Oct 2026, *Start time* 16:00, *End time* 20:00 | 10 venues — *Harbourfront Seminar Room 2* (booked) and *Raffles Place Training Studio* (closed for maintenance) are gone |
 | 8 | Change both dates to 9 Oct 2026, same times | All 12 venues are back |
-| 9 | Set *Available until* earlier than *Available from* | *"The end must be after the start."*; results unchanged |
+| 9 | Set *End time* earlier than *Start time* | *"The end time must be after the start time."*; the search is paused |
 | 10 | Search for something that matches nothing | *"No venues match your search."* and a working **Clear filters** |
 | 11 | Click any result | That venue's full details open |
 | 12 | Narrow to ~400px wide | Filters stack; nothing scrolls sideways |

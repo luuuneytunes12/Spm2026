@@ -13,8 +13,10 @@ create type event_status as enum (
     'approved', 'rejected', 'planning', 'confirmed', 'completed', 'cancelled'
 );
 
+-- 'pending' is the tentative hold: a request awaiting a Venue Staff decision
+-- holds the venue in search. 'hold_expired' is a hold that lapsed unconfirmed.
 create type booking_status as enum (
-    'pending', 'approved', 'rejected', 'cancelled'
+    'pending', 'approved', 'rejected', 'cancelled', 'hold_expired'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -152,7 +154,11 @@ create table venues (
     accessibility_features text[] not null default '{}',
     supported_layouts text[] not null default '{}',
     operating_hours text,
-    is_active boolean not null default true
+    is_active boolean not null default true,
+    -- Kept free before every event (preparation) and after it (reset), so
+    -- availability is not just the published start and end.
+    setup_minutes integer not null default 0 check (setup_minutes >= 0),
+    turnaround_minutes integer not null default 0 check (turnaround_minutes >= 0)
 );
 
 create index idx_venues_facilities on venues using gin (facilities);

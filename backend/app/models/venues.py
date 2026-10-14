@@ -28,6 +28,11 @@ class Venue(Base):
     )
     operating_hours: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(default=True)
+    # Time the venue needs before an event to prepare and after it to reset,
+    # so availability is not just the published start and end (see
+    # sql/015_venue_setup_turnaround_and_hold_expired.sql).
+    setup_minutes: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    turnaround_minutes: Mapped[int] = mapped_column(default=0, server_default=text("0"))
 
 
 class VenueBooking(Base):

@@ -9,6 +9,9 @@ export const BookingStatus = {
   APPROVED: 'approved',
   REJECTED: 'rejected',
   CANCELLED: 'cancelled',
+  /** A tentative hold (a pending request) that lapsed unconfirmed. History,
+   *  like rejected and cancelled: it no longer holds the venue. */
+  HOLD_EXPIRED: 'hold_expired',
 } as const
 export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
@@ -17,6 +20,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
+  hold_expired: 'Hold expired',
 }
 
 /** Event statuses from which a venue can be requested. Mirrors

@@ -300,18 +300,15 @@ def test_ac3_an_approved_booking_overlapping_the_window_excludes_the_venue(clien
 
 
 @pytest.mark.parametrize(
-    "status", [BookingStatus.pending, BookingStatus.rejected, BookingStatus.cancelled]
+    "status", [BookingStatus.rejected, BookingStatus.cancelled, BookingStatus.hold_expired]
 )
-def test_ac3_a_booking_that_is_not_approved_does_not_block(client, db_session, status):
-    """Only a confirmed booking takes a venue out of the running.
+def test_ac3_a_booking_that_holds_nothing_does_not_block(client, db_session, status):
+    """A rejected, cancelled or expired booking is history: it never takes a
+    venue out of the running.
 
-    W4 p4, Booking Conflict Detection: "A confirmed booking should affect
-    whether that venue is considered available." A rejected or cancelled
-    booking never will be; a pending one is not yet.
-
-    PROVISIONAL for `pending`: booking requests and approval are separate
-    stories, not built yet. If that story decides a pending request should
-    hold the venue, this case flips -- a one-line change in the search.
+    A `pending` request used to be listed here too, provisionally. "Filter
+    Venues by Date and Time" settled it: a pending request is a tentative
+    hold and does take the venue -- see tests/test_venue_date_filter.py.
     """
     headers = _coordinator(client, db_session)
     venue = _venue(db_session, "Hall")
@@ -376,8 +373,8 @@ def test_ac3_a_booking_outside_the_window_does_not_block(client, db_session, sta
 )
 def test_ac3_back_to_back_is_not_an_overlap(client, db_session, start, end, case):
     """Boundary: a morning session ending at 09:00 leaves the room free for
-    one starting at 09:00. Setup and turnaround time are a separate feature
-    and are not part of this rule."""
+    one starting at 09:00 -- for a venue that needs no setup or turnaround
+    time. With some, see tests/test_venue_date_filter.py."""
     headers = _coordinator(client, db_session)
     venue = _venue(db_session, "Hall")
     _booking(db_session, venue, start, end)

@@ -8,6 +8,13 @@
  *   VS AC4  what each result shows
  *   VS AC5  opening a result
  *
+ * and "Filter Venues by Date and Time" (docs/test-cases-venue-date-filter.md):
+ *   DT AC1  date, start and end time exclude venues that are not free
+ *   DT AC3  an end time earlier than the start blocks the search, fields flagged
+ *   DT AC4  the date and time combine with every other filter
+ *   (DT AC2 -- which booking statuses count -- is decided server-side, in
+ *   backend/tests/test_venue_date_filter.py.)
+ *
  * The filters live in a compact bar: one chip per filter, each opening a
  * small panel. Tests open the chip first, exactly as a person would.
  *
@@ -343,19 +350,31 @@ describe('the filter bar', () => {
   })
 })
 
-describe('VS AC3 - date and time', () => {
-  it('searches for venues free across the window entered', async () => {
+/** Fill the Date & time panel. Each value is set only when given, so a test
+ *  can leave a field empty on purpose. */
+function fillWindow(
+  panel: HTMLElement,
+  { date, start, end }: { date?: string; start?: string; end?: string },
+) {
+  if (date !== undefined)
+    fireEvent.change(within(panel).getByLabelText('Date'), { target: { value: date } })
+  if (start !== undefined)
+    fireEvent.change(within(panel).getByLabelText('Start time'), { target: { value: start } })
+  if (end !== undefined)
+    fireEvent.change(within(panel).getByLabelText('End time'), { target: { value: end } })
+}
+
+/** Long enough for the search debounce to have fired, had it been going to. */
+const pastTheDebounce = () => new Promise((resolve) => setTimeout(resolve, 400))
+
+describe('DT AC1 - date, start time and end time', () => {
+  it('searches for venues free on that date between the start and end time', async () => {
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
     const panel = await openFilter(user, 'Date & time')
-    fireEvent.change(within(panel).getByLabelText('Available from'), {
-      target: { value: '2026-11-02T09:00' },
-    })
-    fireEvent.change(within(panel).getByLabelText('Available until'), {
-      target: { value: '2026-11-02T17:00' },
-    })
+    fillWindow(panel, { date: '2026-11-02', start: '09:00', end: '17:00' })
 
     // The inputs are in the Coordinator's local time; the API gets UTC.
     // Computed the same way here, so the test holds in any timezone.
@@ -367,35 +386,126 @@ describe('VS AC3 - date and time', () => {
     )
   })
 
-  it('refuses a window that ends before it starts, and does not search with it', async () => {
+  it('says that bookings, tentative holds, closures and setup and turnaround time count', async () => {
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
     const panel = await openFilter(user, 'Date & time')
-    fireEvent.change(within(panel).getByLabelText('Available from'), {
-      target: { value: '2026-11-02T17:00' },
-    })
-    fireEvent.change(within(panel).getByLabelText('Available until'), {
-      target: { value: '2026-11-02T09:00' },
-    })
 
-    expect(await within(panel).findByText('The end must be after the start.')).toBeInTheDocument()
-    expect(mockList.mock.calls.every(([search]) => !search?.start && !search?.end)).toBe(true)
+    expect(
+      within(panel).getByText(
+        /booked, tentatively held or closed then, counting each venue's setup and turnaround time/,
+      ),
+    ).toBeInTheDocument()
   })
 
-  it('asks for the other half of the window rather than searching with one end', async () => {
+  it('shows the window on its chip once the panel is closed', async () => {
     const user = userEvent.setup()
     renderPage()
     await screen.findByText('Marina Grand Ballroom')
 
     const panel = await openFilter(user, 'Date & time')
-    fireEvent.change(within(panel).getByLabelText('Available from'), {
-      target: { value: '2026-11-02T09:00' },
-    })
+    fillWindow(panel, { date: '2026-11-02', start: '09:00', end: '17:00' })
+    await user.keyboard('{Escape}')
 
-    expect(await within(panel).findByText('Enter both a start and an end.')).toBeInTheDocument()
-    expect(mockList.mock.calls.every(([search]) => !search?.start)).toBe(true)
+    // "2 Nov, 09:00 – 17:00" or "Nov 2, …" depending on the machine's locale.
+    expect(screen.getByRole('button', { name: /^(2 Nov|Nov 2).*–/ })).toBeInTheDocument()
+  })
+})
+
+describe('DT AC3 - an end time earlier than the start time', () => {
+  it('blocks the search and flags both time fields', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+    const callsBefore = mockList.mock.calls.length
+
+    const panel = await openFilter(user, 'Date & time')
+    fillWindow(panel, { date: '2026-11-02', start: '17:00', end: '09:00' })
+
+    expect(
+      await within(panel).findByText('The end time must be after the start time.'),
+    ).toBeInTheDocument()
+    expect(within(panel).getByLabelText('Start time')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(panel).getByLabelText('End time')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(panel).getByLabelText('Date')).toHaveAttribute('aria-invalid', 'false')
+    // Blocked: no venues are shown as if they matched, and nothing is sent.
+    expect(screen.getByText('Search paused.')).toBeInTheDocument()
+    expect(screen.queryByText('Marina Grand Ballroom')).not.toBeInTheDocument()
+    await pastTheDebounce()
+    expect(mockList.mock.calls.length).toBe(callsBefore)
+  })
+
+  it('stays blocked while other filters change', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+    const callsBefore = mockList.mock.calls.length
+
+    const panel = await openFilter(user, 'Date & time')
+    fillWindow(panel, { date: '2026-11-02', start: '17:00', end: '09:00' })
+    await user.keyboard('{Escape}')
+    await user.type(screen.getByRole('textbox', { name: 'Search venues' }), 'marina')
+    await pastTheDebounce()
+
+    expect(mockList.mock.calls.length).toBe(callsBefore)
+    expect(screen.getByRole('button', { name: 'Date & time: invalid' })).toBeInTheDocument()
+  })
+
+  it('treats an end time equal to the start time the same way', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Date & time')
+    fillWindow(panel, { date: '2026-11-02', start: '09:00', end: '09:00' })
+
+    expect(
+      await within(panel).findByText('The end time must be after the start time.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Search paused.')).toBeInTheDocument()
+  })
+
+  it('resumes the search, and clears the flags, once the end time is fixed', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Date & time')
+    fillWindow(panel, { date: '2026-11-02', start: '17:00', end: '09:00' })
+    await within(panel).findByText('The end time must be after the start time.')
+    fillWindow(panel, { end: '18:00' })
+
+    await waitFor(() =>
+      expect(lastSearch()).toEqual({
+        start: new Date('2026-11-02T17:00').toISOString(),
+        end: new Date('2026-11-02T18:00').toISOString(),
+      }),
+    )
+    expect(await screen.findByText('Marina Grand Ballroom')).toBeInTheDocument()
+    expect(within(panel).getByLabelText('End time')).toHaveAttribute('aria-invalid', 'false')
+    expect(screen.queryByText('Search paused.')).not.toBeInTheDocument()
+  })
+})
+
+describe('DT - an unfinished date and time', () => {
+  it('asks for what is missing, flags only that, and does not search with half a window', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Date & time')
+    fillWindow(panel, { date: '2026-11-02', start: '09:00' })
+
+    expect(
+      await within(panel).findByText('Enter a date, a start time and an end time.'),
+    ).toBeInTheDocument()
+    expect(within(panel).getByLabelText('End time')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(panel).getByLabelText('Start time')).toHaveAttribute('aria-invalid', 'false')
+    expect(within(panel).getByLabelText('Date')).toHaveAttribute('aria-invalid', 'false')
+    await pastTheDebounce()
+    expect(mockList.mock.calls.every(([search]) => !search?.start && !search?.end)).toBe(true)
   })
 
   it('flags an unfinished window on its chip, so it is not forgotten once closed', async () => {
@@ -404,12 +514,82 @@ describe('VS AC3 - date and time', () => {
     await screen.findByText('Marina Grand Ballroom')
 
     const panel = await openFilter(user, 'Date & time')
-    fireEvent.change(within(panel).getByLabelText('Available from'), {
-      target: { value: '2026-11-02T09:00' },
-    })
+    fillWindow(panel, { start: '09:00', end: '17:00' })
     await user.keyboard('{Escape}')
 
     expect(screen.getByRole('button', { name: 'Date & time: incomplete' })).toBeInTheDocument()
+  })
+
+  it('removing the filter empties all three fields', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    const panel = await openFilter(user, 'Date & time')
+    fillWindow(panel, { date: '2026-11-02', start: '17:00', end: '09:00' })
+    await user.click(screen.getByRole('button', { name: 'Remove Date & time filter' }))
+
+    expect(screen.queryByText('Search paused.')).not.toBeInTheDocument()
+    const reopened = await openFilter(user, 'Date & time')
+    expect(within(reopened).getByLabelText('Date')).toHaveValue('')
+    expect(within(reopened).getByLabelText('Start time')).toHaveValue('')
+    expect(within(reopened).getByLabelText('End time')).toHaveValue('')
+  })
+})
+
+describe('DT AC4 - the date and time combine with the other filters', () => {
+  it('sends the date and time together with every other filter in one search', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Marina Grand Ballroom')
+
+    await user.type(screen.getByRole('textbox', { name: 'Search venues' }), 'marina')
+    const attendance = await openFilter(user, 'Attendance')
+    await user.type(
+      within(attendance).getByRole('spinbutton', { name: 'Expected attendance' }),
+      '120',
+    )
+    const layout = await openFilter(user, 'Layout')
+    await user.click(await within(layout).findByRole('radio', { name: 'Theatre' }))
+    const facilities = await openFilter(user, 'Facilities')
+    await user.click(await within(facilities).findByRole('checkbox', { name: 'Stage' }))
+    const accessibility = await openFilter(user, 'Accessibility')
+    await user.click(await within(accessibility).findByRole('checkbox', { name: 'Hearing loop' }))
+    const dates = await openFilter(user, 'Date & time')
+    fillWindow(dates, { date: '2026-11-02', start: '09:00', end: '17:00' })
+
+    await waitFor(() =>
+      expect(lastSearch()).toEqual({
+        q: 'marina',
+        minCapacity: 120,
+        layout: 'Theatre',
+        facilities: ['Stage'],
+        accessibility: ['Hearing loop'],
+        start: new Date('2026-11-02T09:00').toISOString(),
+        end: new Date('2026-11-02T17:00').toISOString(),
+      }),
+    )
+  })
+
+  it('shows only the venues the server returns for the combined search', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('Changi Business Suite')
+
+    mockList.mockResolvedValue([BALLROOM])
+    const attendance = await openFilter(user, 'Attendance')
+    await user.type(
+      within(attendance).getByRole('spinbutton', { name: 'Expected attendance' }),
+      '100',
+    )
+    const dates = await openFilter(user, 'Date & time')
+    fillWindow(dates, { date: '2026-11-02', start: '09:00', end: '17:00' })
+
+    await waitFor(() =>
+      expect(screen.queryByText('Changi Business Suite')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByText('Marina Grand Ballroom')).toBeInTheDocument()
+    expect(screen.getByText('1 venue')).toBeInTheDocument()
   })
 })
 

@@ -23,10 +23,15 @@ class EventStatus(enum.StrEnum):
 
 
 class BookingStatus(enum.StrEnum):
+    # A request awaiting a Venue Staff decision. It is the TENTATIVE HOLD:
+    # it holds the venue in search until it is decided or the hold expires.
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
+    # A tentative hold that lapsed before it was confirmed. History, like
+    # rejected and cancelled: it no longer holds the venue.
+    hold_expired = "hold_expired"
 
 
 class EquipmentStatus(enum.StrEnum):

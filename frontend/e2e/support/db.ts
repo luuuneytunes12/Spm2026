@@ -142,3 +142,86 @@ db.close()
 export function removeVenue(name: string): void {
   python(REMOVE_VENUE, name)
 }
+
+export interface ScheduledVenue {
+  name: string
+  capacity: number
+  setupMinutes?: number
+  turnaroundMinutes?: number
+  /** ISO 8601 times. Each booking gets an event of its own, owned by the
+   *  `owner` passed to seedVenueSchedule. */
+  bookings?: { start: string; end: string; status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'hold_expired' }[]
+  /** Recorded unavailability periods, ISO 8601. */
+  closures?: { start: string; end: string }[]
+}
+
+const SEED_SCHEDULE = `
+import json, sys
+from datetime import datetime
+from app.core.db import SessionLocal
+from app.models.events import Event
+from app.models.user import User
+from app.models.venues import Venue, VenueBooking, VenueUnavailability
+
+p = json.loads(sys.argv[1])
+db = SessionLocal()
+owner = db.query(User).filter(User.email == p["owner"]).one()
+for v in p["venues"]:
+    venue = db.query(Venue).filter(Venue.name == v["name"]).one_or_none()
+    if venue is None:
+        venue = Venue(name=v["name"], location="1 Test Road")
+        db.add(venue)
+    venue.capacity = v["capacity"]
+    venue.setup_minutes = v.get("setupMinutes", 0)
+    venue.turnaround_minutes = v.get("turnaroundMinutes", 0)
+    venue.is_active = True
+    db.flush()
+    # Start from an empty schedule, so a re-run sees exactly what is listed.
+    db.query(VenueBooking).filter(VenueBooking.venue_id == venue.id).delete(synchronize_session=False)
+    db.query(Event).filter(Event.name.like(v["name"] + " booking %")).delete(synchronize_session=False)
+    db.query(VenueUnavailability).filter(VenueUnavailability.venue_id == venue.id).delete(synchronize_session=False)
+    for i, b in enumerate(v.get("bookings", [])):
+        event = Event(name=f"{v['name']} booking {i}", organiser_id=owner.id)
+        db.add(event)
+        db.flush()
+        db.add(VenueBooking(event_id=event.id, venue_id=venue.id, requested_by=owner.id,
+                            start_time=datetime.fromisoformat(b["start"]),
+                            end_time=datetime.fromisoformat(b["end"]), status=b["status"]))
+    for c in v.get("closures", []):
+        db.add(VenueUnavailability(venue_id=venue.id, start_time=datetime.fromisoformat(c["start"]),
+                                   end_time=datetime.fromisoformat(c["end"]), reason="Maintenance",
+                                   created_by=owner.id))
+    db.commit()
+db.close()
+`
+
+/** Create (or reset) venues with exactly the setup and turnaround time,
+ *  bookings and closures given. `owner` -- a seeded user -- owns the events
+ *  the bookings hang off and records the closures. */
+export function seedVenueSchedule(owner: string, venues: ScheduledVenue[]): void {
+  python(SEED_SCHEDULE, { owner, venues })
+}
+
+const REMOVE_SCHEDULE = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.events import Event
+from app.models.venues import Venue, VenueBooking
+
+names = json.loads(sys.argv[1])
+db = SessionLocal()
+ids = [v.id for v in db.query(Venue).filter(Venue.name.in_(names)).all()]
+db.query(VenueBooking).filter(VenueBooking.venue_id.in_(ids)).delete(synchronize_session=False)
+for name in names:
+    db.query(Event).filter(Event.name.like(name + " booking %")).delete(synchronize_session=False)
+# Closures go with their venue (ON DELETE CASCADE).
+db.query(Venue).filter(Venue.id.in_(ids)).delete(synchronize_session=False)
+db.commit()
+db.close()
+`
+
+/** Delete venues seeded by seedVenueSchedule, with their bookings, the
+ *  events behind them and their closures. Run before removing the owner. */
+export function removeVenueSchedule(names: string[]): void {
+  python(REMOVE_SCHEDULE, names)
+}

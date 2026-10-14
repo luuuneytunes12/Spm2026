@@ -19,6 +19,16 @@ function ChipList({ items, label }: { items: string[]; label: string }) {
   )
 }
 
+/** "None", "45 min", "1 h" or "1 h 30 min". Setup and turnaround are kept
+ *  in minutes; this is how they read best. */
+function formatMinutes(minutes: number): string {
+  if (!minutes) return 'None'
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours === 0) return `${rest} min`
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
 /** Operating hours are free text; one entry per line is shown as a list. */
 function OperatingHours({ value }: { value: string | null }) {
   const lines = (value ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
@@ -112,6 +122,14 @@ export function VenueView() {
             <dd>
               <OperatingHours value={venue.operating_hours} />
             </dd>
+          </div>
+          <div className="detail-row">
+            <dt>Setup time</dt>
+            <dd>{formatMinutes(venue.setup_minutes)} before each event</dd>
+          </div>
+          <div className="detail-row">
+            <dt>Turnaround time</dt>
+            <dd>{formatMinutes(venue.turnaround_minutes)} after each event</dd>
           </div>
         </dl>
       </section>

@@ -41,6 +41,8 @@ const VENUE: VenueDetail = {
   facilities: ['Stage', 'Built-in PA system'],
   accessibility_features: ['Wheelchair access', 'Hearing loop'],
   operating_hours: 'Mon-Fri 08:00-23:00\nSat-Sun 09:00-23:00',
+  setup_minutes: 90,
+  turnaround_minutes: 45,
 }
 
 function renderDetail() {
@@ -121,6 +123,22 @@ describe('venue details', () => {
 
     expect(await screen.findAllByText('None recorded')).toHaveLength(3)
     expect(screen.getByText('Not recorded')).toBeInTheDocument()
+  })
+
+  it('DT: shows the setup and turnaround time the date search counts', async () => {
+    mockGet.mockResolvedValue(VENUE)
+    renderDetail()
+
+    expect(await screen.findByText('1 h 30 min before each event')).toBeInTheDocument()
+    expect(screen.getByText('45 min after each event')).toBeInTheDocument()
+  })
+
+  it('DT: says "None" for a venue that needs no setup or turnaround time', async () => {
+    mockGet.mockResolvedValue({ ...VENUE, setup_minutes: 0, turnaround_minutes: 120 })
+    renderDetail()
+
+    expect(await screen.findByText('None before each event')).toBeInTheDocument()
+    expect(screen.getByText('2 h after each event')).toBeInTheDocument()
   })
 
   it('shows "not found" for a venue that does not exist', async () => {
