@@ -90,6 +90,27 @@ describe('AC2 - an invalid email format is rejected and nothing is saved', () =>
     expect(screen.getByRole('alert')).toHaveTextContent('not a valid email')
     expect(screen.queryByText('Your profile has been updated.')).not.toBeInTheDocument()
   })
+
+  it('restores the saved values and clears the error when the changes are discarded', async () => {
+    const user = userEvent.setup()
+    mockUpdate.mockRejectedValueOnce(
+      new ApiError(422, 'email: value is not a valid email address', ['email']),
+    )
+    render(<Profile />)
+    expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled()
+
+    await user.clear(screen.getByLabelText('Email'))
+    await user.type(screen.getByLabelText('Email'), 'not-an-email')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByRole('alert')
+
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }))
+
+    expect(screen.getByLabelText('Email')).toHaveValue('jane@example.com')
+    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-invalid', 'false')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled()
+  })
 })
 
 describe('AC3 - an invalid phone number is rejected and nothing is saved', () => {
