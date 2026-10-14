@@ -1,7 +1,9 @@
-import { NavLink } from 'react-router'
+import { NavLink, useLocation } from 'react-router'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { ROLE_HOME_PATH, Role } from '../lib/roles'
+import { listFlaggedBookings, listVenueBookingQueue } from '../lib/venueBookings'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
 
@@ -10,12 +12,63 @@ interface SidebarProps {
   open: boolean
 }
 
-function Item({ to, icon, end, children }: { to: string; icon: IconName; end?: boolean; children: ReactNode }) {
+/** Event the Booking Requests page fires when the queue changes, so the
+ *  sidebar count follows decisions without a reload. */
+export const VENUE_QUEUE_CHANGED = 'venue-queue-changed'
+
+/** Number of requests waiting in the Venue Staff queue (null until known or
+ *  when it cannot be loaded -- the badge is simply left out). */
+function usePendingRequestCount(enabled: boolean) {
+  const [count, setCount] = useState<number | null>(null)
+  const { pathname } = useLocation()
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    const load = () =>
+      Promise.resolve()
+        .then(() =>
+          Promise.all([
+            listVenueBookingQueue(),
+            Promise.resolve()
+              .then(listFlaggedBookings)
+              .catch(() => []),
+          ]),
+        )
+        .then(([q, f]) => !cancelled && setCount(q.length + f.length))
+        .catch(() => !cancelled && setCount(null))
+    load()
+    window.addEventListener(VENUE_QUEUE_CHANGED, load)
+    return () => {
+      cancelled = true
+      window.removeEventListener(VENUE_QUEUE_CHANGED, load)
+    }
+  }, [enabled, pathname])
+  return count
+}
+
+function Item({
+  to,
+  icon,
+  end,
+  count,
+  children,
+}: {
+  to: string
+  icon: IconName
+  end?: boolean
+  count?: number | null
+  children: ReactNode
+}) {
   return (
     <li>
       <NavLink to={to} end={end}>
         <Icon name={icon} />
         <span>{children}</span>
+        {count ? (
+          <span className="nav-count" aria-label={`${count} pending`}>
+            {count}
+          </span>
+        ) : null}
       </NavLink>
     </li>
   )
@@ -35,6 +88,7 @@ function Item({ to, icon, end, children }: { to: string; icon: IconName; end?: b
  */
 export function Sidebar({ id, open }: SidebarProps) {
   const { user } = useAuth()
+  const pendingRequests = usePendingRequestCount(user?.role === Role.VENUE_STAFF)
   if (!user) return null
 
   return (
@@ -74,11 +128,8 @@ export function Sidebar({ id, open }: SidebarProps) {
           )}
           {user.role === Role.VENUE_STAFF && (
             <>
-              <Item to="/venue-staff/bookings" icon="inbox">
+              <Item to="/venue-staff/bookings" icon="inbox" count={pendingRequests}>
                 Booking Requests
-              </Item>
-              <Item to="/venue-staff/flagged" icon="list">
-                Flagged Bookings
               </Item>
             </>
           )}

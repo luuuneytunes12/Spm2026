@@ -16,6 +16,12 @@ import { Sidebar } from './Sidebar'
 vi.mock('../auth/useAuth', () => ({ useAuth: vi.fn() }))
 
 import { useAuth } from '../auth/useAuth'
+import { listFlaggedBookings, listVenueBookingQueue } from '../lib/venueBookings'
+
+vi.mock('../lib/venueBookings', () => ({
+  listVenueBookingQueue: vi.fn().mockResolvedValue([]),
+  listFlaggedBookings: vi.fn().mockResolvedValue([]),
+}))
 
 const mockAuth = vi.mocked(useAuth)
 
@@ -49,6 +55,27 @@ function signedInAs(role: Role) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(listVenueBookingQueue).mockResolvedValue([])
+  vi.mocked(listFlaggedBookings).mockResolvedValue([])
+})
+
+describe('Venue Staff', () => {
+  it('has no separate Flagged Bookings item; badge is pending + flagged', async () => {
+    vi.mocked(listVenueBookingQueue).mockResolvedValue([{}, {}] as never)
+    vi.mocked(listFlaggedBookings).mockResolvedValue([{}] as never)
+    signedInAs(Role.VENUE_STAFF)
+
+    expect(screen.queryByRole('link', { name: /Flagged Bookings/ })).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('3 pending')).toBeInTheDocument()
+  })
+
+  it('still shows pending count when flagged bookings fail to load', async () => {
+    vi.mocked(listVenueBookingQueue).mockResolvedValue([{}, {}] as never)
+    vi.mocked(listFlaggedBookings).mockRejectedValue(new Error('boom'))
+    signedInAs(Role.VENUE_STAFF)
+
+    expect(await screen.findByLabelText('2 pending')).toBeInTheDocument()
+  })
 })
 
 describe('Technical Support', () => {

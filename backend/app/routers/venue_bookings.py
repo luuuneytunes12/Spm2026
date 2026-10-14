@@ -68,6 +68,7 @@ def _conflict_between(
         occupied_end=theirs.end,
         overlap_start=shared.start,
         overlap_end=shared.end,
+        status=getattr(other.status, "value", other.status),
     )
 
 
@@ -492,6 +493,26 @@ def flagged_venue_bookings(
         _with_relations(
             select(VenueBooking)
             .where(VenueBooking.conflict_flagged_at.is_not(None))
+            .order_by(VenueBooking.start_time, VenueBooking.id)
+        )
+    ).unique()
+    return _outs(bookings, db, user)
+
+
+@router.get("/approved", response_model=list[VenueBookingOut])
+def approved_venue_bookings(
+    db: Session = Depends(get_db),
+    user: User = Depends(_venue_staff),
+) -> list[VenueBookingOut]:
+    """Approved bookings that have not ended yet, soonest first (read-only)."""
+    expire_tentative_holds(db)
+    bookings = db.scalars(
+        _with_relations(
+            select(VenueBooking)
+            .where(
+                VenueBooking.status == BookingStatus.approved,
+                VenueBooking.end_time > datetime.now(timezone.utc),
+            )
             .order_by(VenueBooking.start_time, VenueBooking.id)
         )
     ).unique()

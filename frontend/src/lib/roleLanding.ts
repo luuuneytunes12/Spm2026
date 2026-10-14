@@ -101,7 +101,7 @@ export const ROLE_LANDING: Record<Role, RoleLandingConfig> = {
       {
         title: 'Flagged Bookings',
         description: 'Approved bookings that now conflict after a setup or turnaround change.',
-        to: '/venue-staff/flagged',
+        to: '/venue-staff/bookings?view=flagged',
         icon: 'list',
         count: async () => (await listFlaggedBookings()).length,
       },

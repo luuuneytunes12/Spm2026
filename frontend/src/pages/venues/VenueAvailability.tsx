@@ -50,6 +50,10 @@ function dateLabel(value: string): string {
   })
 }
 
+function minutesBetween(a: string, z: string): number {
+  return Math.max(0, Math.round((new Date(z).getTime() - new Date(a).getTime()) / 60000))
+}
+
 function timeLabel(value: string): string {
   return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
@@ -413,16 +417,19 @@ export function VenueAvailability() {
                   <li className="availability-entry" key={`${item.kind}-${item.id}`}>
                     <div className="availability-entry-main">
                       <strong>{item.event_name || (item.kind === 'unavailability' ? 'Unavailable' : itemStatus(item))}</strong>
-                      <span>{timeLabel(item.start_time)} – {timeLabel(item.end_time)}</span>
-                      {item.kind !== 'unavailability' &&
-                        item.occupied_start &&
-                        item.occupied_end &&
-                        (item.occupied_start !== item.start_time || item.occupied_end !== item.end_time) && (
-                          <small className="text-muted">
-                            Venue held {timeLabel(item.occupied_start)} – {timeLabel(item.occupied_end)} (setup and
-                            turnaround included)
-                          </small>
-                        )}
+                      {item.kind === 'unavailability' ? (
+                        <span>{timeLabel(item.start_time)} – {timeLabel(item.end_time)}</span>
+                      ) : (
+                        <span>
+                          Event {timeLabel(item.start_time)} – {timeLabel(item.end_time)}
+                          {item.occupied_start && item.occupied_end && (
+                            <>
+                              {' · '}Setup {minutesBetween(item.occupied_start, item.start_time)} min
+                              {' · '}Turnaround {minutesBetween(item.end_time, item.occupied_end)} min
+                            </>
+                          )}
+                        </span>
+                      )}
                       {item.kind === 'unavailability' && item.reason_category && (
                         <small className="text-muted">
                           {item.reason_category}
