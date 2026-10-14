@@ -606,6 +606,13 @@
   gap: 0 16px;
 }
 
+/* Two short fields that always fit side by side, even in a filter panel
+   (start and end time). */
+.form-row-tight {
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+}
+
 .form-actions {
   display: flex;
   align-items: center;

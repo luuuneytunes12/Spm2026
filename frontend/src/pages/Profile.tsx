@@ -59,6 +59,20 @@ export function Profile() {
     setSaved(false)
   }
 
+  // A rejected save leaves the typed values in the form so they can be
+  // corrected; this is the way back to what is actually saved.
+  const savedForm = toFormState(user)
+  const dirty = (Object.keys(savedForm) as (keyof FormState)[]).some(
+    (key) => form[key] !== savedForm[key],
+  )
+
+  function onDiscard() {
+    setForm(savedForm)
+    setError(null)
+    setInvalidFields([])
+    setSaved(false)
+  }
+
   const flagged = (field: string) => invalidFields.includes(field)
   const fieldClass = (field: string) => (flagged(field) ? 'field field-invalid' : 'field')
 
@@ -233,6 +247,14 @@ export function Profile() {
         <div className="form-actions">
           <button type="submit" className="btn-primary" disabled={busy}>
             {busy ? 'Saving…' : 'Save changes'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onDiscard}
+            disabled={busy || !dirty}
+          >
+            Discard changes
           </button>
         </div>
       </form>
