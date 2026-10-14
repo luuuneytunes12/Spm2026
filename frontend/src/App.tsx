@@ -19,6 +19,7 @@ import { EventForm } from './pages/events/EventForm'
 import { EventView } from './pages/events/EventView'
 import { MyRequests } from './pages/events/MyRequests'
 import { AttendeeEvents } from './pages/registrations/AttendeeEvents'
+import { AttendeeEventView } from './pages/registrations/AttendeeEventView'
 import { MyRegistrations } from './pages/registrations/MyRegistrations'
 import { Attendee } from './pages/roles/Attendee'
 import { Coordinator } from './pages/roles/Coordinator'
@@ -109,6 +110,7 @@ function App() {
           <Route element={<RequireRole roles={[Role.ATTENDEE]} />}>
             <Route path="/attendee" element={<Attendee />} />
             <Route path="/attendee/events" element={<AttendeeEvents />} />
+            <Route path="/attendee/events/:id" element={<AttendeeEventView />} />
             <Route path="/attendee/registrations" element={<MyRegistrations />} />
           </Route>
           <Route element={<RequireRole roles={[Role.SAFETY_OFFICER]} />}>

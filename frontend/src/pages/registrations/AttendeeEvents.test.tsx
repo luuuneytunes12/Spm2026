@@ -8,6 +8,7 @@
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AttendeeEvents } from './AttendeeEvents'
 
@@ -41,7 +42,7 @@ describe('registering', () => {
   it('offers Register on an open event and shows Registered afterwards', async () => {
     mockList.mockResolvedValue([OPEN])
     mockRegister.mockResolvedValue({ ...OPEN, my_status: 'registered' })
-    render(<AttendeeEvents />)
+    render(<MemoryRouter><AttendeeEvents /></MemoryRouter>)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Register' }))
 
@@ -52,13 +53,13 @@ describe('registering', () => {
 
   it('renders Register as a primary button, not an unstyled one', async () => {
     mockList.mockResolvedValue([OPEN])
-    render(<AttendeeEvents />)
+    render(<MemoryRouter><AttendeeEvents /></MemoryRouter>)
     expect(await screen.findByRole('button', { name: 'Register' })).toHaveClass('btn-primary')
   })
 
   it('offers no way to register once registration has closed', async () => {
     mockList.mockResolvedValue([{ ...OPEN, registration_open: false }])
-    render(<AttendeeEvents />)
+    render(<MemoryRouter><AttendeeEvents /></MemoryRouter>)
 
     expect(await screen.findByText('Registration closed')).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
@@ -66,7 +67,7 @@ describe('registering', () => {
 
   it('does not offer Register to someone already registered', async () => {
     mockList.mockResolvedValue([{ ...OPEN, my_status: 'registered' }])
-    render(<AttendeeEvents />)
+    render(<MemoryRouter><AttendeeEvents /></MemoryRouter>)
 
     expect(await screen.findByRole('button', { name: 'Withdraw' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Register/ })).not.toBeInTheDocument()
@@ -77,7 +78,7 @@ describe('withdrawing', () => {
   it('changes the status to Withdrawn', async () => {
     mockList.mockResolvedValue([{ ...OPEN, my_status: 'registered' }])
     mockWithdraw.mockResolvedValue({ ...OPEN, my_status: 'withdrawn' })
-    render(<AttendeeEvents />)
+    render(<MemoryRouter><AttendeeEvents /></MemoryRouter>)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Withdraw' }))
 
@@ -87,7 +88,7 @@ describe('withdrawing', () => {
 
   it('offers Register again after withdrawing while still open', async () => {
     mockList.mockResolvedValue([{ ...OPEN, my_status: 'withdrawn' }])
-    render(<AttendeeEvents />)
+    render(<MemoryRouter><AttendeeEvents /></MemoryRouter>)
 
     expect(await screen.findByRole('button', { name: 'Register again' })).toBeInTheDocument()
   })

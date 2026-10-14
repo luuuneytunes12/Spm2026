@@ -373,6 +373,29 @@ export function AssignedEventView() {
         )}
         {(event.status === EventStatus.EVENT_APPROVED || event.status === EventStatus.PLANNING_EVENT) && (
           <div className="status-actions">
+            {event.safety_check_return && (
+              <div role="status" className="form-error form-error-stack">
+                <p>
+                  Safety Check result: <strong>{event.safety_check_return.result}</strong>
+                  {event.safety_check_return.decided_by_name &&
+                    ` by ${event.safety_check_return.decided_by_name}`}{' '}
+                  on {formatTimestamp(event.safety_check_return.decided_at)}
+                </p>
+                <p>Reason: {event.safety_check_return.reason}</p>
+                {event.safety_check_return.items_to_review.length > 0 ? (
+                  <>
+                    <p>Items to review again:</p>
+                    <ul className="detail-value-list">
+                      {event.safety_check_return.items_to_review.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p>Every flagged item has been reviewed again.</p>
+                )}
+              </div>
+            )}
             <h3>Submit for Safety Check</h3>
             <p className="page-subtitle">
               Submit once the venue booking is approved and every equipment requirement is

@@ -17,6 +17,21 @@ export interface RegistrableEvent {
   my_status: RegistrationStatus | null
 }
 
+/** One event's attendee-facing details. Holds public fields only; venues
+ *  are those of the currently approved bookings. */
+export interface AttendeeEventDetail extends RegistrableEvent {
+  description: string | null
+  event_type: string | null
+  programme: string | null
+  accessibility_needs: string | null
+  venues: { name: string; location: string }[]
+}
+
+/** Rejects 404 when the event is not visible to Attendees. */
+export function getAttendeeEvent(id: number): Promise<AttendeeEventDetail> {
+  return apiFetch(`/registrations/events/${id}`) as Promise<AttendeeEventDetail>
+}
+
 export function listRegistrableEvents(): Promise<RegistrableEvent[]> {
   return apiFetch('/registrations/events') as Promise<RegistrableEvent[]>
 }

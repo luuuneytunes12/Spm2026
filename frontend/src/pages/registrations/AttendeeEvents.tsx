@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { ApiError } from '../../lib/api'
 import { formatRange, formatTimestamp } from '../../lib/events'
 import {
@@ -64,9 +65,9 @@ export function AttendeeEvents() {
     return (
       <li key={event.id} className="card request">
         <div className="request-main">
-          <span className="request-title">
+          <Link className="request-title" to={`/attendee/events/${event.id}`}>
             {event.name ?? <em className="text-muted">Untitled event</em>}
-          </span>
+          </Link>
           <span className="request-meta">
             {formatRange(event.proposed_start, event.proposed_end)}
           </span>
