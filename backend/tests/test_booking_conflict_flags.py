@@ -578,3 +578,42 @@ def test_ac1_an_expired_hold_is_not_flagged(client, db_session):
     )
     assert _put(client, w).status_code == 200
     assert _flagged(db_session, expired) == [False]
+
+
+def test_scrum92_raising_turnaround_20_40_to_60_flags_approved_not_pending(client, db_session):
+    w = _world(client, db_session)
+    base = {"setup_minutes": 20, "turnaround_minutes": 40}
+    assert _put(client, w, base).status_code == 200
+    a = _approved(db_session, w, _at(10), _at(12))  # occupies 09:40-12:40
+    b = _approved(db_session, w, _at(13), _at(14))  # occupies 12:40-14:40
+    p = _approved(db_session, w, _at(13), _at(14), status=BookingStatus.pending)
+    assert _put(client, w, base).json()["recheck"] == {"flagged": 0, "cleared": 0}
+    res = _put(client, w, {"setup_minutes": 20, "turnaround_minutes": 60})  # A now to 13:00 vs B from 12:40
+    assert res.json()["recheck"]["flagged"] >= 1
+    assert any(_flagged(db_session, a, b))
+    assert _flagged(db_session, p) == [False]
+    db_session.expire_all()
+    assert db_session.get(VenueBooking, a.id).status == BookingStatus.approved
+    assert db_session.get(VenueBooking, b.id).status == BookingStatus.approved
+    assert len(_notes(db_session, w["sam"].id)) >= 1
+
+
+# --- GET /venue-bookings/approved ---------------------------------------------
+
+
+def test_approved_list_returns_only_future_approved_bookings_in_order(client, db_session):
+    w = _world(client, db_session)
+    later = _approved(db_session, w, _at(15), _at(17), name="Later")
+    sooner = _approved(db_session, w, _at(10), _at(12), name="Sooner")
+    _approved(db_session, w, _at(10, day=3), _at(12, day=3), status=BookingStatus.pending)
+    _approved(db_session, w, _at(10, day=3), _at(12, day=3), status=BookingStatus.rejected)
+    _approved(db_session, w, _at(10, year=2020), _at(12, year=2020), name="Past")
+    res = client.get("/venue-bookings/approved", headers=w["staff_h"])
+    assert res.status_code == 200
+    assert [b["id"] for b in res.json()] == [sooner.id, later.id]
+
+
+def test_approved_list_is_venue_staff_only(client, db_session):
+    w = _world(client, db_session)
+    assert client.get("/venue-bookings/approved", headers=w["sam_h"]).status_code == 403
+    assert client.get("/venue-bookings/approved").status_code == 401

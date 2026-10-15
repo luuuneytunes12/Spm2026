@@ -105,6 +105,19 @@ describe('View Venue Availability Calendar', () => {
     )
   })
 
+  it('SCRUM-93 AC3: an unavailability item shows Unavailable and its reason', async () => {
+    mockGetAvailability.mockResolvedValue({
+      ...CALENDAR,
+      items: [{ ...CALENDAR.items[1], reason_category: 'Maintenance', reason: 'Pipe repair' }],
+    })
+    renderCalendar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Check availability' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Monday, November 2, 2026/ }))
+    const day = screen.getByRole('region', { name: /Availability on 2026-11-02/ })
+    expect(day).toHaveTextContent('Unavailable')
+    expect(day).toHaveTextContent('Maintenance: Pipe repair')
+  })
+
   it('marks dates and shows only event names, times, and availability when a date is selected', async () => {
     mockGetAvailability.mockResolvedValue(CALENDAR)
     renderCalendar()
@@ -127,6 +140,24 @@ describe('View Venue Availability Calendar', () => {
     expect(selectedDate).toHaveTextContent(`${start} – ${end}`)
     expect(selectedDate).not.toHaveTextContent('Maintenance')
     expect(selectedDate.querySelector('a')).toBeNull()
+  })
+
+  it('AC6: shows the Event time with the setup and turnaround minutes', async () => {
+    mockGetAvailability.mockResolvedValue({
+      ...CALENDAR,
+      items: [
+        {
+          ...CALENDAR.items[0],
+          occupied_start: '2026-11-02T09:40:00Z',
+          occupied_end: '2026-11-02T11:40:00Z',
+        },
+      ],
+    })
+    renderCalendar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Check availability' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Monday, November 2, 2026/ }))
+    const day = screen.getByRole('region', { name: /Availability on 2026-11-02/ })
+    expect(day).toHaveTextContent(/Event .+ – .+ · Setup 20 min · Turnaround 40 min/)
   })
 
   it('loads another year and month from the month picker', async () => {

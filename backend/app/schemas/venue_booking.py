@@ -170,6 +170,8 @@ class BookingConflict(BaseModel):
     overlap_start: datetime
     overlap_end: datetime
     reason: str | None = None
+    # Of the booking this clashes with: "approved" or "tentative_hold".
+    status: str | None = None
 
 
 class VenueBookingOut(BaseModel):

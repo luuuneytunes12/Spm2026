@@ -232,9 +232,9 @@ def test_ac5_conflict_shape_and_overlap_are_exact(client, db_session):
     assert set(c) == {
         "booking_id", "event_id", "event_name", "event_start", "event_end",
         "occupied_start", "occupied_end", "overlap_start", "overlap_end",
-        "kind", "reason",
+        "kind", "reason", "status",
     }
-    assert c["kind"] == "booking" and c["reason"] is None
+    assert c["kind"] == "booking" and c["reason"] is None and c["status"] == "approved"
     assert c["booking_id"] == other.id
     assert (c["occupied_start"][:16], c["occupied_end"][:16]) == ("2026-11-02T15:45", "2026-11-02T20:30")
     assert (c["overlap_start"][:16], c["overlap_end"][:16]) == ("2026-11-02T15:45", "2026-11-02T17:30")
