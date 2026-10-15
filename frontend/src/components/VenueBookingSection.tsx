@@ -206,6 +206,13 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
               <p className="page-subtitle" aria-label={`Venue time for ${b.venue.name}`}>
                 {formatBookingPeriods(b)}
               </p>
+              {b.status === 'tentative_hold' && (
+                <p className="notice" role="note">
+                  Held until{' '}
+                  {formatTimestamp(b.expires_at) ?? 'its expiry'}. Required action:{' '}
+                  {b.hold_action ?? 'none given'}
+                </p>
+              )}
               {b.conflict_flagged && (
                 <p className="notice" role="note">
                   <span className="badge">Conflict flagged</span> {CONFLICT_FLAG_LABEL}. Venue Staff

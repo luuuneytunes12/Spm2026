@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, or_, select
@@ -181,6 +181,7 @@ def _out(booking: VenueBooking, conflicts: list[BookingConflict] | None = None) 
         decision_notes=booking.decision_notes,
         suggested_alternative=booking.suggested_alternative,
         expires_at=booking.expires_at,
+        hold_action=booking.hold_action,
         safety_recheck_reason=booking.safety_recheck_reason,
         reviewed_by=booking.reviewed_by_user,
         reviewed_at=booking.reviewed_at,
@@ -261,6 +262,7 @@ def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Ses
     booking.status = decision
     if decision != BookingStatus.tentative_hold:
         booking.expires_at = None
+        booking.hold_action = None
     booking.safety_recheck_reason = None
     booking.reviewed_by = staff.id
     booking.reviewed_at = datetime.now(timezone.utc)
@@ -279,7 +281,9 @@ def create_tentative_hold(
     db: Session = Depends(get_db),
     user: User = Depends(_venue_staff),
 ) -> VenueBookingOut:
-    """Place a temporary hold on a pending request for follow-up."""
+    """Place a pending request on a tentative hold until `expires_at`, naming
+    the action the Coordinator must complete before then. The hold occupies
+    the venue until it is approved, rejected or expires."""
     # Sweep first (it commits), then venue before booking: the same lock order
     # as every other venue-staff action, so none can deadlock on another.
     expire_tentative_holds(db)
@@ -296,18 +300,32 @@ def create_tentative_hold(
             detail="Only a pending venue booking can be placed on tentative hold.",
         )
     now = datetime.now(timezone.utc)
-    # TODO(confirm): The hold duration defaults to 24 hours until the business confirms it.
-    expires_at = body.expires_at or (now + timedelta(hours=24))
-    comparable_expiry = expires_at.replace(tzinfo=timezone.utc) if expires_at.tzinfo is None else expires_at
-    if comparable_expiry <= now:
+    expires_at = as_utc(body.expires_at)
+    if expires_at <= now:
+        # FastAPI's own 422 shape, naming the field so the form can flag it.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="A tentative hold expiry must be in the future.",
+            detail=[{"loc": ["body", "expires_at"], "msg": "A tentative hold expiry must be in the future."}],
         )
     booking.status = BookingStatus.tentative_hold
     booking.expires_at = expires_at
+    booking.hold_action = body.required_action
     booking.reviewed_by = user.id
     booking.reviewed_at = now
+    # The Event's Activity Log keeps who placed the hold, until when and what
+    # was asked (the event status itself does not change).
+    db.add(
+        EventStatusHistory(
+            event_id=booking.event_id,
+            changed_by=user.id,
+            from_status=booking.event.status,
+            to_status=booking.event.status,
+            note=(
+                f"Tentative hold placed on '{booking.venue.name}' until {expires_at.isoformat()}. "
+                f"Required action: {body.required_action}"
+            ),
+        )
+    )
     coordinator_id = booking.event.coordinator_id
     if coordinator_id is not None:
         notify(
@@ -316,7 +334,7 @@ def create_tentative_hold(
             type=NotificationType.venue_hold_expiring,
             message=(
                 f"The tentative hold for {booking.venue.name} will expire "
-                f"at {expires_at.isoformat()}."
+                f"at {expires_at.isoformat()}. Required action: {body.required_action}"
             ),
             event_id=booking.event_id,
         )

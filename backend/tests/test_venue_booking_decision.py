@@ -104,7 +104,10 @@ def test_ac1_venue_staff_can_place_an_expiring_hold_and_notify_the_coordinator(
 
     response = client.post(
         f"/venue-bookings/{s['booking_id']}/hold",
-        json={},
+        json={
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+            "required_action": "Confirm headcount.",
+        },
         headers=s["staff_h"],
     )
 

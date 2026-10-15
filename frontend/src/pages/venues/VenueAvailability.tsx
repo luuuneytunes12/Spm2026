@@ -439,6 +439,9 @@ export function VenueAvailability() {
                       {item.kind === 'tentative_hold' && item.expires_at && (
                         <small className="text-muted">Expires {new Date(item.expires_at).toLocaleString()}</small>
                       )}
+                      {item.kind === 'tentative_hold' && item.hold_action && (
+                        <small className="text-muted">Required action: {item.hold_action}</small>
+                      )}
                     </div>
                     <span
                       className={`badge ${

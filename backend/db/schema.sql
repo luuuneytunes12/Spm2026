@@ -184,6 +184,9 @@ create table venue_bookings (
     end_time timestamptz not null,
     status booking_status not null default 'pending',
     expires_at timestamptz,
+    -- What the Coordinator must complete before a tentative hold expires;
+    -- see sql/026.
+    hold_action text,
     decision_notes text,
     -- What Venue Staff offer instead when rejecting; see sql/014.
     suggested_alternative text,

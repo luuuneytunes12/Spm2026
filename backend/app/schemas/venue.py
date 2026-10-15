@@ -99,6 +99,8 @@ class BusyPeriod(BaseModel):
     reason: str | None = None
     # Tentative holds only: when the hold lapses.
     expires_at: datetime | None = None
+    # Tentative holds only, Venue Staff only: what the Coordinator must do.
+    hold_action: str | None = None
 
 
 class UnavailabilityIn(BaseModel):
@@ -148,6 +150,8 @@ class VenueAvailabilityItem(BaseModel):
     reason_category: str | None = None
     reason: str | None = None
     expires_at: datetime | None = None
+    # Tentative holds only, Venue Staff only: what the Coordinator must do.
+    hold_action: str | None = None
     conflicts_with_unavailability: bool = False
 
 

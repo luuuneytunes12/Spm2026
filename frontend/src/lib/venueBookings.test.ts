@@ -127,3 +127,44 @@ describe('bookingPeriodParts', () => {
     expect(formatBookingPeriods(b)).toBe('Event 10:00-12:00 | Setup 09:30-10:00 | Turnaround 12:00-12:45')
   })
 })
+
+describe('Tentative hold - the form check and the request', () => {
+  const NOW = new Date('2030-01-01T10:00')
+
+  it('AC1: a future expiry and an action pass', async () => {
+    const { holdFormErrors } = await import('./venueBookings')
+    expect(holdFormErrors('2030-01-01T10:01', 'Pay the deposit', NOW)).toEqual({})
+  })
+
+  it('AC2: a missing expiry is flagged', async () => {
+    const { holdFormErrors, HOLD_FIELD_ERRORS } = await import('./venueBookings')
+    expect(holdFormErrors('', 'Pay the deposit', NOW)).toEqual({ expires_at: HOLD_FIELD_ERRORS.missingExpiry })
+  })
+
+  it('AC2: an expiry now or in the past is flagged', async () => {
+    const { holdFormErrors, HOLD_FIELD_ERRORS } = await import('./venueBookings')
+    for (const when of ['2030-01-01T10:00', '2029-12-31T23:59']) {
+      expect(holdFormErrors(when, 'Pay the deposit', NOW)).toEqual({ expires_at: HOLD_FIELD_ERRORS.pastExpiry })
+    }
+  })
+
+  it('AC1: a blank action is flagged, alongside a bad expiry', async () => {
+    const { holdFormErrors, HOLD_FIELD_ERRORS } = await import('./venueBookings')
+    expect(holdFormErrors('', '   ', NOW)).toEqual({
+      expires_at: HOLD_FIELD_ERRORS.missingExpiry,
+      required_action: HOLD_FIELD_ERRORS.required_action,
+    })
+  })
+
+  it('AC1: holdVenueBooking posts the expiry and the action', async () => {
+    const { holdVenueBooking } = await import('./venueBookings')
+    vi.mocked(apiFetch).mockResolvedValue({})
+    const body = { expires_at: '2030-01-02T02:00:00.000Z', required_action: 'Pay the deposit' }
+    await holdVenueBooking(4, body)
+    expect(apiFetch).toHaveBeenCalledWith('/venue-bookings/4/hold', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  })
+})

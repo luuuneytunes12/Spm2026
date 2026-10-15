@@ -37,7 +37,7 @@ Where the tests live:
 | `GET /venue-bookings/queue` | Venue Staff | Pending requests, oldest first (from SCRUM-39). |
 | `POST /venue-bookings/{id}/approve` | Venue Staff | Request becomes `approved`. 409 if it is already decided, or if the venue is already confirmed for another event, or blocked out, at an overlapping time. |
 | `POST /venue-bookings/{id}/reject` | Venue Staff | Body `{reason?, suggested_alternative?}`, at least one non-blank (422 otherwise). Request becomes `rejected`. 409 if it is already decided. |
-| `POST /venue-bookings/{id}/hold` | Venue Staff | Places a pending request on a 24-hour tentative hold and notifies the Coordinator of its expiry. |
+| `POST /venue-bookings/{id}/hold` | Venue Staff | Places a pending request on a tentative hold until the `expires_at` Venue Staff enter (required, in the future), with the `required_action` the Coordinator must complete (required), and notifies the Coordinator of both. |
 | `GET /venue-bookings/events/{event_id}` | the event's Coordinator | Every request for the event, newest first, each with its outcome. |
 
 Both decisions record `reviewed_by` and `reviewed_at`. A booking response
