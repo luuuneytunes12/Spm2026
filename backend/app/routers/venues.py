@@ -13,14 +13,14 @@ from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
 from app.domain.venue_occupancy import occupied_window
-from app.models.enums import BookingStatus, NotificationType
+from app.models.enums import BookingStatus
 from app.models.events import Event
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
-from app.services.booking_conflict_flags import effective_buffers, recheck_venue
-from app.services.notifications import notify
+from app.services.booking_conflict_flags import closure_overlaps, effective_buffers, recheck_venue
 from app.services.venue_holds import active_hold_filter as _active_hold_filter
 from app.services.venue_holds import expire_tentative_holds
+from app.services.unavailability_notices import PendingRequestNotices
 from app.schemas.venue import (
     AffectedBooking,
     BusyPeriod,
@@ -539,20 +539,24 @@ def _check_range(body: UnavailabilityIn) -> None:
 
 
 def _affected(db: Session, period: VenueUnavailability, now: datetime) -> list[AffectedBooking]:
-    """Future pending or approved bookings of the venue inside the period."""
-    rows = db.scalars(
-        select(VenueBooking)
-        .where(
-            VenueBooking.venue_id == period.venue_id,
-            VenueBooking.status.in_(_AFFECTED_STATUSES),
-            _active_hold_filter(now),
-            VenueBooking.start_time > now,
-            VenueBooking.start_time < as_utc(period.end_time),
-            VenueBooking.end_time > as_utc(period.start_time),
-        )
-        .options(joinedload(VenueBooking.event))
-        .order_by(VenueBooking.start_time, VenueBooking.id)
-    ).unique()
+    """Future pending, held or approved bookings of the venue whose occupied
+    window (setup and turnaround included, SCRUM-94) overlaps the period."""
+    venue = db.get(Venue, period.venue_id)
+    rows = [
+        b
+        for b in db.scalars(
+            select(VenueBooking)
+            .where(
+                VenueBooking.venue_id == period.venue_id,
+                VenueBooking.status.in_(_AFFECTED_STATUSES),
+                _active_hold_filter(now),
+                VenueBooking.start_time > now,
+            )
+            .options(joinedload(VenueBooking.event))
+            .order_by(VenueBooking.start_time, VenueBooking.id)
+        ).unique()
+        if closure_overlaps(b, period, venue)
+    ]
     return [
         AffectedBooking(
             booking_id=b.id,
@@ -600,43 +604,6 @@ def _after_change(db: Session, venue: Venue, user: User) -> RecheckSummary:
     return RecheckSummary(flagged=flagged, cleared=cleared)
 
 
-def _notify_pending_coordinators(db: Session, venue: Venue, period: VenueUnavailability) -> None:
-    """SCRUM-94: tell the Coordinator of each PENDING request inside the period.
-
-    Approved bookings and holds are flagged by the re-check, which notifies
-    their Coordinators itself (once); pending requests are not flaggable, so
-    without this their Coordinator would not hear. The Event is untouched.
-    """
-    pending = db.scalars(
-        select(VenueBooking)
-        .where(
-            VenueBooking.venue_id == venue.id,
-            VenueBooking.status == BookingStatus.pending,
-            VenueBooking.start_time > datetime.now(timezone.utc),
-            VenueBooking.start_time < as_utc(period.end_time),
-            VenueBooking.end_time > as_utc(period.start_time),
-        )
-        .options(joinedload(VenueBooking.event))
-    ).unique()
-    for booking in pending:
-        coordinator_id = booking.event.coordinator_id
-        if coordinator_id is None:
-            continue
-        notify(
-            db,
-            user_id=coordinator_id,
-            event_id=booking.event_id,
-            type=NotificationType.venue_unavailability_recorded,
-            message=(
-                f"{venue.name} is unavailable from {as_utc(period.start_time):%d %b %Y %H:%M} to "
-                f"{as_utc(period.end_time):%d %b %Y %H:%M} ({period.reason_category}"
-                f"{': ' + period.reason if period.reason else ''}), which overlaps your request for "
-                f"'{booking.event.name or 'your event'}'. Alternative arrangements are required; "
-                "the event has not been cancelled."
-            ),
-        )
-
-
 @router.get("/{venue_id}/unavailability", response_model=list[UnavailabilityOut])
 def list_unavailability(
     venue_id: int,
@@ -669,6 +636,7 @@ def create_unavailability(
     saved. Bookings already inside the period do not stop it being saved."""
     _check_range(body)
     venue = _locked_venue(db, venue_id)
+    notices = PendingRequestNotices(db, venue)
     period = VenueUnavailability(
         venue_id=venue.id,
         start_time=body.start_time,
@@ -681,7 +649,7 @@ def create_unavailability(
     )
     db.add(period)
     recheck = _after_change(db, venue, user)
-    _notify_pending_coordinators(db, venue, period)
+    notices.send()
     db.commit()
     db.refresh(period)
     return _period_out(db, period, user, recheck)
@@ -700,6 +668,7 @@ def update_unavailability(
     _check_range(body)
     venue = _locked_venue(db, venue_id)
     period = _locked_period(db, venue_id, period_id)
+    notices = PendingRequestNotices(db, venue)
     period.start_time = body.start_time
     period.end_time = body.end_time
     period.reason_category = body.reason_category.value
@@ -707,6 +676,7 @@ def update_unavailability(
     period.updated_by = user.id
     period.updated_at = datetime.now(timezone.utc)
     recheck = _after_change(db, venue, user)
+    notices.send()
     db.commit()
     db.refresh(period)
     return _period_out(db, period, user, recheck)
@@ -729,10 +699,12 @@ def end_unavailability_early(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only a period that is under way can be ended early.",
         )
+    notices = PendingRequestNotices(db, venue)
     period.end_time = now
     period.updated_by = user.id
     period.updated_at = now
     recheck = _after_change(db, venue, user)
+    notices.send()
     db.commit()
     db.refresh(period)
     return _period_out(db, period, user, recheck)
@@ -748,8 +720,10 @@ def delete_unavailability(
     """Remove a period; the venue is available again for all of it."""
     venue = _locked_venue(db, venue_id)
     period = _locked_period(db, venue_id, period_id)
+    notices = PendingRequestNotices(db, venue)
     db.delete(period)
     _after_change(db, venue, user)
+    notices.send()
     db.commit()
 
 

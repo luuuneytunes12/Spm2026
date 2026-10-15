@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.datetimes import as_utc
-from app.domain.venue_occupancy import occupied_window
+from app.domain.venue_occupancy import OccupiedWindow, occupied_window, overlap_of
 from app.models.enums import BookingStatus, NotificationType
 from app.models.events import EventStatusHistory
 from app.models.user import User
@@ -55,11 +55,37 @@ def _closures(db: Session, venue: Venue) -> list[VenueUnavailability]:
     return list(db.scalars(select(VenueUnavailability).where(VenueUnavailability.venue_id == venue.id)))
 
 
-def closure_overlaps(booking: VenueBooking, closure: VenueUnavailability) -> bool:
-    """A closure is a raw period (no setup/turnaround), the same rule the
-    approval check and the venue search use: strict overlap with the event."""
-    return as_utc(closure.start_time) < as_utc(booking.end_time) and as_utc(closure.end_time) > as_utc(
-        booking.start_time
+def closure_overlap(booking: VenueBooking, closure: VenueUnavailability, venue: Venue) -> OccupiedWindow | None:
+    """The part of the booking's OCCUPIED window -- the event widened by the
+    venue's setup and turnaround (SCRUM-94 AC1) -- that falls inside the
+    closure, or None. The closure itself is a raw period with no buffers;
+    windows that only touch do not overlap."""
+    setup, turnaround = effective_buffers(venue)
+    return overlap_of(
+        occupied_window(booking.start_time, booking.end_time, setup, turnaround),
+        occupied_window(closure.start_time, closure.end_time, 0, 0),
+    )
+
+
+def closure_overlaps(booking: VenueBooking, closure: VenueUnavailability, venue: Venue) -> bool:
+    return closure_overlap(booking, closure, venue) is not None
+
+
+def unavailable_notice(
+    venue: Venue, closure: VenueUnavailability, booking: VenueBooking, what: str = "booking"
+) -> str:
+    """What the Coordinator is told when the venue becomes unavailable during
+    their booking (SCRUM-94 AC3): the Event, the Venue, the affected period,
+    the reason, and that alternative arrangements are required."""
+    affected = closure_overlap(booking, closure, venue)
+    assert affected is not None
+    reason = closure.reason_category + (f": {closure.reason}" if closure.reason else "")
+    return (
+        f"{venue.name} is unavailable from {as_utc(closure.start_time):%d %b %Y %H:%M} to "
+        f"{as_utc(closure.end_time):%d %b %Y %H:%M} ({reason}), which affects your {what} for "
+        f"'{booking.event.name or 'Untitled event'}' from {affected.start:%d %b %Y %H:%M} to "
+        f"{affected.end:%d %b %Y %H:%M} UTC. Venue Unavailable - Action Required: alternative "
+        "arrangements are required. The Event has not been cancelled."
     )
 
 
@@ -79,7 +105,7 @@ def _clash_kind(
         for other in blockers
     ):
         return "booking"
-    if any(closure_overlaps(booking, c) for c in closures):
+    if any(closure_overlaps(booking, c, venue) for c in closures):
         return "unavailability"
     return None
 
@@ -195,14 +221,8 @@ def recheck_venue(
                     f"Venue booking '{venue.name}' flagged: the venue was marked temporarily "
                     "unavailable during this booking. The Event is not cancelled."
                 )
-                closure = next(c for c in closures if closure_overlaps(booking, c))
-                tell = (
-                    f"{venue.name} is unavailable from {as_utc(closure.start_time):%d %b %Y %H:%M} to "
-                    f"{as_utc(closure.end_time):%d %b %Y %H:%M} ({closure.reason_category}"
-                    f"{': ' + closure.reason if closure.reason else ''}), which affects your booking for "
-                    f"'{event.name or 'Untitled event'}'. Venue Unavailable - Action Required: alternative "
-                    "arrangements are required. The Event has not been cancelled."
-                )
+                closure = next(c for c in closures if closure_overlaps(booking, c, venue))
+                tell = unavailable_notice(venue, closure, booking)
             else:
                 log_text = (
                     f"Venue booking '{venue.name}' flagged: it now conflicts with another booking "
