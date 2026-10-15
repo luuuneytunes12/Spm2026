@@ -2171,3 +2171,13 @@ label.required::after {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+
+/* A form opened on one venue booking: tinted and set apart so it reads as the
+   one thing being changed rather than blending into the list around it. */
+.booking-panel {
+  margin-top: 10px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
