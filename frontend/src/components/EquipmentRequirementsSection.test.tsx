@@ -60,6 +60,8 @@ const AUDIO: EquipmentRequirement = {
   technical_notes: 'Handheld wireless, for panel Q&A',
   status: 'requested',
   reserved_quantity: 0,
+  released_quantity: 0,
+  unavailable_reason: null,
   reservations: [],
   created_at: '2026-10-01T00:00:00Z',
   updated_at: '2026-10-01T00:00:00Z',
@@ -811,9 +813,11 @@ describe('once Technical Support has reserved equipment', () => {
 
   const PART_RESERVED: EquipmentRequirement = {
     ...AUDIO,
-    status: 'reviewing',
+    status: 'requested',
     reserved_quantity: 3,
-    reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
+    reservations: [
+      { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: null },
+    ],
   }
 
   it('shows how far it has got, keeping what is needed distinct', async () => {
@@ -821,7 +825,7 @@ describe('once Technical Support has reserved equipment', () => {
     renderSection()
 
     const row = (await recorded()).getByText('Audio').closest('li')!
-    expect(within(row).getByText('In progress — 3 of 6 reserved')).toBeInTheDocument()
+    expect(within(row).getByText('Requested — 3 of 6 reserved')).toBeInTheDocument()
     expect(within(row).getByText(/× 6/)).toBeInTheDocument()
     expect(row).toHaveTextContent('3 × Shure BLX24')
   })
@@ -832,7 +836,9 @@ describe('once Technical Support has reserved equipment', () => {
         ...PART_RESERVED,
         status: 'reserved',
         reserved_quantity: 6,
-        reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 6 }],
+        reservations: [
+          { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 6, placement_notes: null },
+        ],
       },
     ])
     renderSection()
@@ -841,12 +847,55 @@ describe('once Technical Support has reserved equipment', () => {
     expect(within(row).getByText('Reserved — 6 of 6')).toBeInTheDocument()
   })
 
-  it('shows Unavailable when Technical Support could not provide it', async () => {
-    mockList.mockResolvedValue([{ ...AUDIO, status: 'rejected' }])
+  it('shows Unavailable, with the reason, when Technical Support could not provide it', async () => {
+    mockList.mockResolvedValue([
+      { ...AUDIO, status: 'unavailable', unavailable_reason: 'Mics are being repaired' },
+    ])
     renderSection()
 
     const row = (await recorded()).getByText('Audio').closest('li')!
     expect(within(row).getByText('Unavailable')).toBeInTheDocument()
+    expect(row).toHaveTextContent('Reason: Mics are being repaired')
+  })
+
+  it('shows where Technical Support will place what they reserved', async () => {
+    mockList.mockResolvedValue([
+      {
+        ...PART_RESERVED,
+        reservations: [
+          { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: 'Stage left' },
+        ],
+      },
+    ])
+    renderSection()
+
+    const row = (await recorded()).getByText('Audio').closest('li')!
+    expect(row).toHaveTextContent('3 × Shure BLX24 (placed: Stage left)')
+  })
+
+  it('shows Available once the reservation has been freed', async () => {
+    mockList.mockResolvedValue([
+      {
+        ...PART_RESERVED,
+        status: 'available',
+        reserved_quantity: 0,
+        released_quantity: 3,
+      },
+    ])
+    renderSection()
+
+    const row = (await recorded()).getByText('Audio').closest('li')!
+    expect(within(row).getByText('Available — 3 freed')).toBeInTheDocument()
+  })
+
+  it('lets a requirement whose reservation was freed be removed again', async () => {
+    mockList.mockResolvedValue([
+      { ...PART_RESERVED, status: 'available', reserved_quantity: 0, released_quantity: 3 },
+    ])
+    renderSection()
+    await recorded()
+
+    expect(screen.getByRole('button', { name: 'Remove Audio requirement' })).toBeInTheDocument()
   })
 
   it('takes away Remove from a requirement that has equipment reserved', async () => {
@@ -938,7 +987,7 @@ describe('once Technical Support has reserved equipment', () => {
 
     const row = (await recorded()).getByText('Audio').closest('li')!
     await waitFor(() =>
-      expect(within(row).getByText('In progress — 3 of 8 reserved')).toBeInTheDocument(),
+      expect(within(row).getByText('Requested — 3 of 8 reserved')).toBeInTheDocument(),
     )
   })
 

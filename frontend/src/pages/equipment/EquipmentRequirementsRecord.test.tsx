@@ -47,9 +47,11 @@ vi.mock('../../components/RequirementManagePanel', () => ({
         onClick={() =>
           onChanged({
             ...requirement,
-            status: 'reviewing',
+            status: 'requested',
             reserved_quantity: 3,
-            reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
+            reservations: [
+              { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: null },
+            ],
           })
         }
       >
@@ -62,14 +64,28 @@ vi.mock('../../components/RequirementManagePanel', () => ({
             status: 'reserved',
             reserved_quantity: requirement.quantity_needed,
             reservations: [
-              { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: requirement.quantity_needed },
+              {
+                equipment_id: 11,
+                equipment_name: 'Shure BLX24',
+                quantity: requirement.quantity_needed,
+                placement_notes: null,
+              },
             ],
           })
         }
       >
         stub fully reserved
       </button>
-      <button onClick={() => onChanged({ ...requirement, status: 'rejected', quantity_needed: 9 })}>
+      <button
+        onClick={() =>
+          onChanged({
+            ...requirement,
+            status: 'unavailable',
+            unavailable_reason: 'Damaged',
+            quantity_needed: 9,
+          })
+        }
+      >
         stub saved
       </button>
       <button onClick={onClose}>stub close</button>
@@ -100,6 +116,8 @@ const RECORD: SupportEventRecord = {
       technical_notes: 'Handheld wireless, for panel Q&A',
       status: 'requested',
       reserved_quantity: 0,
+      released_quantity: 0,
+      unavailable_reason: null,
       reservations: [],
     },
     {
@@ -109,6 +127,8 @@ const RECORD: SupportEventRecord = {
       technical_notes: null,
       status: 'requested',
       reserved_quantity: 0,
+      released_quantity: 0,
+      unavailable_reason: null,
       reservations: [],
     },
   ],
@@ -208,27 +228,45 @@ describe('ER AC2 - the event record', () => {
       requirements: [
         {
           ...RECORD.requirements[0],
-          status: 'reviewing',
+          status: 'requested',
           reserved_quantity: 3,
-          reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
+          reservations: [
+            { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: 'Stage left' },
+          ],
         },
       ],
     })
     renderPage()
 
     const row = (await screen.findByText('Audio')).closest('li')!
-    expect(within(row).getByText('In progress — 3 of 6 reserved')).toBeInTheDocument()
+    expect(within(row).getByText('Requested — 3 of 6 reserved')).toBeInTheDocument()
+    expect(row).toHaveTextContent('3 × Shure BLX24 (placed: Stage left)')
     expect(row).toHaveTextContent('3 × Shure BLX24')
   })
 
-  it('shows an Unavailable requirement as Unavailable', async () => {
+  it('shows an Unavailable requirement as Unavailable, with the reason', async () => {
     mockGet.mockResolvedValue({
       ...RECORD,
-      requirements: [{ ...RECORD.requirements[0], status: 'rejected' }],
+      requirements: [
+        { ...RECORD.requirements[0], status: 'unavailable', unavailable_reason: 'Mics are being repaired' },
+      ],
     })
     renderPage()
 
     expect(await screen.findByText('Unavailable')).toBeInTheDocument()
+    expect(screen.getByText(/Reason: Mics are being repaired/)).toBeInTheDocument()
+  })
+
+  it('shows Available once the reservation has been freed', async () => {
+    mockGet.mockResolvedValue({
+      ...RECORD,
+      requirements: [
+        { ...RECORD.requirements[0], status: 'available', released_quantity: 6, quantity_needed: 6 },
+      ],
+    })
+    renderPage()
+
+    expect(await screen.findByText('Available — 6 freed')).toBeInTheDocument()
   })
 })
 
@@ -286,14 +324,14 @@ describe('managing a requirement from the record', () => {
     expect(within(rowOf('Audio')).queryByRole('region', { name: 'Manage panel' })).not.toBeInTheDocument()
   })
 
-  it('shows In progress as soon as part of it is reserved', async () => {
+  it('shows Requested, with how far it has got, as soon as part of it is reserved', async () => {
     const user = userEvent.setup()
     await openRecord()
     await user.click(screen.getByRole('button', { name: 'Manage Audio requirement' }))
 
     await user.click(screen.getByRole('button', { name: 'stub part reserved' }))
 
-    expect(within(rowOf('Audio')).getByText('In progress — 3 of 6 reserved')).toBeInTheDocument()
+    expect(within(rowOf('Audio')).getByText('Requested — 3 of 6 reserved')).toBeInTheDocument()
   })
 
   it('shows Reserved as soon as all of it is', async () => {
@@ -372,7 +410,9 @@ describe('managing a requirement from the record', () => {
           ...RECORD.requirements[0],
           status: 'reserved',
           reserved_quantity: 6,
-          reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 6 }],
+          reservations: [
+            { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 6, placement_notes: null },
+          ],
         },
       ],
     })
