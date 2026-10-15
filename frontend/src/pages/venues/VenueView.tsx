@@ -175,16 +175,17 @@ function SetupTurnaroundForm({ venue, onSaved }: { venue: VenueDetail; onSaved: 
           {formError}
         </p>
       )}
-      {saved && (
+      {saved && recheck && recheck.flagged > 0 && (
+        <p className="form-error" role="alert">
+          {`${recheck.flagged} booking${recheck.flagged === 1 ? '' : 's'} now conflict and ${recheck.flagged === 1 ? 'was' : 'were'} flagged.`}{' '}
+          {describeRecheck(recheck)}{' '}
+          <Link to="/venue-staff/bookings?view=flagged">View flagged bookings</Link>
+        </p>
+      )}
+      {saved && !(recheck && recheck.flagged > 0) && (
         <p className="notice" role="status">
           Setup and turnaround times saved.
           {recheck && ` ${describeRecheck(recheck)}`}
-          {recheck && recheck.flagged > 0 && (
-            <>
-              {' '}
-              <Link to="/venue-staff/flagged">View flagged bookings</Link>
-            </>
-          )}
         </p>
       )}
     </form>
@@ -474,7 +475,7 @@ function UnavailabilitySection({ venueId, canEdit }: { venueId: number; canEdit:
       {notice && (
         <p className="notice" role="status">
           {notice}{' '}
-          {notice.includes('future booking') && <Link to="/venue-staff/flagged">View flagged bookings</Link>}
+          {notice.includes('future booking') && <Link to="/venue-staff/bookings?view=flagged">View flagged bookings</Link>}
         </p>
       )}
     </section>

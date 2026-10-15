@@ -16,6 +16,13 @@ beforeEach(() => mockFetch.mockReset())
 const at = (h: number, m = 0) => new Date(2026, 10, 2, h, m).toISOString()
 
 describe('formatBookingPeriods', () => {
+  it('adds short dates when the event spans days', () => {
+    const d = (day: number, h: number, m = 0) => new Date(2026, 11, day, h, m).toISOString()
+    expect(
+      formatBookingPeriods({ start_time: d(12, 12, 12), end_time: d(13, 12, 12), setup_minutes: 20, turnaround_minutes: 40 }),
+    ).toBe('Event Dec 12 12:12 – Dec 13 12:12 | Setup 11:52-12:12 | Turnaround 12:12-12:52')
+  })
+
   it('AC6: Event 10:00-12:00 with 30 setup and 45 turnaround reads as the whole occupied window', () => {
     expect(
       formatBookingPeriods({
@@ -104,5 +111,19 @@ describe('SCRUM-92 API helpers', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: 'Agreed with both organisers' }),
     })
+  })
+})
+
+describe('bookingPeriodParts', () => {
+  it('returns labelled parts matching formatBookingPeriods, falling back to the minutes', async () => {
+    const { bookingPeriodParts, formatBookingPeriods } = await import('./venueBookings')
+    const b = { start_time: '2026-11-02T10:00:00', end_time: '2026-11-02T12:00:00', setup_minutes: 30, turnaround_minutes: 45 }
+    const parts = bookingPeriodParts(b)
+    expect(parts).toEqual([
+      { label: 'Event', text: '10:00-12:00' },
+      { label: 'Setup', text: '09:30-10:00' },
+      { label: 'Turnaround', text: '12:00-12:45' },
+    ])
+    expect(formatBookingPeriods(b)).toBe('Event 10:00-12:00 | Setup 09:30-10:00 | Turnaround 12:00-12:45')
   })
 })

@@ -90,6 +90,8 @@ export interface BookingConflict {
   overlap_start: string
   overlap_end: string
   reason?: string | null
+  /** Of the booking this clashes with: approved or tentative_hold. */
+  status?: 'approved' | 'tentative_hold' | null
 }
 
 /** One venue being asked for, and what is needed of it. A need left out (or
@@ -120,6 +122,11 @@ export function listEventVenueBookings(eventId: number): Promise<VenueBooking[]>
 /** Pending requests for Venue Staff to review, oldest first. */
 export function listVenueBookingQueue(): Promise<VenueBooking[]> {
   return apiFetch('/venue-bookings/queue') as Promise<VenueBooking[]>
+}
+
+/** Venue Staff: upcoming approved bookings (read-only view). */
+export function listApprovedBookings(): Promise<VenueBooking[]> {
+  return apiFetch('/venue-bookings/approved') as Promise<VenueBooking[]>
 }
 
 /** Approve a pending request. Refused (409) if it was already decided, or
@@ -183,12 +190,13 @@ type Timing = Pick<
 const hhmm = (d: Date) =>
   `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-/** The three periods a booking holds a venue for, as a single line, e.g.
- *  `Event 10:00-12:00 | Setup 09:30-10:00 | Turnaround 12:00-12:45`.
- *  Times are local, 24-hour. Setup starts at `occupied_start` and turnaround
- *  ends at `occupied_end`; when the server omits them they are worked out
- *  from the minutes. */
-export function formatBookingPeriods(b: Timing): string {
+/** The three periods a booking holds a venue for, as labelled parts, e.g.
+ *  `[{Event, 10:00-12:00}, {Setup, 09:30-10:00}, {Turnaround, 12:00-12:45}]`.
+ *  When the event spans days, its ends carry short dates. Times are local,
+ *  24-hour. Setup starts at `occupied_start` and turnaround ends at
+ *  `occupied_end`; when the server omits them they are worked out from the
+ *  minutes. */
+export function bookingPeriodParts(b: Timing): { label: string; text: string }[] {
   const start = new Date(b.start_time)
   const end = new Date(b.end_time)
   const setupStart = b.occupied_start
@@ -197,11 +205,25 @@ export function formatBookingPeriods(b: Timing): string {
   const turnaroundEnd = b.occupied_end
     ? new Date(b.occupied_end)
     : new Date(end.getTime() + b.turnaround_minutes * 60_000)
-  return (
-    `Event ${hhmm(start)}-${hhmm(end)} | ` +
-    `Setup ${hhmm(setupStart)}-${hhmm(start)} | ` +
-    `Turnaround ${hhmm(end)}-${hhmm(turnaroundEnd)}`
-  )
+  const sameDay = (x: Date, y: Date) => x.toDateString() === y.toDateString()
+  const md = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  // Time, prefixed with a short date when it falls on a different day than `ref`.
+  const t = (d: Date, ref: Date) => (sameDay(d, ref) ? hhmm(d) : `${md(d)} ${hhmm(d)}`)
+  const eventText = !sameDay(start, end)
+    ? `${md(start)} ${hhmm(start)} – ${md(end)} ${hhmm(end)}`
+    : `${hhmm(start)}-${hhmm(end)}`
+  return [
+    { label: 'Event', text: eventText },
+    { label: 'Setup', text: `${t(setupStart, start)}-${hhmm(start)}` },
+    { label: 'Turnaround', text: `${hhmm(end)}-${t(turnaroundEnd, end)}` },
+  ]
+}
+
+/** The same parts as a single line: `Event 10:00-12:00 | Setup ... | ...`. */
+export function formatBookingPeriods(b: Timing): string {
+  return bookingPeriodParts(b)
+    .map((p) => `${p.label} ${p.text}`)
+    .join(' | ')
 }
 
 const shortDate = (d: Date) =>

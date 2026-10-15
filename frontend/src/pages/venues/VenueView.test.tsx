@@ -329,8 +329,10 @@ describe('SCRUM-92 AC1/AC3 - the re-check result after saving', () => {
 
   it('AC1: flagged bookings are reported with a link to the flagged list', async () => {
     await save({ flagged: 2, cleared: 1 })
-    expect(await screen.findByText(/2 existing bookings flagged for conflict; 1 flag cleared/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'View flagged bookings' })).toHaveAttribute('href', '/venue-staff/flagged')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/2 bookings now conflict and were flagged\./)
+    expect(screen.getByRole('alert')).toHaveTextContent(/2 existing bookings flagged for conflict; 1 flag cleared/)
+    expect(screen.getByRole('alert')).toHaveClass('form-error')
+    expect(screen.getByRole('link', { name: 'View flagged bookings' })).toHaveAttribute('href', '/venue-staff/bookings?view=flagged')
   })
 
   it('AC3: with no conflicts it says so and offers no link', async () => {
