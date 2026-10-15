@@ -3,20 +3,22 @@ import { Link, useSearchParams } from 'react-router'
 import { BookingCalendar, type CalendarBlock } from '../../components/BookingCalendar'
 import { VENUE_QUEUE_CHANGED } from '../../components/Sidebar'
 import { ApiError } from '../../lib/api'
-import { formatRange, formatTimestamp } from '../../lib/events'
+import { formatRange, formatTimestamp, fromDateTimeLocal, toDateTimeLocal } from '../../lib/events'
 import {
   BOOKING_STATUS_LABELS,
   describeConflict,
   bookingPeriodParts,
   approveVenueBooking,
+  holdFormErrors,
   holdVenueBooking,
+  HOLD_FIELD_ERRORS,
   listApprovedBookings,
   listFlaggedBookings,
   listVenueBookingQueue,
   rejectVenueBooking,
 } from '../../lib/venueBookings'
 import { CONFLICT_FLAG_LABEL } from '../../lib/venueBookings'
-import type { BookingConflict, VenueBooking } from '../../lib/venueBookings'
+import type { BookingConflict, HoldField, VenueBooking } from '../../lib/venueBookings'
 import { FlaggedResolution } from './FlaggedResolution'
 
 /** Venue Staff's review queue: every pending booking request, each carrying
@@ -110,7 +112,7 @@ export function VenueBookingQueue() {
           {decided.status === 'tentative_hold'
             ? `Tentative hold placed for ${decided.venue.name} until ${
                 decided.expires_at ? formatTimestamp(decided.expires_at) : 'its expiry'
-              }. The Coordinator has been notified.`
+              }. Required action: ${decided.hold_action ?? 'none given'}. The Coordinator has been notified.`
             : `${BOOKING_STATUS_LABELS[decided.status]}: ${decided.venue.name} for ${
                 decided.event.name ?? 'an untitled event'
               }. ${decided.requested_by.name} can now see the decision.`}
@@ -654,6 +656,12 @@ function BookingDetails({ booking: b }: { booking: VenueBooking }) {
           ['Facilities', b.facilities_needs ?? b.venue_requirements ?? 'None given'],
           ['Requested by', `${b.requested_by.name} (${b.requested_by.email})`],
           ['Requested on', formatTimestamp(b.created_at) ?? ''],
+          ...(b.status === 'tentative_hold'
+            ? [
+                ['Hold expires', formatTimestamp(b.expires_at) ?? 'Not set'],
+                ['Required action', b.hold_action ?? 'None given'],
+              ]
+            : []),
         ] as [string, React.ReactNode][]
       ).map(([label, value]) => (
         <div key={label} className="detail-row">
@@ -677,6 +685,50 @@ function BookingCard({
   const [alternative, setAlternative] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [holding, setHolding] = useState(false)
+  // Prefilled a day ahead; Venue Staff change it as needed.
+  const [holdExpiry, setHoldExpiry] = useState(() =>
+    toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
+  )
+  const [holdAction, setHoldAction] = useState('')
+  const [holdErrors, setHoldErrors] = useState<Partial<Record<HoldField, string>>>({})
+  const expiryInput = useRef<HTMLInputElement>(null)
+  const actionInput = useRef<HTMLTextAreaElement>(null)
+
+  /** Flag each bad field and put the focus on the first. */
+  function flagHold(errors: Partial<Record<HoldField, string>>) {
+    setHoldErrors(errors)
+    if (errors.expires_at) expiryInput.current?.focus()
+    else if (errors.required_action) actionInput.current?.focus()
+  }
+
+  async function placeHold() {
+    const errors = holdFormErrors(holdExpiry, holdAction)
+    if (Object.keys(errors).length > 0) {
+      flagHold(errors)
+      return
+    }
+    setHoldErrors({})
+    setSaving(true)
+    setError(null)
+    try {
+      onDecided(
+        await holdVenueBooking(b.id, {
+          expires_at: fromDateTimeLocal(holdExpiry) as string,
+          required_action: holdAction.trim(),
+        }),
+      )
+    } catch (err) {
+      setSaving(false)
+      // The server repeats both checks; a 422 names the field to flag.
+      const fields = err instanceof ApiError && err.status === 422 ? err.fields : []
+      const flagged: Partial<Record<HoldField, string>> = {}
+      if (fields.includes('expires_at')) flagged.expires_at = HOLD_FIELD_ERRORS.pastExpiry
+      if (fields.includes('required_action')) flagged.required_action = HOLD_FIELD_ERRORS.required_action
+      if (Object.keys(flagged).length > 0) flagHold(flagged)
+      else setError(err instanceof ApiError ? err.message : 'Could not place the hold.')
+    }
+  }
 
   async function decide(action: () => Promise<VenueBooking>) {
     setSaving(true)
@@ -750,6 +802,81 @@ function BookingCard({
             </button>
           </div>
         </form>
+      ) : holding ? (
+        <form
+          className="status-actions decision-form"
+          noValidate
+          aria-label="Place tentative hold"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void placeHold()
+          }}
+        >
+          <p className="page-subtitle">
+            The venue is held until the expiry. The Coordinator is told what to complete before then.
+          </p>
+          <div className={holdErrors.expires_at ? 'field field-invalid' : 'field'}>
+            <label htmlFor={`hold-expiry-${b.id}`} className="required">
+              Hold expires
+            </label>
+            <input
+              id={`hold-expiry-${b.id}`}
+              ref={expiryInput}
+              type="datetime-local"
+              value={holdExpiry}
+              onChange={(e) => setHoldExpiry(e.target.value)}
+              required
+              disabled={saving}
+              aria-invalid={!!holdErrors.expires_at}
+              aria-describedby={holdErrors.expires_at ? `hold-expiry-error-${b.id}` : undefined}
+              autoFocus
+            />
+            {holdErrors.expires_at && (
+              <p id={`hold-expiry-error-${b.id}`} className="field-error">
+                {holdErrors.expires_at}
+              </p>
+            )}
+          </div>
+          <div className={holdErrors.required_action ? 'field field-invalid' : 'field'}>
+            <label htmlFor={`hold-action-${b.id}`} className="required">
+              Required action
+            </label>
+            <textarea
+              id={`hold-action-${b.id}`}
+              ref={actionInput}
+              value={holdAction}
+              onChange={(e) => setHoldAction(e.target.value)}
+              maxLength={2000}
+              rows={3}
+              required
+              disabled={saving}
+              placeholder="e.g. Confirm final headcount and pay the deposit"
+              aria-invalid={!!holdErrors.required_action}
+              aria-describedby={holdErrors.required_action ? `hold-action-error-${b.id}` : undefined}
+            />
+            {holdErrors.required_action && (
+              <p id={`hold-action-error-${b.id}`} className="field-error">
+                {holdErrors.required_action}
+              </p>
+            )}
+          </div>
+          <div className="form-actions">
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Confirm hold'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setHolding(false)
+                setHoldErrors({})
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       ) : (
         <div className="status-actions">
           {blocker && (
@@ -771,10 +898,10 @@ function BookingCard({
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => void decide(() => holdVenueBooking(b.id))}
+              onClick={() => setHolding(true)}
               disabled={saving || b.status !== 'pending'}
             >
-              Place 24-hour hold
+              Place tentative hold
             </button>
             <button
               type="button"

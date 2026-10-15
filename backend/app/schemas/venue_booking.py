@@ -83,7 +83,21 @@ class ConflictKeep(BaseModel):
 
 
 class VenueHoldIn(BaseModel):
-    expires_at: datetime | None = None
+    """What Venue Staff enter to place a tentative hold: when it lapses and
+    what the Coordinator must complete before then. Both are required, so a
+    missing one is a 422 naming its field; a past expiry is refused by the
+    router the same way."""
+
+    expires_at: datetime
+    required_action: str = Field(max_length=2000)
+
+    @field_validator("required_action")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Give the action the Event Coordinator must complete.")
+        return value
 
 
 class BookingEventRef(BaseModel):
@@ -147,6 +161,8 @@ class VenueBookingOut(BaseModel):
     start_time: datetime
     end_time: datetime
     expires_at: datetime | None = None
+    # Tentative holds only: what the Coordinator must complete before expiry.
+    hold_action: str | None = None
     expected_attendance: int | None
     # What was asked of THIS venue; where the Coordinator gave nothing, the
     # Event's own needs.

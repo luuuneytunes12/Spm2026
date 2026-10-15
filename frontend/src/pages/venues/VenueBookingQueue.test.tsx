@@ -2,7 +2,7 @@
  *  "Approve or Reject Venue Booking Request" story: deciding from it.
  *  Whether the API accepts a decision is backend/tests/test_venue_booking_decision.py;
  *  these tests cover what the queue sends and does with the answer. */
-import { render as rtlRender, screen, within } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router'
 import userEvent from '@testing-library/user-event'
@@ -142,20 +142,6 @@ describe('AC2 - Venue Staff can approve or reject a request', () => {
       expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
       expect(card.getByRole('button', { name: 'Reject' })).toBeEnabled()
     }
-  })
-
-  it('can place a pending request on a temporary hold', async () => {
-    const held = { ...BOOKING, status: 'tentative_hold' as const, expires_at: '2026-10-03T03:00:00Z' }
-    mockQueue.mockResolvedValue([BOOKING])
-    mockHold.mockResolvedValue(held)
-    render(<VenueBookingQueue />)
-
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Place 24-hour hold' }),
-    )
-
-    expect(mockHold).toHaveBeenCalledWith(BOOKING.id)
-    expect(await screen.findByRole('status')).toHaveTextContent('Tentative hold')
   })
 
   it('approves the request, takes it out of the queue and confirms the decision', async () => {
@@ -526,5 +512,111 @@ describe('Approved and Flagged sidebar sections', () => {
     render(<VenueBookingQueue />)
     expect(await screen.findByText('approved boom')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Regional Partner Conference' })).toBeInTheDocument()
+  })
+})
+
+describe('Tentative hold with an expiry and a required action', () => {
+  const ACTION = 'Confirm final headcount and pay the deposit'
+  const HELD: VenueBooking = {
+    ...BOOKING,
+    status: 'tentative_hold',
+    expires_at: '2030-01-02T02:00:00Z',
+    hold_action: ACTION,
+  }
+
+  async function openHoldForm() {
+    mockQueue.mockResolvedValue([BOOKING])
+    render(<VenueBookingQueue />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Place tentative hold' }))
+    return {
+      expiry: screen.getByLabelText('Hold expires'),
+      action: screen.getByLabelText('Required action'),
+      confirm: screen.getByRole('button', { name: 'Confirm hold' }),
+    }
+  }
+
+  it('AC1: asks for an expiry (prefilled) and the required action, and sends both', async () => {
+    mockHold.mockResolvedValue(HELD)
+    const { expiry, action, confirm } = await openHoldForm()
+    expect((expiry as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+    expect(expiry).toBeRequired()
+    expect(action).toBeRequired()
+
+    fireEvent.change(expiry, { target: { value: '2030-01-02T10:00' } })
+    await userEvent.type(action, `  ${ACTION} `)
+    await userEvent.click(confirm)
+
+    expect(mockHold).toHaveBeenCalledWith(BOOKING.id, {
+      expires_at: new Date('2030-01-02T10:00').toISOString(),
+      required_action: ACTION,
+    })
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Tentative hold placed for Marina Hall')
+    expect(status).toHaveTextContent(`Required action: ${ACTION}`)
+  })
+
+  it('AC2: a missing expiry is not saved and the field is flagged and focused', async () => {
+    const { expiry, action, confirm } = await openHoldForm()
+    fireEvent.change(expiry, { target: { value: '' } })
+    await userEvent.type(action, ACTION)
+    await userEvent.click(confirm)
+
+    expect(mockHold).not.toHaveBeenCalled()
+    expect(expiry).toHaveAttribute('aria-invalid', 'true')
+    expect(expiry).toHaveAccessibleDescription('Enter the date and time the hold expires.')
+    expect(expiry).toHaveFocus()
+    expect(action).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('AC2: a past expiry is not saved and the field is flagged', async () => {
+    const { expiry, action, confirm } = await openHoldForm()
+    fireEvent.change(expiry, { target: { value: '2020-01-01T10:00' } })
+    await userEvent.type(action, ACTION)
+    await userEvent.click(confirm)
+
+    expect(mockHold).not.toHaveBeenCalled()
+    expect(expiry).toHaveAttribute('aria-invalid', 'true')
+    expect(expiry).toHaveAccessibleDescription('The expiry must be in the future.')
+  })
+
+  it('AC1 negative: a blank required action is not saved and that field is flagged', async () => {
+    const { expiry, action, confirm } = await openHoldForm()
+    await userEvent.type(action, '   ')
+    await userEvent.click(confirm)
+
+    expect(mockHold).not.toHaveBeenCalled()
+    expect(expiry).toHaveAttribute('aria-invalid', 'false')
+    expect(action).toHaveAttribute('aria-invalid', 'true')
+    expect(action).toHaveFocus()
+  })
+
+  it('AC2: a server 422 naming expires_at flags the expiry field', async () => {
+    mockHold.mockRejectedValue(
+      new ApiError(422, 'expires_at: A tentative hold expiry must be in the future.', ['expires_at']),
+    )
+    const { expiry, action, confirm } = await openHoldForm()
+    await userEvent.type(action, ACTION)
+    await userEvent.click(confirm)
+
+    expect(await screen.findByText('The expiry must be in the future.')).toBeInTheDocument()
+    expect(expiry).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('heading', { name: 'Regional Partner Conference' })).toBeInTheDocument()
+  })
+
+  it('Cancel closes the form without placing a hold', async () => {
+    await openHoldForm()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(mockHold).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Place tentative hold' })).toBeEnabled()
+  })
+
+  it('AC4: a held request in the queue shows its expiry and required action', async () => {
+    mockQueue.mockResolvedValue([HELD])
+    render(<VenueBookingQueue />)
+    const card = within(await screen.findByRole('region', { name: /Regional Partner Conference/ }))
+    expect(card.getByText('Hold expires')).toBeInTheDocument()
+    expect(card.getByText(ACTION)).toBeInTheDocument()
+    expect(card.getByRole('button', { name: 'Place tentative hold' })).toBeDisabled()
+    expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
   })
 })

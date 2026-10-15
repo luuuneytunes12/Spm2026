@@ -3,7 +3,7 @@
 // review; nothing here is a security boundary.
 
 import { apiFetch } from './api'
-import { EventStatus } from './events'
+import { EventStatus, fromDateTimeLocal } from './events'
 
 export const BookingStatus = {
   PENDING: 'pending',
@@ -46,6 +46,9 @@ export interface VenueBooking {
   occupied_start: string
   occupied_end: string
   expires_at: string | null
+  /** Tentative holds only: what the Coordinator must complete before
+   *  `expires_at`. Null for anything else. */
+  hold_action?: string | null
   expected_attendance: number | null
   /** What was asked of THIS venue; the Event's own needs where nothing was
    *  entered for it. */
@@ -258,11 +261,45 @@ export function describeConflict(c: BookingConflict): {
   }
 }
 
-/** Place a pending request on the server's default 24-hour tentative hold. */
-export function holdVenueBooking(id: number): Promise<VenueBooking> {
+/** What Venue Staff enter to place a tentative hold. Both are required. */
+export interface VenueHoldInput {
+  /** ISO 8601 with a zone; must be in the future. */
+  expires_at: string
+  /** What the Event Coordinator must complete before the hold expires. */
+  required_action: string
+}
+
+/** The two inputs of the hold form, named as the server names them so a
+ *  client-side check and a 422 flag the same fields. */
+export type HoldField = keyof VenueHoldInput
+
+export const HOLD_FIELD_ERRORS = {
+  missingExpiry: 'Enter the date and time the hold expires.',
+  pastExpiry: 'The expiry must be in the future.',
+  required_action: 'Enter the action the Event Coordinator must complete.',
+} as const
+
+/** What is wrong with the hold form, per field; empty when it can be sent.
+ *  `expiresLocal` is the `datetime-local` value, read in the viewer's zone. */
+export function holdFormErrors(
+  expiresLocal: string,
+  action: string,
+  now: Date = new Date(),
+): Partial<Record<HoldField, string>> {
+  const errors: Partial<Record<HoldField, string>> = {}
+  const iso = fromDateTimeLocal(expiresLocal)
+  if (!iso) errors.expires_at = HOLD_FIELD_ERRORS.missingExpiry
+  else if (new Date(iso) <= now) errors.expires_at = HOLD_FIELD_ERRORS.pastExpiry
+  if (!action.trim()) errors.required_action = HOLD_FIELD_ERRORS.required_action
+  return errors
+}
+
+/** Place a pending request on a tentative hold until `expires_at`. A 422
+ *  names `expires_at` or `required_action` in `ApiError.fields`. */
+export function holdVenueBooking(id: number, body: VenueHoldInput): Promise<VenueBooking> {
   return apiFetch(`/venue-bookings/${id}/hold`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   }) as Promise<VenueBooking>
 }

@@ -102,6 +102,10 @@ class VenueBooking(Base):
         default=BookingStatus.pending,
     )
     expires_at: Mapped[datetime | None]
+    # What the Coordinator must complete before a tentative hold expires
+    # (sql/026). Cleared when Venue Staff approve or reject; an expired hold
+    # keeps it as the record of what was asked.
+    hold_action: Mapped[str | None] = mapped_column(Text)
     decision_notes: Mapped[str | None] = mapped_column(Text)
     # What Venue Staff offer instead when rejecting -- another venue, another
     # time (see sql/014_venue_bookings_suggested_alternative.sql).

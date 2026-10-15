@@ -89,7 +89,9 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
   }, [eventId])
 
   const liveVenueIds = new Set(
-    (bookings ?? []).filter((b) => b.status === 'pending' || b.status === 'approved').map((b) => b.venue.id),
+    (bookings ?? [])
+      .filter((b) => b.status === 'pending' || b.status === 'tentative_hold' || b.status === 'approved')
+      .map((b) => b.venue.id),
   )
 
   async function reloadBookings() {
@@ -177,6 +179,13 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
               <p className="page-subtitle" aria-label={`Venue time for ${b.venue.name}`}>
                 {formatBookingPeriods(b)}
               </p>
+              {b.status === 'tentative_hold' && (
+                <p className="notice" role="note">
+                  <span className="badge">Tentative hold</span> Held until{' '}
+                  {formatTimestamp(b.expires_at) ?? 'its expiry'}. Required action:{' '}
+                  {b.hold_action ?? 'none given'}
+                </p>
+              )}
               {b.conflict_flagged && (
                 <p className="notice" role="note">
                   <span className="badge">Conflict flagged</span> {CONFLICT_FLAG_LABEL}. Venue Staff

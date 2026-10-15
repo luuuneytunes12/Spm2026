@@ -412,6 +412,7 @@ def venue_availability(
                     event_end=event_end,
                     event_name=name,
                     expires_at=booking.expires_at if held else None,
+                    hold_action=booking.hold_action if held and visible else None,
                 )
             )
             items.append(
@@ -425,6 +426,7 @@ def venue_availability(
                     event_id=booking.event_id if visible else None,
                     event_name=name,
                     expires_at=booking.expires_at if held else None,
+                    hold_action=booking.hold_action if held and visible else None,
                     conflicts_with_unavailability=any(
                         as_utc(c.start_time) < event_end and as_utc(c.end_time) > event_start
                         for c in closures

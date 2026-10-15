@@ -76,6 +76,8 @@ export interface VenueAvailabilityItem {
   reason_category?: string | null
   reason: string | null
   expires_at: string | null
+  /** Tentative holds, Venue Staff only: what the Coordinator must do. */
+  hold_action?: string | null
   conflicts_with_unavailability: boolean
 }
 
@@ -218,6 +220,8 @@ export interface BusyPeriod {
   reason?: string | null
   /** Tentative holds only: when the hold lapses. */
   expires_at?: string | null
+  /** Tentative holds, Venue Staff only: what the Coordinator must do. */
+  hold_action?: string | null
 }
 
 /** Coordinator and Venue Staff. The window is [start, end), ISO 8601. */
@@ -260,7 +264,8 @@ export function describeBusyPeriod(p: BusyPeriod): string {
   }
   if (p.kind === 'tentative_hold') {
     const until = p.expires_at ? ` (expires ${new Date(p.expires_at).toLocaleString()})` : ''
-    return `${p.event_name ? `Tentative hold for ${p.event_name}` : 'Tentative hold'}: ${when}${until}`
+    const action = p.hold_action ? `. Required action: ${p.hold_action}` : ''
+    return `${p.event_name ? `Tentative hold for ${p.event_name}` : 'Tentative hold'}: ${when}${until}${action}`
   }
   return p.event_name ? `Booked for ${p.event_name}: ${when}` : `Booked: ${when}`
 }

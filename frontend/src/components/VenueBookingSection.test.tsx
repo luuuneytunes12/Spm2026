@@ -13,6 +13,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../lib/api'
+import { formatTimestamp } from '../lib/events'
 import { VenueBookingSection } from './VenueBookingSection'
 
 vi.mock('../lib/venueBookings', async () => {
@@ -300,5 +301,37 @@ describe('SCRUM-92 AC5 - a flagged booking is marked for the Coordinator', () =>
     render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
     await screen.findByLabelText('Venue time for Marina Hall')
     expect(screen.queryByText(/Conflict flagged/)).not.toBeInTheDocument()
+  })
+})
+
+describe('Tentative hold - the Coordinator sees it on the Event', () => {
+  const HELD: VenueBooking = {
+    ...BOOKING,
+    status: 'tentative_hold',
+    expires_at: '2030-01-02T02:00:00Z',
+    hold_action: 'Confirm final headcount',
+  }
+
+  it('AC4: shows Tentative hold with its expiry and the required action', async () => {
+    mockList.mockResolvedValue([HELD])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
+    const note = within(item).getByRole('note')
+    expect(note).toHaveTextContent('Tentative hold')
+    expect(note).toHaveTextContent(formatTimestamp(HELD.expires_at) as string)
+    expect(note).toHaveTextContent('Required action: Confirm final headcount')
+  })
+
+  it('a held venue counts as already requested', async () => {
+    mockList.mockResolvedValue([HELD])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    expect(await screen.findByRole('checkbox', { name: /Marina Hall.*already requested/ })).toBeDisabled()
+  })
+
+  it('frozen literal: a pending booking carries no hold note', async () => {
+    mockList.mockResolvedValue([BOOKING])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
+    expect(within(item).queryByRole('note')).not.toBeInTheDocument()
   })
 })
