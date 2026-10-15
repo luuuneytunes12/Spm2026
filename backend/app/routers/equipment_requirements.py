@@ -116,11 +116,14 @@ def update_requirement(
     body: SupportRequirementUpdate,
     db: Session = Depends(get_db),
     service: EquipmentRequirementFulfillmentService = Depends(get_fulfillment_service),
-    _: User = Depends(_tech_support),
+    user: User = Depends(_tech_support),
 ) -> SupportRequirementOut:
     """Update the status and quantity Technical Support owns. The Coordinator
-    reads the result on the event record."""
-    requirement, progress = service.update(requirement_id, **body.model_dump(exclude_unset=True))
+    reads the result on the event record, and a change of status goes in the
+    Activity Log."""
+    requirement, progress = service.update(
+        requirement_id, actor=user, **body.model_dump(exclude_unset=True)
+    )
     db.commit()
     return SupportRequirementOut.of(requirement, progress)
 
@@ -136,7 +139,9 @@ def reserve_for_requirement(
     """Reserve an item for a requirement, through the Equipment Reservations
     capability. The stock and overlap rules are that capability's, not
     repeated here; this only says which requirement the reservation is for."""
-    requirement, progress = service.reserve(requirement_id, body.equipment_id, body.quantity, user)
+    requirement, progress = service.reserve(
+        requirement_id, body.equipment_id, body.quantity, user, body.placement_notes
+    )
     db.commit()
     return SupportRequirementOut.of(requirement, progress)
 

@@ -10,8 +10,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.requirement_progress import RequirementProgress
-from app.models.enums import EquipmentStatus, EventStatus
+from app.domain.requirement_progress import RequirementProgress, RequirementStatus
+from app.models.enums import EventStatus
 from app.schemas.event import OrganiserContact
 
 
@@ -51,14 +51,29 @@ class ReservedItemOut(BaseModel):
     equipment_id: int
     equipment_name: str
     quantity: int
+    # Where it will be set up at the venue; None until Technical Support say.
+    placement_notes: str | None = None
 
 
 def _progress_fields(progress: RequirementProgress) -> dict:
-    """What a requirement's progress adds to either audience's response.
-    `status` is the effective one: Reserved is worked out, never stored."""
+    """The part of a requirement's response that comes from its progress.
+
+    `status` is the effective one, in the Definition of Done's words:
+    Reserved and Available are worked out, never stored, and what is stored
+    for Unavailable (`rejected`) is not a status anyone sees -- which is why
+    these responses are built from fields rather than from the row, whose
+    stored status is not a RequirementStatus.
+
+    `reserved_quantity` is what is held now; `released_quantity` what was
+    held and has been freed (the event is over).
+    """
     return {
         "status": progress.status,
         "reserved_quantity": progress.reserved,
+        "released_quantity": progress.was_reserved if progress.released else 0,
+        "unavailable_reason": (
+            progress.unavailable_reason if progress.status is RequirementStatus.UNAVAILABLE else None
+        ),
         "reservations": [ReservedItemOut.model_validate(item) for item in progress.reservations],
     }
 
@@ -74,15 +89,27 @@ class EquipmentRequirementOut(BaseModel):
     category: str
     quantity_needed: int
     technical_notes: str | None
-    status: EquipmentStatus
+    status: RequirementStatus
     reserved_quantity: int = 0
+    released_quantity: int = 0
+    unavailable_reason: str | None = None
     reservations: list[ReservedItemOut] = []
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def of(cls, requirement, progress: RequirementProgress) -> "EquipmentRequirementOut":
-        return cls.model_validate(requirement).model_copy(update=_progress_fields(progress))
+        return cls(
+            id=requirement.id,
+            event_id=requirement.event_id,
+            organiser_equipment_request_id=requirement.organiser_equipment_request_id,
+            category=requirement.category,
+            quantity_needed=requirement.quantity_needed,
+            technical_notes=requirement.technical_notes,
+            created_at=requirement.created_at,
+            updated_at=requirement.updated_at,
+            **_progress_fields(progress),
+        )
 
 
 class SupportRequirementOut(BaseModel):
@@ -99,25 +126,36 @@ class SupportRequirementOut(BaseModel):
     category: str
     quantity_needed: int
     technical_notes: str | None
-    status: EquipmentStatus
+    status: RequirementStatus
     reserved_quantity: int = 0
+    released_quantity: int = 0
+    unavailable_reason: str | None = None
     reservations: list[ReservedItemOut] = []
 
     @classmethod
     def of(cls, requirement, progress: RequirementProgress) -> "SupportRequirementOut":
-        return cls.model_validate(requirement).model_copy(update=_progress_fields(progress))
+        return cls(
+            id=requirement.id,
+            category=requirement.category,
+            quantity_needed=requirement.quantity_needed,
+            technical_notes=requirement.technical_notes,
+            **_progress_fields(progress),
+        )
 
 
 class SupportRequirementUpdate(BaseModel):
     """What Technical Support may change on a requirement.
 
-    Only these two. The type and the notes are the Coordinator's, and a field
-    sent for them is ignored. `status` is checked by the domain: reserved
-    cannot be chosen, because it has to be backed by a real reservation.
+    Only these. The type and the notes are the Coordinator's, and a field
+    sent for them is ignored. `status` is one of the Definition of Done's four
+    and is checked by the domain: Reserved has to be backed by a real
+    reservation and Available is the event ending, so neither can be chosen.
+    `reason` is required with Unavailable and dropped with Requested.
     """
 
-    status: EquipmentStatus | None = None
+    status: RequirementStatus | None = None
     quantity_needed: int | None = Field(default=None, gt=0)
+    reason: str | None = None
 
 
 class ReservationRequest(BaseModel):
@@ -126,10 +164,15 @@ class ReservationRequest(BaseModel):
     `quantity` may be left out: it defaults to what the requirement still
     needs, or -- for an item the Organiser asked for -- to their quantity,
     which the existing reservation takes whole.
+
+    `placement_notes` says where the item will be set up at the venue. It is
+    optional, and is recorded on the reservation (which the Safety Officer
+    reads); the 2000 limit is the Equipment Reservations page's own.
     """
 
     equipment_id: int
     quantity: int | None = Field(default=None, ge=1)
+    placement_notes: str | None = Field(default=None, max_length=2000)
 
 
 class SupportEventSummary(BaseModel):

@@ -25,7 +25,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, InvalidInput, NotFound
-from app.domain.requirement_progress import RequirementReservationLinks, checked_quantity
+from app.domain.activity_log import ActivityLog, EventHistoryLog
+from app.domain.requirement_progress import (
+    RequirementReservationLinks,
+    RequirementStatusLog,
+    checked_quantity,
+)
 from app.models.enums import EventStatus
 from app.models.equipment import CoordinatorEquipmentRequirement, Equipment, EquipmentRequest
 from app.models.events import Event, EventStatusHistory
@@ -106,9 +111,15 @@ class EquipmentRequirementService:
         db: Session,
         categories: CategoryResolver | None = None,
         links: RequirementReservationLinks | None = None,
+        activity: ActivityLog | None = None,
     ) -> None:
         self._db = db
         self._categories = categories if categories is not None else CatalogueCategories(db)
+        # A raised quantity can take a Reserved requirement back to Requested;
+        # that is a status change, so it is recorded like any other (DoD 11).
+        self._status_log = RequirementStatusLog(
+            activity if activity is not None else EventHistoryLog(db)
+        )
         # How much of a requirement is reserved, for the rules that protect it
         # once Technical Support has reserved equipment against it.
         self._links = links if links is not None else RequirementReservationLinks(db)
@@ -175,6 +186,11 @@ class EquipmentRequirementService:
             requirement.technical_notes = self._checked_notes(changes["technical_notes"])
 
         self._db.flush()
+        after = self._links.progress_for(requirement)
+        coordinator = event.coordinator
+        self._status_log.record(
+            event, coordinator, requirement, progress.status, after.status, by=coordinator.name
+        )
         return requirement
 
     def remove(self, requirement_id: int, coordinator_id: int) -> None:

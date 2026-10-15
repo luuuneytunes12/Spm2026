@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.domain.requirement_progress import RequirementReservationLinks
+from app.domain.requirement_progress import RequirementReservationLinks, RequirementStatus
 from app.models.equipment import CoordinatorEquipmentRequirement
 from app.models.enums import (
     BookingStatus,
@@ -97,7 +97,7 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
     progress = RequirementReservationLinks(db).progress_of(requirements)
     for requirement in requirements:
         requirement_status = progress[requirement.id].status
-        if requirement_status is not EquipmentStatus.reserved:
+        if requirement_status is not RequirementStatus.RESERVED:
             outstanding.append(
                 f"Equipment requirement '{requirement.category}' is not reserved "
                 f"(status: {requirement_status})"

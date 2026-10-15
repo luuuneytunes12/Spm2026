@@ -94,7 +94,7 @@ def _world(client, db_session, needed=5, status=EventStatus.event_approved, **ev
     a catalogue with two Audio items and a projector, and Technical Support."""
     organiser, organiser_headers = _user(client, db_session, Role.ORGANISER, name="Organiser")
     coordinator, headers = _user(client, db_session, Role.COORDINATOR, name="Coordinator")
-    _, tech = _user(client, db_session, Role.TECH_SUPPORT, name="Tech Support")
+    tech_user, tech = _user(client, db_session, Role.TECH_SUPPORT, name="Tech Support")
     mic = _equipment(db_session, "Shure BLX24", category="Audio")
     pa = _equipment(db_session, "Yamaha PA", category="Audio")
     projector = _equipment(db_session, "Epson EB-L200SW", category="Projection")
@@ -107,6 +107,7 @@ def _world(client, db_session, needed=5, status=EventStatus.event_approved, **ev
     requirement = _added(client, headers, event.id, category="Audio", quantity_needed=needed)
     return SimpleNamespace(
         organiser=organiser, organiser_headers=organiser_headers, coordinator=coordinator, headers=headers, tech=tech,
+        tech_user=tech_user,
         mic=mic, pa=pa, projector=projector, event=event, requirement=requirement,
         rid=requirement["id"],
     )
@@ -457,7 +458,7 @@ def test_ur_ac1_unavailable_needs_a_reason(client, db_session, reason):
     assert res.status_code == 422
     assert _flagged(res) == {"reason"}
     assert _as_support(client, w)["status"] == "requested"
-    assert not db_session.query(EventStatusHistory).count()
+    assert _history(db_session, w) == []
 
 
 def test_ur_ac1_the_reason_is_shown_to_the_coordinator(client, db_session):
@@ -1054,12 +1055,17 @@ def test_ur_a_freed_requirement_can_be_removed_and_retyped_by_the_coordinator(cl
 
 
 def _history(db_session, w):
+    """The Activity Log entries: history rows that changed no status. The
+    event's own move to Planning Event, made by adding the first requirement,
+    is a status change and is not one of them."""
     db_session.expire_all()
-    return list(
-        db_session.query(EventStatusHistory)
+    return [
+        entry
+        for entry in db_session.query(EventStatusHistory)
         .filter_by(event_id=w.event.id)
         .order_by(EventStatusHistory.id)
-    )
+        if entry.from_status == entry.to_status
+    ]
 
 
 def test_ur_marking_unavailable_is_logged_with_who_what_and_why(client, db_session):
@@ -1068,7 +1074,7 @@ def test_ur_marking_unavailable_is_logged_with_who_what_and_why(client, db_sessi
     _update(client, w.tech, w.rid, status="unavailable", reason="Under maintenance")
 
     [entry] = _history(db_session, w)
-    assert entry.changed_by == w.tech.id
+    assert entry.changed_by == w.tech_user.id
     assert entry.created_at is not None
     assert "Audio" in entry.note and "Requested" in entry.note and "Unavailable" in entry.note
     assert "Under maintenance" in entry.note
@@ -1080,7 +1086,9 @@ def test_ur_the_log_line_leaves_the_events_status_as_it_was(client, db_session):
     _update(client, w.tech, w.rid, status="unavailable", reason="Damaged")
 
     [entry] = _history(db_session, w)
-    assert entry.from_status == entry.to_status == EventStatus.event_approved
+    # Adding the first requirement moved the event to Planning Event; the log
+    # line leaves it there.
+    assert entry.from_status == entry.to_status == EventStatus.planning_event
 
 
 def test_ur_going_back_to_requested_is_logged(client, db_session):
@@ -1100,7 +1108,7 @@ def test_ur_fully_reserving_is_logged_as_reserved(client, db_session):
     _reserved(client, w.tech, w.rid, w.mic.id)
 
     [entry] = _history(db_session, w)
-    assert entry.changed_by == w.tech.id
+    assert entry.changed_by == w.tech_user.id
     assert "Requested" in entry.note and "Reserved" in entry.note
 
 
