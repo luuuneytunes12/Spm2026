@@ -127,7 +127,7 @@ def test_calendar_shows_active_holds_for_each_venue_and_excludes_expired_holds(
     assert first_item["event_id"] is None and first_item["event_name"] is None
     assert first_item["expires_at"] is not None
     assert second_calendar.json()["items"] == []
-    assert db_session.get(VenueBooking, expired_hold.id).status == BookingStatus.cancelled
+    assert db_session.get(VenueBooking, expired_hold.id).status == BookingStatus.hold_expired
     expiry_notification = (
         db_session.query(Notification)
         .filter_by(

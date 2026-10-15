@@ -1,7 +1,13 @@
+import asyncio
+import contextlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.db import SessionLocal
 from app.core.error_handlers import register_error_handlers
 from app.routers import (
     auth,
@@ -21,8 +27,24 @@ from app.routers import (
 )
 
 import app.models  # noqa: F401  (registers models on Base.metadata)
+from app.services.hold_sweeper import HoldSweeper
 
-app = FastAPI(title="Spm2026 API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Run the tentative-hold sweeper (reminders and expiry) while the app is up."""
+    task = None
+    if settings.hold_sweep_interval_seconds > 0:
+        sweeper = HoldSweeper(SessionLocal, settings.hold_sweep_interval_seconds)
+        task = asyncio.create_task(sweeper.run_forever())
+    yield
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(title="Spm2026 API", lifespan=lifespan)
 
 register_error_handlers(app)
 

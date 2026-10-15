@@ -336,3 +336,36 @@ describe('Tentative hold - the Coordinator sees it on the Event', () => {
     expect(within(item).queryByRole('note')).not.toBeInTheDocument()
   })
 })
+
+describe('Tentative hold expiry - the Event shows it as expired, never as confirmed', () => {
+  const EXPIRED: VenueBooking = {
+    ...BOOKING,
+    status: 'hold_expired',
+    expires_at: '2030-01-02T02:00:00Z',
+    hold_action: 'Confirm final headcount',
+    decision_notes: 'Tentative hold expired.',
+    reviewed_by: { name: 'Vera Staff', email: 'vera@connectsphere.test' },
+    reviewed_at: '2026-10-02T03:00:00Z',
+  }
+
+  it('AC4: shows Hold expired with when it lapsed, and never Approved', async () => {
+    mockList.mockResolvedValue([EXPIRED])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
+    expect(within(item).getByText('Hold expired')).toBeInTheDocument()
+    expect(item).not.toHaveTextContent('Approved')
+    const note = within(item).getByRole('note')
+    expect(note).toHaveTextContent(`The hold lapsed on ${formatTimestamp(EXPIRED.expires_at)}`)
+    expect(note).toHaveTextContent('Request it again or choose another venue.')
+  })
+
+  it('AC4: an expired hold is history: no Change or Cancel, and the venue can be requested again', async () => {
+    mockList.mockResolvedValue([EXPIRED])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const marina = await screen.findByRole('checkbox', { name: /Marina Hall/ })
+    expect(marina).toBeEnabled()
+    expect(marina).not.toHaveAccessibleName(/already requested/)
+    expect(screen.queryByRole('button', { name: /Change Marina Hall/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cancel Marina Hall/ })).not.toBeInTheDocument()
+  })
+})

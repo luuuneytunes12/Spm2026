@@ -140,7 +140,7 @@ def test_expired_hold_is_removed_from_staff_queue_and_notified(client, db_sessio
 
     assert response.status_code == 200
     assert all(item["id"] != s["booking_id"] for item in response.json())
-    assert db_session.get(VenueBooking, s["booking_id"]).status == BookingStatus.cancelled
+    assert db_session.get(VenueBooking, s["booking_id"]).status == BookingStatus.hold_expired
     notice = (
         db_session.query(Notification)
         .filter_by(

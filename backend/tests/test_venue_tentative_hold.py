@@ -217,7 +217,7 @@ def test_ac3_frozen_literal_an_expired_hold_no_longer_occupies(client, db_sessio
     rival = _rival(db_session, s)
 
     assert client.get(f"/venue-bookings/{rival.id}", headers=s["staff_h"]).json()["conflicts"] == []
-    assert _status(db_session, s["booking_id"]) == BookingStatus.cancelled
+    assert _status(db_session, s["booking_id"]) == BookingStatus.hold_expired
 
 
 # --- AC4: shown with expiry and action ---------------------------------------

@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 30
     refresh_token_ttl_days: int = 7
 
+    # Tentative holds: how long before expiry the Coordinator is reminded,
+    # and how often the background sweeper reminds and expires holds
+    # (app/services/hold_sweeper.py). 0 seconds turns the sweeper off.
+    hold_reminder_hours: float = 24
+    hold_sweep_interval_seconds: int = 60
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

@@ -285,3 +285,26 @@ db.close()
 export function setBookingStatus(eventId: number, status: 'pending' | 'approved' | 'rejected' | 'cancelled'): void {
   python(SET_BOOKING_STATUS, { event_id: eventId, status })
 }
+
+const LAPSE_HOLD = `
+import json, sys
+from datetime import datetime, timedelta, timezone
+from app.core.db import SessionLocal
+from app.models.venues import VenueBooking
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+db.query(VenueBooking).filter(VenueBooking.id == spec["booking_id"]).update(
+    {VenueBooking.expires_at: datetime.now(timezone.utc) - timedelta(minutes=1)},
+    synchronize_session=False,
+)
+db.commit()
+db.close()
+`
+
+/** Move a tentative hold's expiry a minute into the past, straight on the
+ *  row -- how a spec stands in for waiting for it to expire. The next sweep
+ *  (any venue request, or the background sweeper) expires it. */
+export function lapseHold(bookingId: number): void {
+  python(LAPSE_HOLD, { booking_id: bookingId })
+}

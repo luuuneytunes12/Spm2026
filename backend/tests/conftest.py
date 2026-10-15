@@ -16,6 +16,12 @@ from app.main import app
 from passlib.context import CryptContext  # noqa: E402
 
 import app.core.security as _security  # noqa: E402
+from app.core.config import settings
+
+
+# The tentative-hold sweeper (app/services/hold_sweeper.py) would run against
+# the configured database, not the test one; tests call HoldSweeper directly.
+settings.hold_sweep_interval_seconds = 0
 
 _security._pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 
