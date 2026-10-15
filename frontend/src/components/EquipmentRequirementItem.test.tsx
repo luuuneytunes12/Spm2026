@@ -162,6 +162,20 @@ describe('a row from an older response', () => {
   })
 })
 
+describe('the context of a row listed across events', () => {
+  it('shows what it is given beneath the type, such as its event', () => {
+    renderRow({ context: <span>Regional Partner Conference</span> })
+
+    expect(screen.getByRole('listitem')).toHaveTextContent('Regional Partner Conference')
+  })
+
+  it('shows nothing extra when there is none', () => {
+    renderRow()
+
+    expect(screen.getByRole('listitem').querySelector('.requirement-context')).toBeNull()
+  })
+})
+
 describe('a panel opened on the row', () => {
   it('is shown beneath it', () => {
     renderRow({ panel: <p>the panel</p> })

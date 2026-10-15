@@ -16,6 +16,7 @@ import {
   EQUIPMENT_ACTIVE_STATUSES,
   TECH_SUPPORT_STATUS_OPTIONS,
   canRecordEquipment,
+  listRequestedRequirements,
   requirementStatusLabel,
   requirementStatusText,
   reserveForRequirement,
@@ -123,6 +124,14 @@ describe('the Technical Support client calls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockFetch.mockResolvedValue({})
+  })
+
+  it('lists the requirements waiting for Technical Support', async () => {
+    mockFetch.mockResolvedValue([])
+
+    await expect(listRequestedRequirements()).resolves.toEqual([])
+
+    expect(mockFetch).toHaveBeenCalledWith('/equipment-requirements/support/requested')
   })
 
   it('updates a requirement with a PATCH of only what changed', async () => {
