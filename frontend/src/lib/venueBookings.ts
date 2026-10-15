@@ -266,3 +266,72 @@ export function holdVenueBooking(id: number): Promise<VenueBooking> {
     body: JSON.stringify({}),
   }) as Promise<VenueBooking>
 }
+
+// --- Change or cancel one booking (SCRUM-96) --------------------------------
+
+/** Bookings that can still be changed or cancelled. Rejected and cancelled
+ *  are history: another venue is asked for with a new request. Mirrors
+ *  LIVE_BOOKING_STATUSES on the server. */
+export const LIVE_BOOKING_STATUSES: readonly BookingStatus[] = [
+  BookingStatus.PENDING,
+  BookingStatus.TENTATIVE_HOLD,
+  BookingStatus.APPROVED,
+]
+
+export function isLiveBooking(status: BookingStatus): boolean {
+  return LIVE_BOOKING_STATUSES.includes(status)
+}
+
+/** What a Coordinator may change on one booking: its venue, and what they need
+ *  of it. Only what is sent changes. A need sent as null goes back to what the
+ *  event says. There is no time: a booking has the event's. */
+export interface VenueBookingChanges {
+  venue_id?: number
+  room_layout_preference?: string | null
+  accessibility_needs?: string | null
+  facilities_needs?: string | null
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+/** Change one booking. It goes back to Pending for Venue Staff; the event's
+ *  other bookings are untouched. */
+export function changeVenueBooking(id: number, changes: VenueBookingChanges): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${id}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(changes),
+  }) as Promise<VenueBooking>
+}
+
+/** Cancel one booking. The reason is optional. */
+export function cancelVenueBooking(id: number, reason?: string): Promise<VenueBooking> {
+  const why = reason?.trim()
+  return apiFetch(`/venue-bookings/${id}/cancel`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(why ? { reason: why } : {}),
+  }) as Promise<VenueBooking>
+}
+
+/** What "cancel all" would cancel, from the server: the list to be shown
+ *  before the Coordinator confirms. */
+export function listCancellableVenueBookings(eventId: number): Promise<VenueBooking[]> {
+  return apiFetch(`/venue-bookings/events/${eventId}/cancellable`) as Promise<VenueBooking[]>
+}
+
+/** Cancel the listed bookings. The ids are what was shown, and the server
+ *  cancels nothing if the event's live bookings are no longer exactly those
+ *  (409): the second confirmation is theirs to enforce, not just the page's. */
+export function cancelAllVenueBookings(
+  eventId: number,
+  bookingIds: number[],
+  reason?: string,
+): Promise<VenueBooking[]> {
+  const why = reason?.trim()
+  return apiFetch(`/venue-bookings/events/${eventId}/cancel-all`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(why ? { booking_ids: bookingIds, reason: why } : { booking_ids: bookingIds }),
+  }) as Promise<VenueBooking[]>
+}

@@ -7,16 +7,21 @@ import {
   BOOKING_STATUS_LABELS,
   CONFLICT_FLAG_LABEL,
   formatBookingPeriods,
+  isLiveBooking,
   listEventVenueBookings,
   submitVenueBookings,
 } from '../lib/venueBookings'
 import type { VenueBooking, VenueRequest } from '../lib/venueBookings'
+import { CancelAllBookingsDialog } from './CancelAllBookingsDialog'
+import { CancelBookingDialog } from './CancelBookingDialog'
+import { VenueBookingChangeForm } from './VenueBookingChangeForm'
 
 interface Props {
   eventId: number
   expectedAttendance: number | null
-  /** Called after venues are requested: the first request moves an approved
-   *  event into planning, so the page reloads the event to show its status. */
+  /** Called after venues are requested, changed or cancelled: the first
+   *  request moves an approved event into planning, and every change is a line
+   *  in the Activity Log, so the page reloads the event to show both. */
   onChanged?: () => void
 }
 
@@ -51,6 +56,12 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
   const [loadError, setLoadError] = useState<string | null>(null)
   const [bookingsLoadError, setBookingsLoadError] = useState<string | null>(null)
   const [loadingBookings, setLoadingBookings] = useState(true)
+  // Changing or cancelling (SCRUM-96): at most one booking is being changed,
+  // and one confirmation is open, at a time.
+  const [changingId, setChangingId] = useState<number | null>(null)
+  const [cancelling, setCancelling] = useState<VenueBooking | null>(null)
+  const [cancellingAll, setCancellingAll] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,9 +99,22 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
     }
   }, [eventId])
 
+  // A venue the event already has a live booking at -- pending, held or
+  // approved -- cannot be requested again.
   const liveVenueIds = new Set(
-    (bookings ?? []).filter((b) => b.status === 'pending' || b.status === 'approved').map((b) => b.venue.id),
+    (bookings ?? []).filter((b) => isLiveBooking(b.status)).map((b) => b.venue.id),
   )
+
+  /** Put the bookings the server returned in place of the ones shown. */
+  function replaceBookings(updated: VenueBooking[]) {
+    const byId = new Map(updated.map((b) => [b.id, b]))
+    setBookings((current) => current?.map((b) => byId.get(b.id) ?? b) ?? current)
+  }
+
+  function done(message: string) {
+    setNotice(message)
+    onChanged?.()
+  }
 
   async function reloadBookings() {
     setLoadingBookings(true)
@@ -167,6 +191,11 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
         </div>
       )}
       {loadingBookings && <p role="status">Loading existing venue bookings…</p>}
+      {notice && (
+        <p role="status" className="field-hint">
+          {notice}
+        </p>
+      )}
 
       {bookings && bookings.length > 0 && (
         <ul aria-label="Venue bookings for this event" className="booking-list">
@@ -184,9 +213,69 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
                 </p>
               )}
               <Decision booking={b} />
+              {isLiveBooking(b.status) && (
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn-link-accent"
+                    aria-label={`Change ${b.venue.name} booking`}
+                    onClick={() => {
+                      setNotice(null)
+                      setChangingId(b.id)
+                    }}
+                  >
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-link-danger"
+                    aria-label={`Cancel ${b.venue.name} booking`}
+                    onClick={() => {
+                      setNotice(null)
+                      setCancelling(b)
+                    }}
+                  >
+                    Cancel booking
+                  </button>
+                </div>
+              )}
+              {changingId === b.id && (
+                <VenueBookingChangeForm
+                  booking={b}
+                  venues={venues}
+                  takenVenueIds={
+                    new Set(
+                      (bookings ?? [])
+                        .filter((o) => o.id !== b.id && isLiveBooking(o.status))
+                        .map((o) => o.venue.id),
+                    )
+                  }
+                  onSaved={(updated) => {
+                    replaceBookings([updated])
+                    setChangingId(null)
+                    done('Sent back to Venue Staff for review.')
+                  }}
+                  onClose={() => setChangingId(null)}
+                />
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {(bookings ?? []).some((b) => isLiveBooking(b.status)) && (
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setNotice(null)
+              setCancellingAll(true)
+            }}
+          >
+            Cancel all venue bookings
+          </button>
+        </div>
       )}
 
       <form onSubmit={(e) => void submit(e)} noValidate>
@@ -261,6 +350,29 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
           </p>
         )}
       </form>
+
+      {cancelling && (
+        <CancelBookingDialog
+          booking={cancelling}
+          onCancelled={(updated) => {
+            replaceBookings([updated])
+            setCancelling(null)
+            done('Booking cancelled. Venue Staff have been told.')
+          }}
+          onClose={() => setCancelling(null)}
+        />
+      )}
+      {cancellingAll && (
+        <CancelAllBookingsDialog
+          eventId={eventId}
+          onCancelled={(updated) => {
+            replaceBookings(updated)
+            setCancellingAll(false)
+            done('All venue bookings cancelled. Venue Staff have been told.')
+          }}
+          onClose={() => setCancellingAll(false)}
+        />
+      )}
     </section>
   )
 }

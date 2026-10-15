@@ -118,6 +118,8 @@ class NotificationType(enum.StrEnum):
     venue_unavailability_recorded = "venue_unavailability_recorded"
     venue_hold_expiring = "venue_hold_expiring"
     venue_hold_expired = "venue_hold_expired"
+    venue_booking_changed = "venue_booking_changed"
+    venue_booking_cancelled = "venue_booking_cancelled"
 
 
 class ChangeRequestStatus(enum.StrEnum):
