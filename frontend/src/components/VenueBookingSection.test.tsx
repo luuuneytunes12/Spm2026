@@ -317,7 +317,8 @@ describe('Tentative hold - the Coordinator sees it on the Event', () => {
     render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
     const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
     const note = within(item).getByRole('note')
-    expect(note).toHaveTextContent('Tentative hold')
+    expect(within(item).getByText('Tentative hold')).toBeInTheDocument() // the status badge
+    expect(note).toHaveTextContent('Held until')
     expect(note).toHaveTextContent(formatTimestamp(HELD.expires_at) as string)
     expect(note).toHaveTextContent('Required action: Confirm final headcount')
   })

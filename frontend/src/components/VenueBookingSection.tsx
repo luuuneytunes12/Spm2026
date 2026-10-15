@@ -208,7 +208,7 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
               </p>
               {b.status === 'tentative_hold' && (
                 <p className="notice" role="note">
-                  <span className="badge">Tentative hold</span> Held until{' '}
+                  Held until{' '}
                   {formatTimestamp(b.expires_at) ?? 'its expiry'}. Required action:{' '}
                   {b.hold_action ?? 'none given'}
                 </p>
