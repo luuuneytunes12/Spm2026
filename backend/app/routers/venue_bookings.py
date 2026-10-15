@@ -79,9 +79,8 @@ def _conflict_between(
 
 def _closure_conflict(booking: VenueBooking, closure: VenueUnavailability) -> BookingConflict:
     start, end = as_utc(closure.start_time), as_utc(closure.end_time)
-    shared = overlap_of(
-        occupied_window(booking.start_time, booking.end_time, 0, 0), occupied_window(start, end, 0, 0)
-    )
+    # Measured against the occupied window, setup and turnaround included.
+    shared = flags.closure_overlap(booking, closure, booking.venue)
     assert shared is not None
     reason = closure.reason_category + (f": {closure.reason}" if closure.reason else "")
     return BookingConflict(
@@ -147,7 +146,7 @@ def _conflicts(bookings: list[VenueBooking], db: Session, viewer: User) -> dict[
         hits += [
             _closure_conflict(booking, closure)
             for closure in closures.get(booking.venue_id, [])
-            if flags.closure_overlaps(booking, closure)
+            if flags.closure_overlaps(booking, closure, booking.venue)
         ]
         found[booking.id] = hits
     return found
@@ -674,14 +673,15 @@ def approve_venue_booking(
                 f"{first.overlap_end:%Y-%m-%d %H:%M} UTC."
             ),
         )
-    blocked = db.scalar(
-        select(VenueUnavailability.id).where(
-            VenueUnavailability.venue_id == booking.venue_id,
-            VenueUnavailability.start_time < booking.end_time,
-            VenueUnavailability.end_time > booking.start_time,
+    # Setup and turnaround count (SCRUM-94): a booking whose occupied window
+    # reaches into a closure would be flagged the moment it was approved.
+    blocked = any(
+        flags.closure_overlaps(booking, closure, venue)
+        for closure in db.scalars(
+            select(VenueUnavailability).where(VenueUnavailability.venue_id == booking.venue_id)
         )
     )
-    if blocked is not None:
+    if blocked:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The venue is marked unavailable at that time.",

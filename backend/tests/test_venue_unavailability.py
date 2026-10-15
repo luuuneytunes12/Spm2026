@@ -344,7 +344,7 @@ def test_scrum94_a_pending_requests_coordinator_is_notified_and_the_event_is_unt
         user_id=w["sam"].id, type="venue_unavailability_recorded"
     ).all()
     assert "unavailable" in note.message and "Renovation: New floor" in note.message
-    assert "Alternative arrangements" in note.message
+    assert "alternative arrangements are required" in note.message.lower()
     db_session.expire_all()
     assert db_session.get(VenueBooking, pending.id).status == BookingStatus.pending
     assert db_session.get(Event, pending.event_id).status == EventStatus.planning_event
