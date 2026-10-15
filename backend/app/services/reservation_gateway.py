@@ -56,12 +56,21 @@ class ErcongReservationGateway(ReservationGateway):
         return line.quantity_requested
 
     def reserve(
-        self, *, event_id: int, equipment_id: int, quantity: int | None, user: User
+        self,
+        *,
+        event_id: int,
+        equipment_id: int,
+        quantity: int | None,
+        user: User,
+        placement_notes: str | None = None,
     ) -> int:
         try:
             reservation = reserve_equipment(
                 body=EquipmentReservationCreate(
-                    event_id=event_id, equipment_id=equipment_id, quantity=quantity
+                    event_id=event_id,
+                    equipment_id=equipment_id,
+                    quantity=quantity,
+                    placement_notes=placement_notes,
                 ),
                 db=self._db,
                 user=user,

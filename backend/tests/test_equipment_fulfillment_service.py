@@ -30,11 +30,13 @@ import itertools
 import pytest
 
 from app.core.roles import Role
+from app.domain.activity_log import ActivityLog
 from app.domain.equipment_fulfillment import (
     TECH_SUPPORT_STATUSES,
     EquipmentRequirementFulfillmentService,
     RequirementProgress,
     RequirementReservationLinks,
+    RequirementStatus,
     ReservationGateway,
     ReservationRefused,
     ReservedItem,
@@ -48,7 +50,7 @@ from app.models.equipment import (
     EquipmentRequest,
     RequirementReservationLink,
 )
-from app.models.events import Event
+from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.reservation_gateway import ErcongReservationGateway
 from datetime import datetime, timezone
@@ -57,8 +59,14 @@ START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
 END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
 _unique = itertools.count()
 
-REQUESTED, REVIEWING = EquipmentStatus.requested, EquipmentStatus.reviewing
-RESERVED, REJECTED = EquipmentStatus.reserved, EquipmentStatus.rejected
+# The statuses people see: the Definition of Done's (11b), and only those.
+REQUESTED, RESERVED = RequirementStatus.REQUESTED, RequirementStatus.RESERVED
+UNAVAILABLE, AVAILABLE = RequirementStatus.UNAVAILABLE, RequirementStatus.AVAILABLE
+
+# What is stored: the shared enum's values. Unavailable is stored as `rejected`;
+# `reviewing` is what "In review" used to save, and is read as Requested.
+STORED_REQUESTED, STORED_UNAVAILABLE = EquipmentStatus.requested, EquipmentStatus.rejected
+STORED_IN_REVIEW = EquipmentStatus.reviewing
 
 
 def _items(*quantities: int) -> tuple[ReservedItem, ...]:
@@ -66,8 +74,16 @@ def _items(*quantities: int) -> tuple[ReservedItem, ...]:
                  for i, q in enumerate(quantities))
 
 
-def _progress(needed, *reserved, status=REQUESTED) -> RequirementProgress:
-    return RequirementProgress(needed=needed, stored_status=status, reservations=_items(*reserved))
+def _progress(
+    needed, *reserved, stored=STORED_REQUESTED, released=False, reason=None
+) -> RequirementProgress:
+    return RequirementProgress(
+        needed=needed,
+        stored_status=stored,
+        reservations=_items(*reserved),
+        released=released,
+        unavailable_reason=reason,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -76,30 +92,50 @@ def _progress(needed, *reserved, status=REQUESTED) -> RequirementProgress:
 
 
 @pytest.mark.parametrize(
-    "needed,reserved,stored,effective",
+    "needed,reserved,stored,released,effective",
     [
         # nothing reserved: what Technical Support set is what it is
-        (5, [], REQUESTED, REQUESTED),
-        (5, [], REVIEWING, REVIEWING),
-        (5, [], REJECTED, REJECTED),
-        # some reserved: work is under way, whatever was stored
-        (5, [3], REQUESTED, REVIEWING),
-        (5, [1], REJECTED, REVIEWING),
-        (5, [2, 2], REVIEWING, REVIEWING),
+        (5, [], STORED_REQUESTED, False, REQUESTED),
+        (5, [], STORED_UNAVAILABLE, False, UNAVAILABLE),
+        # "In review" is no longer a status: what it saved reads as Requested
+        (5, [], STORED_IN_REVIEW, False, REQUESTED),
+        # some reserved is still waiting for the rest, so still Requested: the
+        # DoD has no "in progress". The progress is the reserved figure.
+        (5, [3], STORED_REQUESTED, False, REQUESTED),
+        (5, [1], STORED_UNAVAILABLE, False, REQUESTED),
+        (5, [2, 2], STORED_IN_REVIEW, False, REQUESTED),
         # all of it reserved, in one item or several
-        (5, [5], REQUESTED, RESERVED),
-        (5, [3, 2], REVIEWING, RESERVED),
+        (5, [5], STORED_REQUESTED, False, RESERVED),
+        (5, [3, 2], STORED_IN_REVIEW, False, RESERVED),
         # more reserved than needed still counts as covered
-        (2, [4], REQUESTED, RESERVED),
+        (2, [4], STORED_REQUESTED, False, RESERVED),
+        # the reservation was freed: Available, whether all of it or only part
+        (5, [5], STORED_REQUESTED, True, AVAILABLE),
+        (5, [3], STORED_REQUESTED, True, AVAILABLE),
+        # nothing was held, so nothing was freed
+        (5, [], STORED_REQUESTED, True, REQUESTED),
+        (5, [], STORED_UNAVAILABLE, True, UNAVAILABLE),
     ],
 )
-def test_the_effective_status_follows_the_reservations(needed, reserved, stored, effective):
-    assert _progress(needed, *reserved, status=stored).status is effective
+def test_the_effective_status_follows_the_reservations(needed, reserved, stored, released, effective):
+    assert _progress(needed, *reserved, stored=stored, released=released).status is effective
 
 
 def test_reserved_is_never_taken_from_what_was_stored():
     """Nothing reserved means nothing is reserved, whatever the column says."""
-    assert _progress(5, status=RESERVED).status is REQUESTED
+    assert _progress(5, stored=EquipmentStatus.reserved).status is REQUESTED
+
+
+def test_the_statuses_are_the_definition_of_dones_and_no_others():
+    assert {s.value for s in RequirementStatus} == {"requested", "reserved", "unavailable", "available"}
+
+
+def test_a_freed_reservation_holds_nothing_but_is_remembered():
+    progress = _progress(5, 3, released=True)
+
+    assert progress.reserved == 0  # holds nothing now
+    assert progress.was_reserved == 3  # what was freed
+    assert progress.remaining == 5  # all of it is unreserved
 
 
 def test_reserved_and_remaining_come_from_the_reserved_items():
@@ -127,9 +163,14 @@ def test_any_quantity_is_allowed_while_nothing_is_reserved():
     _progress(5).check_new_quantity(1)
 
 
-def test_technical_support_may_set_requested_reviewing_and_rejected_only():
-    """Reserved comes from reservations; cancelled belongs to the event."""
-    assert set(TECH_SUPPORT_STATUSES) == {REQUESTED, REVIEWING, REJECTED}
+def test_technical_support_may_set_requested_and_unavailable_only():
+    """Reserved comes from reservations, and Available from the event ending:
+    neither can be chosen."""
+    assert set(TECH_SUPPORT_STATUSES) == {REQUESTED, UNAVAILABLE}
+
+
+def test_any_quantity_is_allowed_once_the_reservation_is_freed():
+    _progress(5, 3, released=True).check_new_quantity(1)
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +249,11 @@ class FakeReservationGateway(ReservationGateway):
     def forced_quantity(self, event_id, equipment_id):
         return self._forced.get((event_id, equipment_id))
 
-    def reserve(self, *, event_id, equipment_id, quantity, user):
-        self.calls.append(dict(event_id=event_id, equipment_id=equipment_id, quantity=quantity))
+    def reserve(self, *, event_id, equipment_id, quantity, user, placement_notes=None):
+        self.calls.append(
+            dict(event_id=event_id, equipment_id=equipment_id, quantity=quantity,
+                 placement_notes=placement_notes)
+        )
         if self._refuse:
             raise self._refuse
         taken = self._forced.get((event_id, equipment_id)) or quantity
@@ -217,15 +261,32 @@ class FakeReservationGateway(ReservationGateway):
             EquipmentRequest(
                 event_id=event_id, equipment_id=equipment_id,
                 quantity_requested=taken, status=EquipmentStatus.reserved,
+                placement_notes=placement_notes,
             )
         )
         self._db.commit()  # his function commits; the fake behaves the same way
         return taken
 
 
-def _service(db_session, gateway=None, **gateway_options):
+class FakeActivityLog(ActivityLog):
+    """An Activity Log that just remembers what it was told."""
+
+    def __init__(self):
+        self.entries = []
+
+    def record(self, event, actor, note):
+        self.entries.append((event.id, actor.id, note))
+
+
+def _service(db_session, gateway=None, links=None, activity=None, **gateway_options):
     gateway = gateway or FakeReservationGateway(db_session, **gateway_options)
-    return EquipmentRequirementFulfillmentService(db_session, gateway), gateway
+    service = EquipmentRequirementFulfillmentService(db_session, gateway, links, activity)
+    return service, gateway
+
+
+def _after_the_event():
+    """A clock that says the event (it ends on 2 Nov 2026) is over."""
+    return lambda: datetime(2026, 11, 3, tzinfo=timezone.utc)
 
 
 def _links(db_session):
@@ -403,8 +464,10 @@ def test_reserving_delegates_to_the_gateway_and_links_the_item(db_session, world
 
     requirement, progress = service.reserve(world.requirement.id, world.mic.id, 3, world.tech)
 
-    assert gateway.calls == [dict(event_id=world.event.id, equipment_id=world.mic.id, quantity=3)]
-    assert progress.reserved == 3 and progress.status is REVIEWING
+    assert gateway.calls == [
+        dict(event_id=world.event.id, equipment_id=world.mic.id, quantity=3, placement_notes=None)
+    ]
+    assert progress.reserved == 3 and progress.status is REQUESTED
     assert [(l.requirement_id, l.equipment_id) for l in _links(db_session)] == [
         (world.requirement.id, world.mic.id)
     ]
@@ -492,17 +555,50 @@ def test_a_refusal_from_the_gateway_leaves_nothing_linked(db_session, world):
     assert db_session.query(EquipmentRequest).count() == 0
 
 
-def test_reserving_clears_an_unavailable_outcome(db_session, world):
+def test_reserving_clears_an_unavailable_outcome_and_its_reason(db_session, world):
     """Marked Unavailable, then equipment turns up: the requirement is being
-    worked on again. The stored outcome moves to Reviewing, so it does not
-    come back as Unavailable if a reservation is later lost."""
-    world.requirement.status = REJECTED
+    worked on again. The stored outcome goes back to Requested and its reason
+    is dropped, so it does not come back as Unavailable if a reservation is
+    later lost."""
+    world.requirement.status = STORED_UNAVAILABLE
+    world.requirement.unavailable_reason = "Mics damaged"
     db_session.commit()
     service, _ = _service(db_session)
 
     requirement, _ = service.reserve(world.requirement.id, world.mic.id, 2, world.tech)
 
-    assert requirement.status is REVIEWING
+    assert requirement.status is STORED_REQUESTED and requirement.unavailable_reason is None
+
+
+def test_reserving_passes_the_placement_to_the_reservation(db_session, world):
+    service, gateway = _service(db_session)
+
+    _, progress = service.reserve(
+        world.requirement.id, world.mic.id, 3, world.tech, placement_notes="Stage left"
+    )
+
+    assert gateway.calls[0]["placement_notes"] == "Stage left"
+    assert progress.reservations[0].placement_notes == "Stage left"
+
+
+@pytest.mark.parametrize("placement", [None, "", "   "])
+def test_a_blank_placement_is_none(db_session, world, placement):
+    service, gateway = _service(db_session)
+
+    service.reserve(world.requirement.id, world.mic.id, 3, world.tech, placement_notes=placement)
+
+    assert gateway.calls[0]["placement_notes"] is None
+
+
+def test_nothing_can_be_reserved_once_the_reservation_is_freed(db_session, world):
+    service, _ = _service(db_session)
+    service.reserve(world.requirement.id, world.mic.id, 3, world.tech)
+    ended, gateway = _service(db_session, links=RequirementReservationLinks(db_session, clock=_after_the_event()))
+
+    with pytest.raises(Conflict):
+        ended.reserve(world.requirement.id, world.pa.id, 1, world.tech)
+
+    assert gateway.calls == []
 
 
 @pytest.mark.parametrize(
@@ -531,27 +627,69 @@ def test_an_unknown_requirement_is_not_found(db_session, world):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("status", [REQUESTED, REVIEWING, REJECTED])
-def test_technical_support_can_set_a_status_they_own(db_session, world, status):
+def test_technical_support_can_set_requested(db_session, world):
+    world.requirement.status = STORED_UNAVAILABLE
+    db_session.commit()
     service, _ = _service(db_session)
 
-    requirement, progress = service.update(world.requirement.id, status=status)
+    requirement, progress = service.update(world.requirement.id, status=REQUESTED)
 
-    assert requirement.status is status and progress.status is status
+    assert requirement.status is STORED_REQUESTED and progress.status is REQUESTED
 
 
-@pytest.mark.parametrize("status", [RESERVED, EquipmentStatus.cancelled])
-def test_reserved_and_cancelled_cannot_be_set_by_hand(db_session, world, status):
+def test_unavailable_is_stored_as_rejected_with_its_reason(db_session, world):
+    service, _ = _service(db_session)
+
+    requirement, progress = service.update(
+        world.requirement.id, status=UNAVAILABLE, reason="  Under maintenance  "
+    )
+
+    assert requirement.status is STORED_UNAVAILABLE
+    assert requirement.unavailable_reason == "Under maintenance"
+    assert progress.status is UNAVAILABLE and progress.unavailable_reason == "Under maintenance"
+
+
+@pytest.mark.parametrize("reason", [None, "", "   "])
+def test_unavailable_needs_a_reason(db_session, world, reason):
+    service, _ = _service(db_session)
+
+    with pytest.raises(InvalidInput) as refused:
+        service.update(world.requirement.id, status=UNAVAILABLE, reason=reason)
+
+    assert refused.value.field == "reason"
+    assert db_session.get(CoordinatorEquipmentRequirement, world.requirement.id).status is STORED_REQUESTED
+
+
+def test_requested_drops_a_reason_it_was_sent_with_or_had(db_session, world):
+    service, _ = _service(db_session)
+    service.update(world.requirement.id, status=UNAVAILABLE, reason="Damaged")
+
+    requirement, _ = service.update(world.requirement.id, status=REQUESTED, reason="not wanted")
+
+    assert requirement.unavailable_reason is None
+
+
+@pytest.mark.parametrize("status", [RESERVED, AVAILABLE])
+def test_reserved_and_available_cannot_be_set_by_hand(db_session, world, status):
     service, _ = _service(db_session)
 
     with pytest.raises(InvalidInput) as refused:
         service.update(world.requirement.id, status=status)
 
     assert refused.value.field == "status"
-    if status is RESERVED:
-        # Not just refused: told why, so nobody hunts for a way round it.
-        assert "reservations" in refused.value.message
-    assert db_session.get(CoordinatorEquipmentRequirement, world.requirement.id).status is REQUESTED
+    # Not just refused: told why, so nobody hunts for a way round it.
+    assert "reservation" in refused.value.message.lower()
+    assert db_session.get(CoordinatorEquipmentRequirement, world.requirement.id).status is STORED_REQUESTED
+
+
+@pytest.mark.parametrize("status", ["reviewing", "rejected", "cancelled", "on_the_truck", None])
+def test_only_the_definition_of_done_statuses_are_understood(db_session, world, status):
+    service, _ = _service(db_session)
+
+    with pytest.raises(InvalidInput) as refused:
+        service.update(world.requirement.id, status=status)
+
+    assert refused.value.field == "status"
 
 
 def test_unavailable_cannot_be_set_once_something_is_reserved(db_session, world):
@@ -559,9 +697,20 @@ def test_unavailable_cannot_be_set_once_something_is_reserved(db_session, world)
     service.reserve(world.requirement.id, world.mic.id, 2, world.tech)
 
     with pytest.raises(Conflict) as refused:
-        service.update(world.requirement.id, status=REJECTED)
+        service.update(world.requirement.id, status=UNAVAILABLE, reason="Changed my mind")
 
     assert refused.value.field == "status"
+
+
+def test_nothing_can_be_updated_once_the_reservation_is_freed(db_session, world):
+    service, _ = _service(db_session)
+    service.reserve(world.requirement.id, world.mic.id, 3, world.tech)
+    ended, _ = _service(db_session, links=RequirementReservationLinks(db_session, clock=_after_the_event()))
+
+    with pytest.raises(Conflict):
+        ended.update(world.requirement.id, quantity_needed=9)
+    with pytest.raises(Conflict):
+        ended.update(world.requirement.id, status=UNAVAILABLE, reason="x")
 
 
 def test_the_quantity_needed_can_be_changed(db_session, world):
@@ -602,7 +751,7 @@ def test_a_quantity_that_is_not_a_positive_whole_number_is_refused(db_session, w
     assert refused.value.field == "quantity_needed"
 
 
-def test_only_status_and_quantity_can_be_updated_here(db_session, world):
+def test_only_status_quantity_and_reason_can_be_updated_here(db_session, world):
     """Type and notes are the Coordinator's. Technical Support changing the
     type under a requirement they are fulfilling is not a thing."""
     service, _ = _service(db_session)
@@ -618,4 +767,138 @@ def test_an_empty_update_changes_nothing(db_session, world):
 
     requirement, _ = service.update(world.requirement.id)
 
-    assert requirement.quantity_needed == 5 and requirement.status is REQUESTED
+    assert requirement.quantity_needed == 5 and requirement.status is STORED_REQUESTED
+
+
+# ---------------------------------------------------------------------------
+# RequirementReservationLinks -- placement, and when a reservation is freed
+# ---------------------------------------------------------------------------
+
+
+def test_progress_carries_where_each_reserved_item_is_placed(db_session, world):
+    db_session.add(EquipmentRequest(
+        event_id=world.event.id, equipment_id=world.mic.id, quantity_requested=3,
+        status=EquipmentStatus.reserved, placement_notes="Stage left"))
+    db_session.commit()
+    _link(db_session, world, world.mic)
+
+    progress = RequirementReservationLinks(db_session).progress_for(world.requirement)
+
+    assert [(i.equipment_name, i.placement_notes) for i in progress.reservations] == [
+        ("Shure BLX24", "Stage left")
+    ]
+
+
+def _held(db_session, world):
+    _reserved_row(db_session, world, world.mic, 3)
+    _link(db_session, world, world.mic)
+
+
+def test_a_reservation_is_held_until_the_events_end_time(db_session, world):
+    _held(db_session, world)
+    during = lambda: datetime(2026, 11, 2, 12, tzinfo=timezone.utc)  # noqa: E731
+
+    progress = RequirementReservationLinks(db_session, clock=during).progress_for(world.requirement)
+
+    assert progress.released is False and progress.status is REQUESTED and progress.reserved == 3
+
+
+def test_it_is_freed_once_that_time_passes(db_session, world):
+    _held(db_session, world)
+
+    progress = RequirementReservationLinks(db_session, clock=_after_the_event()).progress_for(
+        world.requirement
+    )
+
+    assert progress.released is True and progress.status is AVAILABLE
+    assert progress.reserved == 0 and progress.was_reserved == 3
+
+
+def test_at_the_exact_end_time_it_is_already_free(db_session, world):
+    """Back-to-back is not an overlap: kit freed at 17:00 is free at 17:00,
+    the rule his availability check uses."""
+    _held(db_session, world)
+    at_the_end = lambda: END  # noqa: E731
+
+    progress = RequirementReservationLinks(db_session, clock=at_the_end).progress_for(world.requirement)
+
+    assert progress.released is True
+
+
+def test_an_event_with_no_end_time_never_frees_its_reservation(db_session, world):
+    _held(db_session, world)
+    world.event.proposed_end = None
+    db_session.commit()
+
+    progress = RequirementReservationLinks(db_session, clock=_after_the_event()).progress_for(
+        world.requirement
+    )
+
+    assert progress.released is False
+
+
+def test_the_unavailable_reason_travels_with_the_progress(db_session, world):
+    world.requirement.status = STORED_UNAVAILABLE
+    world.requirement.unavailable_reason = "Damaged"
+    db_session.commit()
+
+    progress = RequirementReservationLinks(db_session).progress_for(world.requirement)
+
+    assert progress.status is UNAVAILABLE and progress.unavailable_reason == "Damaged"
+
+
+# ---------------------------------------------------------------------------
+# The Activity Log -- every status change (DoD 11), through the log it is handed
+# ---------------------------------------------------------------------------
+
+
+def test_marking_unavailable_is_recorded_with_the_reason(db_session, world):
+    log = FakeActivityLog()
+    service, _ = _service(db_session, activity=log)
+
+    service.update(world.requirement.id, status=UNAVAILABLE, reason="Damaged", actor=world.tech)
+
+    [(event_id, actor_id, note)] = log.entries
+    assert (event_id, actor_id) == (world.event.id, world.tech.id)
+    assert "Audio" in note and "Requested" in note and "Unavailable" in note and "Damaged" in note
+    assert db_session.query(EventStatusHistory).count() == 0  # not the real log
+
+
+def test_a_full_reservation_is_recorded_as_requested_to_reserved(db_session, world):
+    log = FakeActivityLog()
+    service, _ = _service(db_session, activity=log)
+
+    service.reserve(world.requirement.id, world.mic.id, 5, world.tech)
+
+    [(_, actor_id, note)] = log.entries
+    assert actor_id == world.tech.id and "Requested" in note and "Reserved" in note
+
+
+def test_a_part_reservation_changes_no_status_so_records_nothing(db_session, world):
+    log = FakeActivityLog()
+    service, _ = _service(db_session, activity=log)
+
+    service.reserve(world.requirement.id, world.mic.id, 3, world.tech)
+
+    assert log.entries == []
+
+
+def test_a_refused_action_records_nothing(db_session, world):
+    log = FakeActivityLog()
+    service, _ = _service(db_session, activity=log)
+
+    with pytest.raises(DomainError):
+        service.update(world.requirement.id, status=UNAVAILABLE, reason="", actor=world.tech)
+
+    assert log.entries == []
+
+
+def test_the_real_log_is_the_events_status_history_with_no_change_of_status(db_session, world):
+    service, _ = _service(db_session)
+
+    service.update(world.requirement.id, status=UNAVAILABLE, reason="Damaged", actor=world.tech)
+    db_session.flush()
+
+    [entry] = db_session.query(EventStatusHistory).all()
+    assert entry.from_status == entry.to_status == EventStatus.event_approved
+    assert entry.changed_by == world.tech.id

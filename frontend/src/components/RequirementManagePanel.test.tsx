@@ -3,7 +3,8 @@
  *
  * Traceability (see docs/test-cases-equipment-requirement-status.md):
  *   UR AC1  update the status of a requirement ("reserved", "unavailable"):
- *           mark it In review or Unavailable, or reserve real equipment for it
+ *           mark it Unavailable (with a reason) or back to Requested, or
+ *           reserve real equipment for it, saying where it will be placed
  *   UR AC2  update the quantity as changes appear
  *
  * One panel, one workflow: what the requirement is and how far it has got,
@@ -70,21 +71,44 @@ const REQUIREMENT: SupportRequirement = {
   technical_notes: 'Handheld wireless, for panel Q&A',
   status: 'requested',
   reserved_quantity: 0,
+  released_quantity: 0,
+  unavailable_reason: null,
   reservations: [],
 }
 
 const PART_RESERVED: SupportRequirement = {
   ...REQUIREMENT,
-  status: 'reviewing',
+  status: 'requested',
   reserved_quantity: 3,
-  reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
+  reservations: [
+    { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: null },
+  ],
 }
 
 const FULLY_RESERVED: SupportRequirement = {
   ...REQUIREMENT,
   status: 'reserved',
   reserved_quantity: 5,
-  reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 5 }],
+  reservations: [
+    { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 5, placement_notes: 'Stage left' },
+  ],
+}
+
+const UNAVAILABLE: SupportRequirement = {
+  ...REQUIREMENT,
+  status: 'unavailable',
+  unavailable_reason: 'Mics are being repaired',
+}
+
+/** Its reservation was freed because the event is over. */
+const AVAILABLE: SupportRequirement = {
+  ...REQUIREMENT,
+  status: 'available',
+  reserved_quantity: 0,
+  released_quantity: 5,
+  reservations: [
+    { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 5, placement_notes: 'Stage left' },
+  ],
 }
 
 function item(id: number, name: string): EquipmentItem {
@@ -238,7 +262,7 @@ describe('what the requirement is, and how far it has got', () => {
     await screen.findByLabelText('Equipment')
 
     expect(panel().getByText('Status', { selector: 'dt' }).parentElement).toHaveTextContent(
-      'In progress — 3 of 5 reserved',
+      'Requested — 3 of 5 reserved',
     )
   })
 
@@ -282,29 +306,37 @@ describe('what the requirement is, and how far it has got', () => {
 // ---------------------------------------------------------------------------
 
 describe('the status', () => {
-  it('can be Requested, In review or Unavailable, with the current one chosen', async () => {
-    renderPanel({ requirement: { ...REQUIREMENT, status: 'reviewing' } })
+  it('can be Requested or Unavailable, with the current one chosen', async () => {
+    renderPanel()
 
     const select = await panel().findByLabelText('Status')
-    expect(select).toHaveValue('reviewing')
+    expect(select).toHaveValue('requested')
     expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual([
       'Requested',
-      'In review',
       'Unavailable',
     ])
   })
 
-  it('never offers Reserved: that has to be backed by a real reservation', async () => {
+  it('has no In review: it is not a status', async () => {
+    renderPanel()
+    await screen.findByLabelText('Equipment')
+
+    expect(screen.queryByRole('option', { name: /in review/i })).not.toBeInTheDocument()
+  })
+
+  it('never offers Reserved or Available: one needs a real reservation, the other is the event ending', async () => {
     renderPanel()
     await screen.findByLabelText('Equipment')
 
     expect(screen.queryByRole('option', { name: /reserved/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /^available$/i })).not.toBeInTheDocument()
   })
 
-  it('shows an Unavailable requirement as such', async () => {
-    renderPanel({ requirement: { ...REQUIREMENT, status: 'rejected' } })
+  it('shows an Unavailable requirement as such, with its reason', async () => {
+    renderPanel({ requirement: UNAVAILABLE })
 
-    expect(await panel().findByLabelText('Status')).toHaveValue('rejected')
+    expect(await panel().findByLabelText('Status')).toHaveValue('unavailable')
+    expect(panel().getByLabelText('Reason')).toHaveValue('Mics are being repaired')
   })
 
   it('is not a choice once something is reserved: it follows the reservations', async () => {
@@ -313,6 +345,33 @@ describe('the status', () => {
 
     expect(panel().queryByLabelText('Status')).not.toBeInTheDocument()
     expect(panel().getByText(/status follows the reservations/i)).toBeInTheDocument()
+  })
+})
+
+describe('the reason for Unavailable', () => {
+  it('is not asked for while the requirement is Requested', async () => {
+    renderPanel()
+    await screen.findByLabelText('Equipment')
+
+    expect(panel().queryByLabelText('Reason')).not.toBeInTheDocument()
+  })
+
+  it('is asked for as soon as Unavailable is chosen, and is required', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
+
+    expect(panel().getByLabelText('Reason')).toBeRequired()
+  })
+
+  it('goes away again if Requested is chosen instead', async () => {
+    const user = userEvent.setup()
+    renderPanel({ requirement: UNAVAILABLE })
+
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Requested')
+
+    expect(panel().queryByLabelText('Reason')).not.toBeInTheDocument()
   })
 })
 
@@ -352,35 +411,80 @@ describe('saving the status and quantity', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(4, { quantity_needed: 8 }))
   })
 
-  it('can mark the requirement Unavailable', async () => {
+  it('can mark the requirement Unavailable, with the reason', async () => {
     const user = userEvent.setup()
-    mockUpdate.mockResolvedValue({ ...REQUIREMENT, status: 'rejected' })
+    mockUpdate.mockResolvedValue({ ...UNAVAILABLE, unavailable_reason: 'Mics are being repaired' })
+    renderPanel()
+
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
+    await user.type(panel().getByLabelText('Reason'), 'Mics are being repaired')
+    await user.click(panel().getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(4, {
+        status: 'unavailable',
+        reason: 'Mics are being repaired',
+      }),
+    )
+  })
+
+  it('does not mark it Unavailable without a reason, and says why', async () => {
+    const user = userEvent.setup()
     renderPanel()
 
     await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
     await user.click(panel().getByRole('button', { name: 'Save changes' }))
 
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(4, { status: 'rejected' }))
+    expect(await screen.findByText('Give a reason the equipment is unavailable.')).toBeInTheDocument()
+    expect(mockUpdate).not.toHaveBeenCalled()
   })
 
-  it('can mark it In review', async () => {
+  it('does not take spaces for a reason', async () => {
     const user = userEvent.setup()
-    mockUpdate.mockResolvedValue({ ...REQUIREMENT, status: 'reviewing' })
     renderPanel()
 
-    await user.selectOptions(await panel().findByLabelText('Status'), 'In review')
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
+    await user.type(panel().getByLabelText('Reason'), '   ')
     await user.click(panel().getByRole('button', { name: 'Save changes' }))
 
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(4, { status: 'reviewing' }))
+    expect(await screen.findByText('Give a reason the equipment is unavailable.')).toBeInTheDocument()
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('can set an Unavailable requirement back to Requested, sending no reason', async () => {
+    const user = userEvent.setup()
+    mockUpdate.mockResolvedValue(REQUIREMENT)
+    renderPanel({ requirement: UNAVAILABLE })
+
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Requested')
+    await user.click(panel().getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(4, { status: 'requested' }))
+  })
+
+  it('can change only the reason of an Unavailable requirement', async () => {
+    const user = userEvent.setup()
+    mockUpdate.mockResolvedValue(UNAVAILABLE)
+    renderPanel({ requirement: UNAVAILABLE })
+
+    const reason = await panel().findByLabelText('Reason')
+    await user.clear(reason)
+    await user.type(reason, 'Sent for a service')
+    await user.click(panel().getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(4, { status: 'unavailable', reason: 'Sent for a service' }),
+    )
   })
 
   it('hands the server’s answer back and stays open, so the work can go on', async () => {
     const user = userEvent.setup()
-    const saved = { ...REQUIREMENT, status: 'reviewing' }
+    const saved = { ...REQUIREMENT, status: 'unavailable', unavailable_reason: 'Damaged' }
     mockUpdate.mockResolvedValue(saved)
     const { onChanged, onClose } = renderPanel()
 
-    await user.selectOptions(await panel().findByLabelText('Status'), 'In review')
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
+    await user.type(panel().getByLabelText('Reason'), 'Damaged')
     await user.click(panel().getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(saved))
@@ -435,7 +539,8 @@ describe('saving the status and quantity', () => {
     mockUpdate.mockRejectedValue(new Error('network down'))
     renderPanel()
 
-    await user.selectOptions(await panel().findByLabelText('Status'), 'In review')
+    await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
+    await user.type(panel().getByLabelText('Reason'), 'Damaged')
     await user.click(panel().getByRole('button', { name: 'Save changes' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not save/i)
@@ -790,9 +895,11 @@ describe('reserving', () => {
     const user = userEvent.setup()
     const updated = {
       ...REQUIREMENT,
-      status: 'reviewing',
+      status: 'requested',
       reserved_quantity: 3,
-      reservations: [{ equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 3 }],
+      reservations: [
+        { equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 3, placement_notes: null },
+      ],
     }
     mockReserve.mockResolvedValue(updated)
     const { onChanged } = renderPanel()
@@ -803,7 +910,7 @@ describe('reserving', () => {
     await user.type(quantity, '3')
     await user.click(screen.getByRole('button', { name: 'Reserve' }))
 
-    await waitFor(() => expect(mockReserve).toHaveBeenCalledWith(4, 12, 3))
+    await waitFor(() => expect(mockReserve).toHaveBeenCalledWith(4, 12, 3, undefined))
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(updated))
   })
 
@@ -815,16 +922,18 @@ describe('reserving', () => {
     await chooseChecked(user, 'Shure BLX24 (the Organiser asked for 4)')
     await user.click(screen.getByRole('button', { name: 'Reserve' }))
 
-    await waitFor(() => expect(mockReserve).toHaveBeenCalledWith(4, 11, undefined))
+    await waitFor(() => expect(mockReserve).toHaveBeenCalledWith(4, 11, undefined, undefined))
   })
 
   it('confirms what was reserved, and is ready for the next item', async () => {
     const user = userEvent.setup()
     mockReserve.mockResolvedValue({
       ...REQUIREMENT,
-      status: 'reviewing',
+      status: 'reserved',
       reserved_quantity: 5,
-      reservations: [{ equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 5 }],
+      reservations: [
+        { equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 5, placement_notes: null },
+      ],
     })
     renderPanel()
 
@@ -888,13 +997,16 @@ describe('when equipment cannot be reserved yet', () => {
 
   it('still lets the status and quantity be managed without a date', async () => {
     const user = userEvent.setup()
-    mockUpdate.mockResolvedValue({ ...REQUIREMENT, status: 'rejected' })
+    mockUpdate.mockResolvedValue(UNAVAILABLE)
     renderPanel({ event: { id: 7, proposed_start: null, proposed_end: null } })
 
     await user.selectOptions(await panel().findByLabelText('Status'), 'Unavailable')
+    await user.type(panel().getByLabelText('Reason'), 'Damaged')
     await user.click(panel().getByRole('button', { name: 'Save changes' }))
 
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith(4, { status: 'rejected' }))
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith(4, { status: 'unavailable', reason: 'Damaged' }),
+    )
   })
 
   it('says so for a requirement that is already fully reserved', async () => {
@@ -909,6 +1021,138 @@ describe('when equipment cannot be reserved yet', () => {
     renderPanel({ requirement: FULLY_RESERVED })
 
     expect(await panel().findByLabelText('Quantity needed')).toHaveAttribute('min', '5')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Placement: where the equipment will be set up at the venue
+// ---------------------------------------------------------------------------
+
+describe('placement', () => {
+  it('is shown per reserved item, so Technical Support can see where each will go', async () => {
+    renderPanel({
+      requirement: {
+        ...PART_RESERVED,
+        reserved_quantity: 4,
+        reservations: [
+          { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: 'Stage left' },
+          { equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 1, placement_notes: null },
+        ],
+      },
+    })
+    await screen.findByLabelText('Equipment')
+
+    const row = panel().getByText('Placement', { selector: 'dt' }).parentElement
+    expect(row).toHaveTextContent('Shure BLX24: Stage left')
+    expect(row).toHaveTextContent('Yamaha PA: not set')
+  })
+
+  it('says it is recorded when equipment is reserved, while nothing is', async () => {
+    renderPanel()
+    await screen.findByLabelText('Equipment')
+
+    expect(panel().getByText('Placement', { selector: 'dt' }).parentElement).toHaveTextContent(
+      /recorded when equipment is reserved/i,
+    )
+  })
+
+  it('is asked for when reserving, and is optional', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await chooseChecked(user, 'Yamaha PA')
+
+    const field = screen.getByLabelText('Placement (optional)')
+    expect(field).not.toBeRequired()
+    expect(screen.getByRole('button', { name: 'Reserve' })).toBeEnabled()
+  })
+
+  it('is sent with the reservation', async () => {
+    const user = userEvent.setup()
+    mockReserve.mockResolvedValue(REQUIREMENT)
+    renderPanel()
+
+    await chooseChecked(user, 'Yamaha PA')
+    await user.type(screen.getByLabelText('Placement (optional)'), 'Stage left')
+    await user.click(screen.getByRole('button', { name: 'Reserve' }))
+
+    await waitFor(() => expect(mockReserve).toHaveBeenCalledWith(4, 12, 5, 'Stage left'))
+  })
+
+  it('is left out when nothing is typed, or only spaces', async () => {
+    const user = userEvent.setup()
+    mockReserve.mockResolvedValue(REQUIREMENT)
+    renderPanel()
+
+    await chooseChecked(user, 'Yamaha PA')
+    await user.type(screen.getByLabelText('Placement (optional)'), '   ')
+    await user.click(screen.getByRole('button', { name: 'Reserve' }))
+
+    await waitFor(() => expect(mockReserve).toHaveBeenCalledWith(4, 12, 5, undefined))
+  })
+
+  it('is asked for again, empty, for the next item', async () => {
+    const user = userEvent.setup()
+    mockReserve.mockResolvedValue(PART_RESERVED)
+    renderPanel()
+
+    await chooseChecked(user, 'Yamaha PA')
+    await user.type(screen.getByLabelText('Placement (optional)'), 'Stage left')
+    await user.click(screen.getByRole('button', { name: 'Reserve' }))
+    await screen.findByRole('status', { name: 'Result' })
+    await chooseChecked(user, 'Yamaha PA')
+
+    expect(screen.getByLabelText('Placement (optional)')).toHaveValue('')
+  })
+
+  it('stops at what the reservation accepts', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+
+    await chooseChecked(user, 'Yamaha PA')
+
+    expect(screen.getByLabelText('Placement (optional)')).toHaveAttribute('maxlength', '2000')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Available: its reservation was freed
+// ---------------------------------------------------------------------------
+
+describe('a requirement whose reservation was freed', () => {
+  it('says so, and shows Available with how much was freed', async () => {
+    renderPanel({ requirement: AVAILABLE })
+
+    expect(await panel().findByText(/reservation was freed/i)).toBeInTheDocument()
+    expect(panel().getByText('Status', { selector: 'dt' }).parentElement).toHaveTextContent(
+      'Available — 5 freed',
+    )
+  })
+
+  it('still shows where the equipment had been placed', async () => {
+    renderPanel({ requirement: AVAILABLE })
+
+    expect(
+      (await panel().findByText('Placement', { selector: 'dt' })).parentElement,
+    ).toHaveTextContent('Shure BLX24: Stage left')
+  })
+
+  it('offers nothing to change, and nothing to reserve', async () => {
+    renderPanel({ requirement: AVAILABLE })
+    await panel().findByText(/reservation was freed/i)
+
+    expect(panel().queryByLabelText('Status')).not.toBeInTheDocument()
+    expect(panel().queryByLabelText('Quantity needed')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Equipment')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reserve' })).not.toBeInTheDocument()
+  })
+
+  it('does not load the catalogue: nothing can be reserved', async () => {
+    renderPanel({ requirement: AVAILABLE })
+    await panel().findByText(/reservation was freed/i)
+
+    expect(mockCatalogue).not.toHaveBeenCalled()
   })
 })
 

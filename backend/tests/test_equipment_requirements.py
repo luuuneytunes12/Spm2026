@@ -814,7 +814,7 @@ def test_er_ac2_technical_support_receives_only_what_it_needs_of_a_requirement(
 
     assert set(requirement) == {
         "id", "category", "quantity_needed", "technical_notes", "status",
-        "reserved_quantity", "reservations",
+        "reserved_quantity", "released_quantity", "unavailable_reason", "reservations",
     }
 
 

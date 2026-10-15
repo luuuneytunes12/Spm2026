@@ -12,6 +12,13 @@ interface Props {
    *  different state of the same requirement. */
   reserved?: number
   reservations?: ReservedItem[]
+  /** How much was reserved and has since been freed (the event is over). */
+  released?: number
+  /** Why Technical Support cannot provide it; shown only while Unavailable. */
+  unavailableReason?: string | null
+  /** Where this row sits, when rows from different events share a list: its
+   *  event and when. Shown beneath the type. */
+  context?: ReactNode
   /** Where the requirement came from. Only the Coordinator's card passes it;
    *  Technical Support is shown what is needed, not what it was based on. */
   origin?: string
@@ -35,6 +42,9 @@ export function EquipmentRequirementItem({
   status,
   reserved = 0,
   reservations = [],
+  released = 0,
+  unavailableReason = null,
+  context,
   origin,
   actions,
   panel,
@@ -43,11 +53,21 @@ export function EquipmentRequirementItem({
     <li className="requirement">
       <div className="requirement-main">
         <span className="requirement-title">{category}</span>
+        {context && <span className="request-meta requirement-context">{context}</span>}
         {notes && <span className="request-meta">{notes}</span>}
         {reservations.length > 0 && (
           <span className="request-meta">
-            {reservations.map((item) => `${item.quantity} \u00d7 ${item.equipment_name}`).join(', ')}
+            {reservations
+              .map(
+                (item) =>
+                  `${item.quantity} \u00d7 ${item.equipment_name}` +
+                  (item.placement_notes ? ` (placed: ${item.placement_notes})` : ''),
+              )
+              .join(', ')}
           </span>
+        )}
+        {status === 'unavailable' && unavailableReason && (
+          <span className="request-meta">Reason: {unavailableReason}</span>
         )}
         {origin && <span className="requirement-origin">{origin}</span>}
       </div>
@@ -55,7 +75,9 @@ export function EquipmentRequirementItem({
         {/* Quantity as a chip so it reads as a number against the type
             rather than running into it as prose. */}
         <span className="chip">&times; {quantity}</span>
-        <span className="badge badge-muted">{requirementStatusText(status, reserved, quantity)}</span>
+        <span className="badge badge-muted">
+          {requirementStatusText(status, reserved, quantity, released)}
+        </span>
         {actions}
       </div>
       {panel}

@@ -143,6 +143,9 @@ class CoordinatorEquipmentRequirement(Base):
         Enum(EquipmentStatus, name="equipment_status", create_type=False),
         default=EquipmentStatus.requested,
     )
+    # Why Technical Support cannot provide it. Kept only while the stored
+    # status is `rejected` (shown as Unavailable); sql/026.
+    unavailable_reason: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
     )

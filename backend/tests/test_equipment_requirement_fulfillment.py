@@ -27,8 +27,16 @@ does the stock check, the overlap check and the write. These tests run the
 real thing and use his own endpoints (availability, reservations list) to
 confirm what it did. Nothing here re-tests his rules.
 
-"Unavailable" is the stored `rejected`; "Reserved" is never stored, it is
-what the reservations add up to.
+The statuses are the Definition of Done's (11b), and only those:
+
+    Requested    waiting for Technical Support -- including a requirement only
+                 part reserved: the DoD has no "in progress"
+    Reserved     the full quantity is reserved. Never set by hand
+    Unavailable  Technical Support cannot provide it; a REASON is required
+    Available    its reservation was freed. Never set by hand
+
+Reserved and Available are worked out, not stored. Unavailable is stored in
+the existing enum's `rejected`, and nothing else is added to it.
 """
 
 import itertools
@@ -45,7 +53,7 @@ from app.models.equipment import (
     EquipmentRequest,
     RequirementReservationLink,
 )
-from app.models.events import Event
+from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.services.equipment_lines import replace_equipment_lines
 from tests.test_equipment_requirements import (
@@ -86,7 +94,7 @@ def _world(client, db_session, needed=5, status=EventStatus.event_approved, **ev
     a catalogue with two Audio items and a projector, and Technical Support."""
     organiser, organiser_headers = _user(client, db_session, Role.ORGANISER, name="Organiser")
     coordinator, headers = _user(client, db_session, Role.COORDINATOR, name="Coordinator")
-    _, tech = _user(client, db_session, Role.TECH_SUPPORT, name="Tech Support")
+    tech_user, tech = _user(client, db_session, Role.TECH_SUPPORT, name="Tech Support")
     mic = _equipment(db_session, "Shure BLX24", category="Audio")
     pa = _equipment(db_session, "Yamaha PA", category="Audio")
     projector = _equipment(db_session, "Epson EB-L200SW", category="Projection")
@@ -99,6 +107,7 @@ def _world(client, db_session, needed=5, status=EventStatus.event_approved, **ev
     requirement = _added(client, headers, event.id, category="Audio", quantity_needed=needed)
     return SimpleNamespace(
         organiser=organiser, organiser_headers=organiser_headers, coordinator=coordinator, headers=headers, tech=tech,
+        tech_user=tech_user,
         mic=mic, pa=pa, projector=projector, event=event, requirement=requirement,
         rid=requirement["id"],
     )
@@ -165,7 +174,7 @@ def test_ur_ac1_reserving_a_requirement_fulfils_it_through_ercongs_reservation(c
     assert body["status"] == "reserved"
     assert body["reserved_quantity"] == 4
     assert body["reservations"] == [
-        {"equipment_id": w.mic.id, "equipment_name": "Shure BLX24", "quantity": 4}
+        {"equipment_id": w.mic.id, "equipment_name": "Shure BLX24", "quantity": 4, "placement_notes": None}
     ]
     # The reservation is his: a reserved equipment_requests row, with who and when.
     (line,) = _lines(db_session, w.event)
@@ -206,7 +215,9 @@ def test_ur_ac1_part_of_a_requirement_can_be_reserved_and_shows_its_progress(cli
 
     assert body["quantity_needed"] == 5  # what is needed is not overwritten
     assert body["reserved_quantity"] == 3
-    assert body["status"] == "reviewing"  # in progress, not "reserved"
+    # Still waiting for Technical Support to finish it, so still Requested: the
+    # DoD has no "in progress", and the progress is the reserved figure.
+    assert body["status"] == "requested"
 
 
 def test_ur_ac1_the_rest_can_be_reserved_from_another_item(client, db_session):
@@ -239,7 +250,7 @@ def test_ur_ac1_an_item_the_organiser_asked_for_is_reserved_at_their_quantity(cl
 
     body = _reserved(client, w.tech, w.rid, w.mic.id)
 
-    assert body["reserved_quantity"] == 4 and body["status"] == "reviewing"
+    assert body["reserved_quantity"] == 4 and body["status"] == "requested"
     (line,) = _lines(db_session, w.event)
     assert line.status is EquipmentStatus.reserved  # the Organiser's own line, moved on
 
@@ -363,13 +374,16 @@ def test_ur_ac1_reserving_after_the_organiser_replaced_their_lines_works_again(c
     assert len(_links(db_session)) == 1  # the surviving link was reused
 
 
-def test_ur_ac1_reserving_clears_an_unavailable_outcome(client, db_session):
+def test_ur_ac1_reserving_clears_an_unavailable_outcome_and_its_reason(client, db_session):
     w = _world(client, db_session, needed=4)
-    assert _update(client, w.tech, w.rid, status="rejected").status_code == 200
+    assert _update(client, w.tech, w.rid, status="unavailable", reason="Mics damaged").status_code == 200
 
     body = _reserved(client, w.tech, w.rid, w.mic.id, quantity=2)
 
-    assert body["status"] == "reviewing"
+    assert body["status"] == "requested" and body["unavailable_reason"] is None
+    row = db_session.get(CoordinatorEquipmentRequirement, w.rid)
+    db_session.refresh(row)
+    assert row.status is EquipmentStatus.requested and row.unavailable_reason is None
 
 
 @pytest.mark.parametrize("role", [Role.COORDINATOR, Role.ORGANISER, Role.VENUE_STAFF, Role.ATTENDEE])
@@ -411,33 +425,72 @@ def test_ur_reserving_an_unknown_requirement_is_not_found(client, db_session):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("status", ["requested", "reviewing", "rejected"])
-def test_ur_ac1_technical_support_can_set_a_status_they_own(client, db_session, status):
+def test_ur_ac1_technical_support_can_mark_a_requirement_unavailable_with_a_reason(client, db_session):
     w = _world(client, db_session)
 
-    res = _update(client, w.tech, w.rid, status=status)
+    res = _update(client, w.tech, w.rid, status="unavailable", reason="Not enough stock: 2 are damaged")
 
     assert res.status_code == 200
-    assert res.json()["status"] == status
-    db_session.expire_all()
-    assert db_session.get(CoordinatorEquipmentRequirement, w.rid).status.value == status
+    assert res.json()["status"] == "unavailable"
+    assert res.json()["unavailable_reason"] == "Not enough stock: 2 are damaged"
 
 
-def test_ur_ac1_unavailable_is_the_stored_rejected_value(client, db_session):
-    """No new value in the shared enum: Unavailable is how this feature
-    shows `rejected`."""
+def test_ur_ac1_unavailable_is_stored_as_the_existing_rejected_value(client, db_session):
+    """Nothing is added to the shared enum: Unavailable is how this feature
+    names `rejected`, in the API and on screen."""
     w = _world(client, db_session)
-    _update(client, w.tech, w.rid, status="rejected")
+    _update(client, w.tech, w.rid, status="unavailable", reason="Under maintenance")
 
     row = db_session.get(CoordinatorEquipmentRequirement, w.rid)
     db_session.refresh(row)
     assert row.status is EquipmentStatus.rejected
+    assert row.unavailable_reason == "Under maintenance"
 
 
-@pytest.mark.parametrize("status", ["reserved", "cancelled"])
-def test_ur_ac1_reserved_and_cancelled_cannot_be_set_by_hand(client, db_session, status):
-    """Reserved has to be backed by a real reservation, so it cannot be
-    chosen."""
+@pytest.mark.parametrize("reason", [None, "", "   "], ids=["none", "empty", "spaces"])
+def test_ur_ac1_unavailable_needs_a_reason(client, db_session, reason):
+    """DoD 11b: Unavailable -- reason required."""
+    w = _world(client, db_session)
+    body = {"status": "unavailable"} if reason is None else {"status": "unavailable", "reason": reason}
+
+    res = _update(client, w.tech, w.rid, **body)
+
+    assert res.status_code == 422
+    assert _flagged(res) == {"reason"}
+    assert _as_support(client, w)["status"] == "requested"
+    assert _history(db_session, w) == []
+
+
+def test_ur_ac1_the_reason_is_shown_to_the_coordinator(client, db_session):
+    w = _world(client, db_session)
+
+    _update(client, w.tech, w.rid, status="unavailable", reason="Damaged in the last event")
+
+    seen = _as_coordinator(client, w)
+    assert seen["status"] == "unavailable" and seen["unavailable_reason"] == "Damaged in the last event"
+
+
+def test_ur_ac1_going_back_to_requested_drops_the_reason(client, db_session):
+    w = _world(client, db_session)
+    _update(client, w.tech, w.rid, status="unavailable", reason="Damaged")
+
+    body = _update(client, w.tech, w.rid, status="requested").json()
+
+    assert body["status"] == "requested" and body["unavailable_reason"] is None
+
+
+def test_ur_ac1_a_reason_sent_with_requested_is_not_kept(client, db_session):
+    w = _world(client, db_session)
+
+    body = _update(client, w.tech, w.rid, status="requested", reason="not a reason for this").json()
+
+    assert body["unavailable_reason"] is None
+
+
+@pytest.mark.parametrize("status", ["reserved", "available"])
+def test_ur_ac1_reserved_and_available_cannot_be_set_by_hand(client, db_session, status):
+    """Reserved has to be backed by a real reservation, and Available by one
+    that was freed, so neither can be chosen."""
     w = _world(client, db_session)
 
     res = _update(client, w.tech, w.rid, status=status)
@@ -447,31 +500,47 @@ def test_ur_ac1_reserved_and_cancelled_cannot_be_set_by_hand(client, db_session,
     assert _as_support(client, w)["status"] == "requested"
 
 
-def test_ur_ac1_an_unknown_status_is_refused(client, db_session):
+@pytest.mark.parametrize("status", ["reviewing", "rejected", "cancelled", "on_the_truck"])
+def test_ur_ac1_only_the_definition_of_done_statuses_are_accepted(client, db_session, status):
+    """The DoD's names, and no others: the stored values `reviewing` and
+    `rejected` are not part of this feature's vocabulary."""
     w = _world(client, db_session)
 
-    assert _update(client, w.tech, w.rid, status="unavailable").status_code == 422
+    res = _update(client, w.tech, w.rid, status=status)
+
+    assert res.status_code == 422
+    assert _flagged(res) == {"status"}
 
 
 def test_ur_ac1_unavailable_cannot_be_set_once_something_is_reserved(client, db_session):
     w = _world(client, db_session, needed=5)
     _reserved(client, w.tech, w.rid, w.mic.id, quantity=2)
 
-    res = _update(client, w.tech, w.rid, status="rejected")
+    res = _update(client, w.tech, w.rid, status="unavailable", reason="Changed my mind")
 
     assert res.status_code == 409
-    assert _as_support(client, w)["status"] == "reviewing"
+    assert _as_support(client, w)["status"] == "requested"
 
 
 def test_ur_ac1_a_status_set_by_hand_does_not_hide_what_is_reserved(client, db_session):
-    """Setting Requested on a requirement that is part-reserved changes the
-    stored value, not the truth: it still reads as in progress."""
+    """Requested on a part-reserved requirement is what it already is."""
     w = _world(client, db_session, needed=5)
     _reserved(client, w.tech, w.rid, w.mic.id, quantity=2)
 
     body = _update(client, w.tech, w.rid, status="requested").json()
 
-    assert body["status"] == "reviewing" and body["reserved_quantity"] == 2
+    assert body["status"] == "requested" and body["reserved_quantity"] == 2
+
+
+def test_ur_ac1_a_stored_in_review_value_from_before_is_read_as_requested(client, db_session):
+    """Rows saved while "In review" was a choice read as Requested now."""
+    w = _world(client, db_session)
+    row = db_session.get(CoordinatorEquipmentRequirement, w.rid)
+    row.status = EquipmentStatus.reviewing
+    db_session.commit()
+
+    assert _as_support(client, w)["status"] == "requested"
+    assert _as_coordinator(client, w)["status"] == "requested"
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +563,9 @@ def test_ur_ac2_raising_the_quantity_reopens_a_fully_reserved_requirement(client
 
     body = _update(client, w.tech, w.rid, quantity_needed=6).json()
 
-    assert body["status"] == "reviewing"
+    # DoD 11b: "If the required quantity rises above the reserved quantity,
+    # the status returns to Requested."
+    assert body["status"] == "requested"
     assert body["reserved_quantity"] == 4  # the reservation is untouched
 
 
@@ -599,9 +670,9 @@ def test_ur_updating_an_unknown_requirement_is_not_found(client, db_session):
 def test_ur_ac3_a_status_set_by_technical_support_is_visible_to_the_coordinator(client, db_session):
     w = _world(client, db_session)
 
-    _update(client, w.tech, w.rid, status="rejected")
+    _update(client, w.tech, w.rid, status="unavailable", reason="Damaged")
 
-    assert _as_coordinator(client, w)["status"] == "rejected"
+    assert _as_coordinator(client, w)["status"] == "unavailable"
 
 
 def test_ur_ac3_a_quantity_changed_by_technical_support_is_visible_to_the_coordinator(client, db_session):
@@ -618,10 +689,10 @@ def test_ur_ac3_the_coordinator_sees_what_is_reserved_and_how_far_it_has_got(cli
 
     seen = _as_coordinator(client, w)
 
-    assert seen["status"] == "reviewing"
+    assert seen["status"] == "requested"  # waiting for the other 2
     assert seen["quantity_needed"] == 5 and seen["reserved_quantity"] == 3
     assert seen["reservations"] == [
-        {"equipment_id": w.mic.id, "equipment_name": "Shure BLX24", "quantity": 3}
+        {"equipment_id": w.mic.id, "equipment_name": "Shure BLX24", "quantity": 3, "placement_notes": None}
     ]
 
 
@@ -659,7 +730,7 @@ def test_ur_ac3_technical_support_sees_what_is_reserved_without_the_coordinators
 
     assert set(_as_support(client, w)) == {
         "id", "category", "quantity_needed", "technical_notes", "status",
-        "reserved_quantity", "reservations",
+        "reserved_quantity", "released_quantity", "unavailable_reason", "reservations",
     }
 
 
@@ -772,6 +843,318 @@ def test_ur_the_coordinators_responses_carry_the_progress(client, db_session):
 
     edited = _edit(client, w, technical_notes="Handheld").json()
 
-    assert edited["status"] == "reviewing" and edited["reserved_quantity"] == 3
+    assert edited["status"] == "requested" and edited["reserved_quantity"] == 3
     added = _added(client, w.headers, w.event.id)
     assert added["reserved_quantity"] == 0 and added["reservations"] == [] and added["status"] == "requested"
+
+
+# ---------------------------------------------------------------------------
+# Placement: where Technical Support will set the equipment up
+# ---------------------------------------------------------------------------
+
+
+def _reserve_with_placement(client, headers, requirement_id, equipment_id, placement, quantity=None):
+    body = {"equipment_id": equipment_id, "placement_notes": placement}
+    if quantity is not None:
+        body["quantity"] = quantity
+    return client.post(f"/equipment-requirements/{requirement_id}/reservations", json=body, headers=headers)
+
+
+def test_ur_placement_is_recorded_on_the_reservation_and_shown_with_it(client, db_session):
+    """Where the item will be set up at the venue -- recorded by Technical
+    Support when they reserve, and read by the Safety Officer. It lives on the
+    reservation (his field), which is why a requirement waiting to be reserved
+    has none."""
+    w = _world(client, db_session, needed=4)
+
+    res = _reserve_with_placement(client, w.tech, w.rid, w.mic.id, "Stage left, by the lectern")
+
+    assert res.status_code == 200, res.text
+    assert res.json()["reservations"][0]["placement_notes"] == "Stage left, by the lectern"
+    (line,) = _lines(db_session, w.event)
+    assert line.placement_notes == "Stage left, by the lectern"
+
+
+def test_ur_placement_is_the_same_one_his_reservation_page_and_the_safety_officer_read(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserve_with_placement(client, w.tech, w.rid, w.mic.id, "Back of the hall")
+
+    listed = client.get(f"/equipment-reservations?event_id={w.event.id}", headers=w.tech).json()
+
+    assert [r["placement_notes"] for r in listed] == ["Back of the hall"]
+
+
+def test_ur_placement_is_optional(client, db_session):
+    w = _world(client, db_session, needed=4)
+
+    body = _reserved(client, w.tech, w.rid, w.mic.id)
+
+    assert body["reservations"][0]["placement_notes"] is None
+
+
+@pytest.mark.parametrize("placement", ["", "   "])
+def test_ur_a_blank_placement_is_none(client, db_session, placement):
+    w = _world(client, db_session, needed=4)
+
+    res = _reserve_with_placement(client, w.tech, w.rid, w.mic.id, placement)
+
+    assert res.json()["reservations"][0]["placement_notes"] is None
+
+
+def test_ur_placement_is_recorded_for_an_item_the_organiser_asked_for_too(client, db_session):
+    w = _world(client, db_session, needed=6)
+    _organiser_line(db_session, w.event, w.mic, quantity=4)
+
+    res = _reserve_with_placement(client, w.tech, w.rid, w.mic.id, "Front row")
+
+    (line,) = _lines(db_session, w.event)
+    assert res.status_code == 200 and line.placement_notes == "Front row"
+
+
+def test_ur_each_reserved_item_keeps_its_own_placement(client, db_session):
+    w = _world(client, db_session, needed=5)
+    _reserve_with_placement(client, w.tech, w.rid, w.mic.id, "Stage left", quantity=3)
+    body = _reserve_with_placement(client, w.tech, w.rid, w.pa.id, "Rear", quantity=2).json()
+
+    assert {r["equipment_name"]: r["placement_notes"] for r in body["reservations"]} == {
+        "Shure BLX24": "Stage left", "Yamaha PA": "Rear",
+    }
+
+
+def test_ur_a_placement_that_is_too_long_is_refused_and_nothing_is_reserved(client, db_session):
+    w = _world(client, db_session, needed=4)
+
+    res = _reserve_with_placement(client, w.tech, w.rid, w.mic.id, "x" * 2001)
+
+    assert res.status_code == 422
+    assert _lines(db_session, w.event) == [] and _links(db_session) == []
+
+
+def test_ur_a_requirement_waiting_to_be_reserved_has_no_placement_yet(client, db_session):
+    w = _world(client, db_session)
+
+    assert _as_support(client, w)["reservations"] == []
+
+
+# ---------------------------------------------------------------------------
+# Available: its reservation was freed
+# ---------------------------------------------------------------------------
+
+
+def _event_has_ended(db_session, w):
+    """The event's end time passes. Reservations hold stock until then (his
+    rule, and why a cancelled event frees nothing early)."""
+    w.event.proposed_start = datetime(2020, 5, 1, 9, tzinfo=timezone.utc)
+    w.event.proposed_end = datetime(2020, 5, 1, 17, tzinfo=timezone.utc)
+    db_session.commit()
+
+
+def test_ur_a_reservation_freed_when_the_event_ends_reads_available(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+    assert _as_support(client, w)["status"] == "reserved"
+
+    _event_has_ended(db_session, w)
+
+    seen = _as_support(client, w)
+    assert seen["status"] == "available"
+    assert seen["reserved_quantity"] == 0  # it holds nothing now
+    assert seen["released_quantity"] == 4  # what was freed
+
+
+def test_ur_available_is_worked_out_not_stored(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+    _event_has_ended(db_session, w)
+    assert _as_support(client, w)["status"] == "available"
+
+    row = db_session.get(CoordinatorEquipmentRequirement, w.rid)
+    db_session.refresh(row)
+    assert row.status is EquipmentStatus.requested
+
+
+def test_ur_a_part_reserved_requirement_is_freed_too(client, db_session):
+    w = _world(client, db_session, needed=5)
+    _reserved(client, w.tech, w.rid, w.mic.id, quantity=3)
+
+    _event_has_ended(db_session, w)
+
+    seen = _as_coordinator(client, w)
+    assert seen["status"] == "available" and seen["released_quantity"] == 3
+
+
+def test_ur_the_coordinator_sees_available_on_the_event_record(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+
+    _event_has_ended(db_session, w)
+
+    assert _as_coordinator(client, w)["status"] == "available"
+
+
+def test_ur_a_requirement_that_was_never_reserved_is_not_available(client, db_session):
+    """Nothing was held, so nothing was freed."""
+    w = _world(client, db_session)
+
+    _event_has_ended(db_session, w)
+
+    assert _as_support(client, w)["status"] == "requested"
+
+
+def test_ur_an_unavailable_requirement_stays_unavailable_with_its_reason(client, db_session):
+    w = _world(client, db_session)
+    _update(client, w.tech, w.rid, status="unavailable", reason="Damaged")
+
+    _event_has_ended(db_session, w)
+
+    seen = _as_support(client, w)
+    assert seen["status"] == "unavailable" and seen["unavailable_reason"] == "Damaged"
+
+
+def test_ur_an_event_with_no_end_time_is_never_freed(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+    w.event.proposed_start = w.event.proposed_end = None
+    db_session.commit()
+
+    assert _as_support(client, w)["status"] == "reserved"
+
+
+def test_ur_an_event_still_to_come_keeps_its_reservation(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+
+    assert _as_support(client, w)["status"] == "reserved"
+
+
+def test_ur_nothing_can_be_reserved_or_updated_once_it_is_available(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+    _event_has_ended(db_session, w)
+
+    assert _reserve(client, w.tech, w.rid, w.pa.id, quantity=1).status_code == 409
+    assert _update(client, w.tech, w.rid, quantity_needed=9).status_code == 409
+    assert _update(client, w.tech, w.rid, status="unavailable", reason="x").status_code == 409
+    assert _as_support(client, w)["quantity_needed"] == 4
+
+
+def test_ur_a_freed_requirement_can_be_removed_and_retyped_by_the_coordinator(client, db_session):
+    """It holds nothing any more, so the protections that stop equipment being
+    orphaned no longer apply."""
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+    _event_has_ended(db_session, w)
+
+    assert _edit(client, w, category="Projection").status_code == 200
+    assert client.delete(f"/equipment-requirements/{w.rid}", headers=w.headers).status_code == 204
+
+
+# ---------------------------------------------------------------------------
+# The Activity Log (DoD 11: every status change, with who and when)
+# ---------------------------------------------------------------------------
+
+
+def _history(db_session, w):
+    """The Activity Log entries: history rows that changed no status. The
+    event's own move to Planning Event, made by adding the first requirement,
+    is a status change and is not one of them."""
+    db_session.expire_all()
+    return [
+        entry
+        for entry in db_session.query(EventStatusHistory)
+        .filter_by(event_id=w.event.id)
+        .order_by(EventStatusHistory.id)
+        if entry.from_status == entry.to_status
+    ]
+
+
+def test_ur_marking_unavailable_is_logged_with_who_what_and_why(client, db_session):
+    w = _world(client, db_session)
+
+    _update(client, w.tech, w.rid, status="unavailable", reason="Under maintenance")
+
+    [entry] = _history(db_session, w)
+    assert entry.changed_by == w.tech_user.id
+    assert entry.created_at is not None
+    assert "Audio" in entry.note and "Requested" in entry.note and "Unavailable" in entry.note
+    assert "Under maintenance" in entry.note
+
+
+def test_ur_the_log_line_leaves_the_events_status_as_it_was(client, db_session):
+    w = _world(client, db_session)
+
+    _update(client, w.tech, w.rid, status="unavailable", reason="Damaged")
+
+    [entry] = _history(db_session, w)
+    # Adding the first requirement moved the event to Planning Event; the log
+    # line leaves it there.
+    assert entry.from_status == entry.to_status == EventStatus.planning_event
+
+
+def test_ur_going_back_to_requested_is_logged(client, db_session):
+    w = _world(client, db_session)
+    _update(client, w.tech, w.rid, status="unavailable", reason="Damaged")
+
+    _update(client, w.tech, w.rid, status="requested")
+
+    notes = [h.note for h in _history(db_session, w)]
+    assert len(notes) == 2
+    assert "Unavailable" in notes[1] and "Requested" in notes[1]
+
+
+def test_ur_fully_reserving_is_logged_as_reserved(client, db_session):
+    w = _world(client, db_session, needed=4)
+
+    _reserved(client, w.tech, w.rid, w.mic.id)
+
+    [entry] = _history(db_session, w)
+    assert entry.changed_by == w.tech_user.id
+    assert "Requested" in entry.note and "Reserved" in entry.note
+
+
+def test_ur_a_part_reservation_changes_no_status_so_is_not_logged(client, db_session):
+    w = _world(client, db_session, needed=5)
+
+    _reserved(client, w.tech, w.rid, w.mic.id, quantity=3)
+
+    assert _history(db_session, w) == []
+
+
+def test_ur_raising_the_quantity_over_what_is_reserved_is_logged_as_back_to_requested(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+
+    _update(client, w.tech, w.rid, quantity_needed=6)
+
+    notes = [h.note for h in _history(db_session, w)]
+    assert len(notes) == 2
+    assert "Reserved" in notes[1] and "Requested" in notes[1]
+
+
+def test_ur_the_coordinator_raising_the_quantity_is_logged_too(client, db_session):
+    w = _world(client, db_session, needed=4)
+    _reserved(client, w.tech, w.rid, w.mic.id)
+
+    assert _edit(client, w, quantity_needed=7).status_code == 200
+
+    entries = _history(db_session, w)
+    assert entries[-1].changed_by == w.coordinator.id
+    assert "Reserved" in entries[-1].note and "Requested" in entries[-1].note
+
+
+def test_ur_a_refused_update_is_not_logged(client, db_session):
+    w = _world(client, db_session, needed=5)
+    _reserved(client, w.tech, w.rid, w.mic.id, quantity=2)
+
+    assert _update(client, w.tech, w.rid, status="unavailable", reason="No").status_code == 409
+    assert _update(client, w.tech, w.rid, status="reserved").status_code == 422
+
+    assert _history(db_session, w) == []
+
+
+def test_ur_a_change_that_leaves_the_status_alone_is_not_logged(client, db_session):
+    w = _world(client, db_session, needed=5)
+
+    assert _update(client, w.tech, w.rid, quantity_needed=8).status_code == 200
+
+    assert _history(db_session, w) == []

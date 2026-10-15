@@ -126,6 +126,8 @@ export function EquipmentRequirementsRecord() {
                 status={requirement.status}
                 reserved={requirement.reserved_quantity}
                 reservations={requirement.reservations}
+                released={requirement.released_quantity}
+                unavailableReason={requirement.unavailable_reason}
                 actions={
                   <button
                     type="button"

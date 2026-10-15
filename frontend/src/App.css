@@ -2153,6 +2153,12 @@ label.required::after {
 }
 
 .requirement-form-title,
+.placement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .requirement-subtitle {
   margin: 0;
   font-size: 14px;

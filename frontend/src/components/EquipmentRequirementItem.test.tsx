@@ -3,8 +3,9 @@
  *
  * Traceability (see docs/test-cases-equipment-requirement-status.md):
  *   UR AC1  the status of each requirement, so the Coordinator can track
- *           progress: Requested / In review / Unavailable while nothing is
- *           reserved, "In progress — 3 of 5 reserved", "Reserved — 5 of 5"
+ *           progress: Requested / Unavailable (with its reason) while nothing
+ *           is reserved, "Requested — 3 of 5 reserved" while only part is,
+ *           "Reserved — 5 of 5", and Available once the reservation is freed
  *   UR AC3  the updated status and quantity visible to the Coordinator
  *
  * The row is shared by the Coordinator's card and Technical Support's
@@ -39,31 +40,48 @@ describe('a requirement with nothing reserved', () => {
     expect(screen.queryByText(/reserved/i)).not.toBeInTheDocument()
   })
 
-  it('reads In review for a requirement under review', () => {
-    renderRow({ status: 'reviewing' })
+  it('has no In review: it is not a status', () => {
+    renderRow()
 
-    expect(screen.getByText('In review')).toBeInTheDocument()
+    expect(screen.queryByText('In review')).not.toBeInTheDocument()
   })
+})
 
-  it('shows rejected as Unavailable', () => {
-    renderRow({ status: 'rejected' })
+describe('an Unavailable requirement', () => {
+  it('reads Unavailable, with the reason Technical Support gave', () => {
+    renderRow({ status: 'unavailable', unavailableReason: 'Mics are being repaired' })
 
     expect(screen.getByText('Unavailable')).toBeInTheDocument()
-    expect(screen.queryByText('Rejected')).not.toBeInTheDocument()
+    expect(screen.getByRole('listitem')).toHaveTextContent('Reason: Mics are being repaired')
+  })
+
+  it('does not invent a reason when there is none on record', () => {
+    renderRow({ status: 'unavailable', unavailableReason: null })
+
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/Reason:/)).not.toBeInTheDocument()
+  })
+
+  it('shows no reason on a requirement that is not Unavailable', () => {
+    renderRow({ status: 'requested', unavailableReason: 'left over' })
+
+    expect(screen.queryByText(/Reason:/)).not.toBeInTheDocument()
   })
 })
 
 describe('a requirement with some of it reserved', () => {
   const PART = {
-    status: 'reviewing',
+    status: 'requested',
     reserved: 3,
-    reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 }],
+    reservations: [
+      { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: null },
+    ],
   }
 
-  it('reads In progress, with how far it has got', () => {
+  it('is still Requested, with how far it has got', () => {
     renderRow(PART)
 
-    expect(screen.getByText('In progress — 3 of 5 reserved')).toBeInTheDocument()
+    expect(screen.getByText('Requested — 3 of 5 reserved')).toBeInTheDocument()
   })
 
   it('keeps what is needed distinct from what is reserved', () => {
@@ -76,11 +94,11 @@ describe('a requirement with some of it reserved', () => {
 
   it('names what is reserved, item by item', () => {
     renderRow({
-      status: 'reviewing',
+      status: 'requested',
       reserved: 4,
       reservations: [
-        { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3 },
-        { equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 1 },
+        { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: null },
+        { equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 1, placement_notes: null },
       ],
     })
 
@@ -89,10 +107,20 @@ describe('a requirement with some of it reserved', () => {
     expect(row).toHaveTextContent('1 × Yamaha PA')
   })
 
-  it('does not call it In review: the reservations say more than the label', () => {
-    renderRow(PART)
+  it('says where an item will be placed, when that was recorded', () => {
+    renderRow({
+      status: 'requested',
+      reserved: 4,
+      reservations: [
+        { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: 'Stage left' },
+        { equipment_id: 12, equipment_name: 'Yamaha PA', quantity: 1, placement_notes: null },
+      ],
+    })
 
-    expect(screen.queryByText('In review')).not.toBeInTheDocument()
+    const row = screen.getByRole('listitem')
+    expect(row).toHaveTextContent('3 × Shure BLX24 (placed: Stage left)')
+    expect(row).toHaveTextContent('1 × Yamaha PA')
+    expect(row).not.toHaveTextContent('Yamaha PA (placed')
   })
 })
 
@@ -101,10 +129,27 @@ describe('a fully reserved requirement', () => {
     renderRow({
       status: 'reserved',
       reserved: 5,
-      reservations: [{ equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 5 }],
+      reservations: [
+        { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 5, placement_notes: null },
+      ],
     })
 
     expect(screen.getByText('Reserved — 5 of 5')).toBeInTheDocument()
+  })
+})
+
+describe('a requirement whose reservation was freed', () => {
+  it('reads Available, with how much was freed', () => {
+    renderRow({
+      status: 'available',
+      reserved: 0,
+      released: 3,
+      reservations: [
+        { equipment_id: 11, equipment_name: 'Shure BLX24', quantity: 3, placement_notes: null },
+      ],
+    })
+
+    expect(screen.getByText('Available — 3 freed')).toBeInTheDocument()
   })
 })
 
@@ -114,6 +159,20 @@ describe('a row from an older response', () => {
 
     expect(screen.getByText('Audio')).toBeInTheDocument()
     expect(screen.getByText('Requested')).toBeInTheDocument()
+  })
+})
+
+describe('the context of a row listed across events', () => {
+  it('shows what it is given beneath the type, such as its event', () => {
+    renderRow({ context: <span>Regional Partner Conference</span> })
+
+    expect(screen.getByRole('listitem')).toHaveTextContent('Regional Partner Conference')
+  })
+
+  it('shows nothing extra when there is none', () => {
+    renderRow()
+
+    expect(screen.getByRole('listitem').querySelector('.requirement-context')).toBeNull()
   })
 })
 
