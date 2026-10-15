@@ -23,20 +23,31 @@ This feature does not make reservations of its own, and does not duplicate
 how one is checked or made. Stock, overlap, event status and the write are
 all Ercong's `reserve_equipment`. What is added here is only the question
 "which requirement is this for?", answered by a link written in the same
-commit as the reservation.
+commit as the reservation -- and, optionally, where the item will be placed,
+which his reservation already records.
+
+The statuses are the Definition of Done's (11b). Technical Support sets
+Requested or Unavailable (with a reason); Reserved comes from the
+reservations and Available from the event ending, so neither is settable.
+Every change of the status people see goes in the Activity Log.
 """
 
 from abc import ABC, abstractmethod
 
 from sqlalchemy.orm import Session
 
+from app.domain.activity_log import ActivityLog, EventHistoryLog
 from app.domain.equipment_requirements import EQUIPMENT_ACTIVE_STATUSES
 from app.domain.errors import Conflict, DomainError, InvalidInput, NotFound
 from app.domain.requirement_progress import (
+    STORED_UNAVAILABLE,
     TECH_SUPPORT_STATUSES,
     RequirementProgress,
     RequirementReservationLinks,
+    RequirementStatus,
+    RequirementStatusLog,
     ReservedItem,
+    checked_reason,
 )
 from app.models.enums import EquipmentStatus
 from app.models.equipment import CoordinatorEquipmentRequirement, Equipment
@@ -48,13 +59,15 @@ __all__ = [
     "EquipmentRequirementFulfillmentService",
     "RequirementProgress",
     "RequirementReservationLinks",
+    "RequirementStatus",
     "ReservationGateway",
     "ReservationRefused",
     "ReservedItem",
 ]
 
 # What an update may change. The type and the notes are the Coordinator's.
-_UPDATABLE_FIELDS = frozenset({"status", "quantity_needed"})
+# `reason` goes with an Unavailable status; sent on its own it changes nothing.
+_UPDATABLE_FIELDS = frozenset({"status", "quantity_needed", "reason"})
 
 
 class ReservationRefused(DomainError):
@@ -79,9 +92,16 @@ class ReservationGateway(ABC):
 
     @abstractmethod
     def reserve(
-        self, *, event_id: int, equipment_id: int, quantity: int | None, user: User
+        self,
+        *,
+        event_id: int,
+        equipment_id: int,
+        quantity: int | None,
+        user: User,
+        placement_notes: str | None = None,
     ) -> int:
-        """Reserve the item for the event. Returns the quantity reserved.
+        """Reserve the item for the event, noting where it will be placed.
+        Returns the quantity reserved.
 
         Raises ReservationRefused if it cannot be reserved.
         """
@@ -93,7 +113,7 @@ class EquipmentRequirementFulfillmentService:
 
     Does not commit, except that the gateway's reservation does -- which is
     intended: it carries the link with it. The router commits what is left
-    (a status moved on after a successful reservation).
+    (a status moved on after a successful reservation, the Activity Log).
     """
 
     def __init__(
@@ -101,20 +121,31 @@ class EquipmentRequirementFulfillmentService:
         db: Session,
         gateway: ReservationGateway,
         links: RequirementReservationLinks | None = None,
+        activity: ActivityLog | None = None,
     ) -> None:
         self._db = db
         self._gateway = gateway
         self._links = links if links is not None else RequirementReservationLinks(db)
+        self._status_log = RequirementStatusLog(
+            activity if activity is not None else EventHistoryLog(db)
+        )
 
     # --- commands -----------------------------------------------------------
 
     def reserve(
-        self, requirement_id: int, equipment_id: int, quantity: int | None, user: User
+        self,
+        requirement_id: int,
+        equipment_id: int,
+        quantity: int | None,
+        user: User,
+        placement_notes: str | None = None,
     ) -> tuple[CoordinatorEquipmentRequirement, RequirementProgress]:
         requirement = self._requirement_in_window(requirement_id)
         item = self._item_of_the_requirements_type(requirement, equipment_id)
         progress = self._links.progress_for(requirement)
+        self._ensure_not_freed(progress)
         to_gateway = self._checked_quantity_to_reserve(requirement, item, progress, quantity)
+        placement = self._checked_placement(placement_notes)
 
         # The link goes into the session BEFORE the reservation is made, so
         # the reservation's own commit writes both or neither. If it refuses,
@@ -126,38 +157,67 @@ class EquipmentRequirementFulfillmentService:
                 equipment_id=item.id,
                 quantity=to_gateway,
                 user=user,
+                placement_notes=placement,
             )
         except BaseException:
             self._db.rollback()
             raise
 
-        if requirement.status is EquipmentStatus.rejected:
+        if requirement.status is STORED_UNAVAILABLE:
             # Equipment turned up after it was marked Unavailable: it is being
             # worked on again. Moving the stored outcome on means it does not
-            # come back as Unavailable if the reservation is later lost.
-            requirement.status = EquipmentStatus.reviewing
-            self._db.flush()
-        return requirement, self._links.progress_for(requirement)
+            # come back as Unavailable if the reservation is later lost, and
+            # the old reason is no longer true.
+            requirement.status = EquipmentStatus.requested
+            requirement.unavailable_reason = None
+        self._db.flush()
+
+        after = self._links.progress_for(requirement)
+        self._status_log.record(
+            self._event_of(requirement),
+            user,
+            requirement,
+            progress.status,
+            after.status,
+            by=user.name,
+        )
+        return requirement, after
 
     def update(
-        self, requirement_id: int, **changes: object
+        self, requirement_id: int, *, actor: User | None = None, **changes: object
     ) -> tuple[CoordinatorEquipmentRequirement, RequirementProgress]:
         """Change the status and/or quantity needed. Fields not mentioned are
-        left alone; an empty update is not a write."""
+        left alone; an empty update is not a write.
+
+        `actor` is who is making the change, for the Activity Log.
+        """
         unknown = set(changes) - _UPDATABLE_FIELDS
         if unknown:
             raise TypeError(f"Not updatable here: {', '.join(sorted(unknown))}")
 
         requirement = self._requirement_in_window(requirement_id)
         progress = self._links.progress_for(requirement)
+        if "status" in changes or "quantity_needed" in changes:
+            self._ensure_not_freed(progress)
 
         if "status" in changes:
-            requirement.status = self._checked_status(changes["status"], progress)
+            self._apply_status(requirement, progress, changes["status"], changes.get("reason"))
         if "quantity_needed" in changes:
             requirement.quantity_needed = progress.check_new_quantity(changes["quantity_needed"])
 
         self._db.flush()
-        return requirement, self._links.progress_for(requirement)
+        after = self._links.progress_for(requirement)
+        if actor is not None:
+            self._status_log.record(
+                self._event_of(requirement),
+                actor,
+                requirement,
+                progress.status,
+                after.status,
+                by=actor.name,
+                reason=after.unavailable_reason,
+            )
+        return requirement, after
 
     # --- rules --------------------------------------------------------------
 
@@ -172,6 +232,19 @@ class EquipmentRequirementFulfillmentService:
         if event is None or event.status not in EQUIPMENT_ACTIVE_STATUSES:
             raise NotFound("Requirement not found")
         return requirement
+
+    def _event_of(self, requirement: CoordinatorEquipmentRequirement) -> Event:
+        return self._db.get(Event, requirement.event_id)
+
+    @staticmethod
+    def _ensure_not_freed(progress: RequirementProgress) -> None:
+        """Available means the reservation was freed because the event is
+        over. There is nothing left to fulfil, so nothing to change."""
+        if progress.status is RequirementStatus.AVAILABLE:
+            raise Conflict(
+                "This requirement's reservation was freed when the event ended; "
+                "it can no longer be changed."
+            )
 
     def _item_of_the_requirements_type(
         self, requirement: CoordinatorEquipmentRequirement, equipment_id: int
@@ -229,21 +302,43 @@ class EquipmentRequirementFulfillmentService:
         return taking
 
     @staticmethod
-    def _checked_status(status: object, progress: RequirementProgress) -> EquipmentStatus:
+    def _checked_placement(placement_notes: str | None) -> str | None:
+        """Where the item will be set up. Optional; spaces are not a note."""
+        if placement_notes is None:
+            return None
+        if not isinstance(placement_notes, str):
+            raise InvalidInput("Placement must be text.", field="placement_notes")
+        return placement_notes.strip() or None
+
+    @staticmethod
+    def _apply_status(
+        requirement: CoordinatorEquipmentRequirement,
+        progress: RequirementProgress,
+        status: object,
+        reason: object,
+    ) -> None:
+        """Set Requested or Unavailable. Nothing else can be set by hand."""
         try:
-            status = EquipmentStatus(status)
+            status = RequirementStatus(status)
         except ValueError:
             raise InvalidInput("Choose a status.", field="status") from None
-        if status is EquipmentStatus.reserved:
-            raise InvalidInput(
-                "Reserved comes from the reservations; it cannot be set by hand.", field="status"
-            )
         if status not in TECH_SUPPORT_STATUSES:
-            raise InvalidInput("That status cannot be set here.", field="status")
-        if status is EquipmentStatus.rejected and progress.reserved > 0:
-            raise Conflict(
-                "Equipment is already reserved for this requirement, "
-                "so it cannot be marked unavailable.",
+            raise InvalidInput(
+                "Reserved and Available come from the reservations; "
+                "they cannot be set by hand.",
                 field="status",
             )
-        return status
+
+        if status is RequirementStatus.UNAVAILABLE:
+            if progress.reserved > 0:
+                raise Conflict(
+                    "Equipment is already reserved for this requirement, "
+                    "so it cannot be marked unavailable.",
+                    field="status",
+                )
+            requirement.unavailable_reason = checked_reason(reason)
+            requirement.status = STORED_UNAVAILABLE
+        else:
+            # A reason belongs to Unavailable; leaving it is not "Requested".
+            requirement.unavailable_reason = None
+            requirement.status = EquipmentStatus.requested

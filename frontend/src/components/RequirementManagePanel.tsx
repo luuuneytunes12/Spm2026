@@ -60,11 +60,16 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
   const reserved = requirement.reserved_quantity
   const remaining = Math.max(needed - reserved, 0)
   const dated = event.proposed_start !== null && event.proposed_end !== null
-  const canReserve = dated && remaining > 0
+  // Available: the reservation was freed because the event is over. There is
+  // nothing left to fulfil, so nothing to change or reserve.
+  const freed = requirement.status === 'available'
+  const canReserve = dated && remaining > 0 && !freed
 
-  // --- the request: status and quantity needed ---
+  // --- the request: status, its reason, and quantity needed ---
   const settable = TECH_SUPPORT_STATUS_OPTIONS.some((o) => o.value === requirement.status)
   const [status, setStatus] = useState(settable ? requirement.status : 'requested')
+  const [reason, setReason] = useState(requirement.unavailable_reason ?? '')
+  const [reasonProblem, setReasonProblem] = useState<string | null>(null)
   const [neededInput, setNeededInput] = useState(String(needed))
   const [saving, setSaving] = useState(false)
   const [saveProblem, setSaveProblem] = useState<string | null>(null)
@@ -72,6 +77,12 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
   // Once something is reserved the status is whatever the reservations say,
   // so there is no choice to make.
   const statusChanged = reserved === 0 && status !== requirement.status
+  // A reason is only asked for with Unavailable, and can be corrected there.
+  const showReason = reserved === 0 && status === 'unavailable'
+  const reasonChanged =
+    showReason &&
+    requirement.status === 'unavailable' &&
+    reason.trim() !== (requirement.unavailable_reason ?? '')
   const neededChanged = neededInput !== String(needed)
 
   // --- the reservation: exact equipment, its availability, how many ---
@@ -80,6 +91,8 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
   const [loadFailed, setLoadFailed] = useState(false)
   const [equipmentId, setEquipmentId] = useState('')
   const [quantity, setQuantity] = useState('')
+  // Where the item will be set up at the venue. Optional.
+  const [placement, setPlacement] = useState('')
   const [availability, setAvailability] = useState<EquipmentAvailability | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkProblem, setCheckProblem] = useState<string | null>(null)
@@ -155,6 +168,7 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
   function choose(value: string) {
     setEquipmentId(value)
     setQuantity(String(remaining))
+    setPlacement('')
     setAvailability(null)
     setCheckProblem(null)
     setReserveProblem(null)
@@ -174,10 +188,20 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
       return
     }
 
+    // DoD 11b: Unavailable needs a reason. Spaces are not one.
+    if (showReason && (statusChanged || reasonChanged) && !reason.trim()) {
+      setReasonProblem('Give a reason the equipment is unavailable.')
+      return
+    }
+
     const changes: SupportRequirementChanges = {}
-    if (statusChanged) changes.status = status
+    if (statusChanged || reasonChanged) {
+      changes.status = status
+      if (status === 'unavailable') changes.reason = reason.trim()
+    }
     if (neededChanged) changes.quantity_needed = value
 
+    setReasonProblem(null)
     setSaveProblem(null)
     setDone(null)
     setSaving(true)
@@ -202,11 +226,13 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
         requirement.id,
         item.id,
         fixed ? undefined : Number(quantity) || undefined,
+        placement.trim() || undefined,
       )
       const taken = updated.reservations.find((r) => r.equipment_id === item.id)?.quantity
       setDone(`Reserved ${taken ?? toReserve} × ${item.name}.`)
       setEquipmentId('')
       setQuantity('')
+      setPlacement('')
       setAvailability(null)
       setChecking(false)
       onChanged(updated)
@@ -228,9 +254,24 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
         <DetailRow label="Quantity">
           {needed} needed · {reserved} reserved · {remaining} remaining
         </DetailRow>
-        <DetailRow label="Status">{requirementStatusText(requirement.status, reserved, needed)}</DetailRow>
+        <DetailRow label="Status">
+          {requirementStatusText(requirement.status, reserved, needed, requirement.released_quantity)}
+        </DetailRow>
         <DetailRow label="Technical notes">
           {requirement.technical_notes ?? <span className="text-muted">None</span>}
+        </DetailRow>
+        <DetailRow label="Placement">
+          {requirement.reservations.length === 0 ? (
+            <span className="text-muted">Recorded when equipment is reserved</span>
+          ) : (
+            <ul className="placement-list">
+              {requirement.reservations.map((item) => (
+                <li key={item.equipment_id}>
+                  {item.equipment_name}: {item.placement_notes ?? <span className="text-muted">not set</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </DetailRow>
         <DetailRow label="Event date and time">
           {formatRange(event.proposed_start, event.proposed_end)}
@@ -243,176 +284,230 @@ export function RequirementManagePanel({ requirement, event, onChanged, onClose 
         </p>
       )}
 
-      <h4 className="requirement-subtitle">Requirement</h4>
-      <form onSubmit={(e) => void save(e)} noValidate className="stack-tight">
-        <div className="form-row">
-          {reserved === 0 ? (
-            <div className="field">
-              <label htmlFor={`${ids}-status`}>Status</label>
-              <select id={`${ids}-status`} value={status} onChange={(e) => setStatus(e.target.value)}>
-                {TECH_SUPPORT_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <p className="field-hint">The status follows the reservations.</p>
-          )}
-          <div className={saveProblem ? 'field field-invalid' : 'field'}>
-            <label htmlFor={`${ids}-needed`}>Quantity needed</label>
-            <input
-              id={`${ids}-needed`}
-              type="number"
-              min={reserved > 0 ? reserved : 1}
-              inputMode="numeric"
-              value={neededInput}
-              onChange={(e) => setNeededInput(e.target.value)}
-              aria-invalid={saveProblem ? true : undefined}
-            />
-            {reserved > 0 && (
-              <p className="field-hint">The quantity cannot go below the {reserved} reserved.</p>
-            )}
-          </div>
-        </div>
-        {saveProblem && (
-          <p className="field-error" role="alert">
-            {saveProblem}
-          </p>
-        )}
-        <div className="form-actions">
-          <button
-            type="submit"
-            className="btn-secondary"
-            disabled={saving || !(statusChanged || neededChanged)}
-          >
-            Save changes
-          </button>
-        </div>
-      </form>
-
-      <h4 className="requirement-subtitle">Reserve equipment</h4>
-      {!dated ? (
+      {freed ? (
         <p className="text-muted">
-          This event has no date and time yet, so equipment cannot be checked or reserved.
+          Its reservation was freed when the event ended, so there is nothing left to change or
+          reserve.
         </p>
-      ) : remaining === 0 ? (
-        <p className="text-muted">This requirement is fully reserved.</p>
       ) : (
-        <div className="stack-tight">
-          <p className="field-hint">
-            Held for the event’s date and time, and freed when it ends. Choose the exact{' '}
-            {requirement.category} item to reserve.
-          </p>
-
-          {loadFailed && (
-            <p className="form-error" role="alert">
-              Could not load the equipment.
-            </p>
-          )}
-
-          <div className="form-row">
-            <div className="field">
-              <label htmlFor={`${ids}-equipment`}>Equipment</label>
-              <select
-                id={`${ids}-equipment`}
-                value={equipmentId}
-                onChange={(e) => choose(e.target.value)}
-              >
-                <option value="">Select equipment…</option>
-                {items.map((i) => {
-                  const line = fixedLine(i.id)
-                  return (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                      {line ? ` (the Organiser asked for ${line.quantity_requested})` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
-            {item &&
-              (fixed ? (
-                <p className="field-hint">
-                  The Organiser asked for {fixed.quantity_requested}; that quantity will be reserved.
-                </p>
-              ) : (
+        <>
+          <h4 className="requirement-subtitle">Requirement</h4>
+          <form onSubmit={(e) => void save(e)} noValidate className="stack-tight">
+            <div className="form-row">
+              {reserved === 0 ? (
                 <div className="field">
-                  <label htmlFor={`${ids}-qty`}>Quantity to reserve</label>
-                  <input
-                    id={`${ids}-qty`}
-                    type="number"
-                    min={1}
-                    max={remaining}
-                    inputMode="numeric"
-                    value={quantity}
+                  <label htmlFor={`${ids}-status`}>Status</label>
+                  <select
+                    id={`${ids}-status`}
+                    value={status}
                     onChange={(e) => {
-                      setQuantity(e.target.value)
+                      setStatus(e.target.value)
+                      setReasonProblem(null)
+                    }}
+                  >
+                    {TECH_SUPPORT_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p className="field-hint">The status follows the reservations.</p>
+              )}
+              {showReason && (
+                <div className={reasonProblem ? 'field field-invalid' : 'field'}>
+                  <label htmlFor={`${ids}-reason`}>Reason</label>
+                  <textarea
+                    id={`${ids}-reason`}
+                    rows={2}
+                    required
+                    value={reason}
+                    onChange={(e) => {
+                      setReason(e.target.value)
+                      setReasonProblem(null)
+                    }}
+                    aria-invalid={reasonProblem ? true : undefined}
+                  />
+                  {reasonProblem && (
+                    <p className="field-error" role="alert">
+                      {reasonProblem}
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className={saveProblem ? 'field field-invalid' : 'field'}>
+                <label htmlFor={`${ids}-needed`}>Quantity needed</label>
+                <input
+                  id={`${ids}-needed`}
+                  type="number"
+                  min={reserved > 0 ? reserved : 1}
+                  inputMode="numeric"
+                  value={neededInput}
+                  onChange={(e) => setNeededInput(e.target.value)}
+                  aria-invalid={saveProblem ? true : undefined}
+                />
+                {reserved > 0 && (
+                  <p className="field-hint">The quantity cannot go below the {reserved} reserved.</p>
+                )}
+              </div>
+            </div>
+            {saveProblem && (
+              <p className="field-error" role="alert">
+                {saveProblem}
+              </p>
+            )}
+            <div className="form-actions">
+              <button
+                type="submit"
+                className="btn-secondary"
+                disabled={saving || !(statusChanged || reasonChanged || neededChanged)}
+              >
+                Save changes
+              </button>
+            </div>
+          </form>
+
+          <h4 className="requirement-subtitle">Reserve equipment</h4>
+          {!dated ? (
+            <p className="text-muted">
+              This event has no date and time yet, so equipment cannot be checked or reserved.
+            </p>
+          ) : remaining === 0 ? (
+            <p className="text-muted">This requirement is fully reserved.</p>
+          ) : (
+            <div className="stack-tight">
+              <p className="field-hint">
+                Held for the event’s date and time, and freed when it ends. Choose the exact{' '}
+                {requirement.category} item to reserve.
+              </p>
+
+              {loadFailed && (
+                <p className="form-error" role="alert">
+                  Could not load the equipment.
+                </p>
+              )}
+
+              <div className="form-row">
+                <div className="field">
+                  <label htmlFor={`${ids}-equipment`}>Equipment</label>
+                  <select
+                    id={`${ids}-equipment`}
+                    value={equipmentId}
+                    onChange={(e) => choose(e.target.value)}
+                  >
+                    <option value="">Select equipment…</option>
+                    {items.map((i) => {
+                      const line = fixedLine(i.id)
+                      return (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                          {line ? ` (the Organiser asked for ${line.quantity_requested})` : ''}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+                {item &&
+                  (fixed ? (
+                    <p className="field-hint">
+                      The Organiser asked for {fixed.quantity_requested}; that quantity will be reserved.
+                    </p>
+                  ) : (
+                    <div className="field">
+                      <label htmlFor={`${ids}-qty`}>Quantity to reserve</label>
+                      <input
+                        id={`${ids}-qty`}
+                        type="number"
+                        min={1}
+                        max={remaining}
+                        inputMode="numeric"
+                        value={quantity}
+                        onChange={(e) => {
+                          setQuantity(e.target.value)
+                          setDone(null)
+                        }}
+                      />
+                    </div>
+                  ))}
+              </div>
+
+              {item && (
+                <div className="field">
+                  <label htmlFor={`${ids}-placement`}>Placement (optional)</label>
+                  <textarea
+                    id={`${ids}-placement`}
+                    rows={2}
+                    maxLength={2000}
+                    value={placement}
+                    onChange={(e) => {
+                      setPlacement(e.target.value)
                       setDone(null)
                     }}
                   />
+                  <p className="field-hint">Where it will be set up at the venue.</p>
                 </div>
-              ))}
-          </div>
+              )}
 
-          {checking && <p className="field-hint">Checking availability…</p>}
+              {checking && <p className="field-hint">Checking availability…</p>}
 
-          {availability && (
-            <div role="status" aria-label="Availability" className="stack-tight">
-              <p>
-                <strong>
-                  {availability.available_quantity} of {availability.total_quantity}
-                </strong>{' '}
-                {availability.equipment_name} available for{' '}
-                {formatRange(availability.start_time, availability.end_time)}
-                {availability.reserved_quantity > 0 &&
-                  ` (${availability.reserved_quantity} reserved for overlapping events)`}
-                .
-              </p>
-              {quantityValid &&
-                (notEnoughFree ? (
-                  <p className="form-error">
-                    Only {availability.available_quantity} available; {toReserve} to reserve. You can
-                    choose another {requirement.category} item.
+              {availability && (
+                <div role="status" aria-label="Availability" className="stack-tight">
+                  <p>
+                    <strong>
+                      {availability.available_quantity} of {availability.total_quantity}
+                    </strong>{' '}
+                    {availability.equipment_name} available for{' '}
+                    {formatRange(availability.start_time, availability.end_time)}
+                    {availability.reserved_quantity > 0 &&
+                      ` (${availability.reserved_quantity} reserved for overlapping events)`}
+                    .
                   </p>
-                ) : (
-                  <p>Enough for the {toReserve} to reserve.</p>
-                ))}
+                  {quantityValid &&
+                    (notEnoughFree ? (
+                      <p className="form-error">
+                        Only {availability.available_quantity} available; {toReserve} to reserve. You can
+                        choose another {requirement.category} item.
+                      </p>
+                    ) : (
+                      <p>Enough for the {toReserve} to reserve.</p>
+                    ))}
+                </div>
+              )}
+
+              {checkProblem && (
+                <p className="form-error" role="alert">
+                  {checkProblem}
+                </p>
+              )}
+
+              {overFills && (
+                <p className="form-error">
+                  {fixed
+                    ? `The Organiser asked for ${fixed.quantity_requested}, and a reservation takes that whole quantity; this requirement needs only ${remaining} more.`
+                    : `This requirement needs only ${remaining} more.`}
+                </p>
+              )}
+
+              {reserveProblem && (
+                <p className="form-error" role="alert">
+                  {reserveProblem}
+                </p>
+              )}
+
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!canPressReserve}
+                  onClick={() => void reserve()}
+                >
+                  {reserving ? 'Reserving…' : 'Reserve'}
+                </button>
+              </div>
             </div>
           )}
-
-          {checkProblem && (
-            <p className="form-error" role="alert">
-              {checkProblem}
-            </p>
-          )}
-
-          {overFills && (
-            <p className="form-error">
-              {fixed
-                ? `The Organiser asked for ${fixed.quantity_requested}, and a reservation takes that whole quantity; this requirement needs only ${remaining} more.`
-                : `This requirement needs only ${remaining} more.`}
-            </p>
-          )}
-
-          {reserveProblem && (
-            <p className="form-error" role="alert">
-              {reserveProblem}
-            </p>
-          )}
-
-          <div className="form-actions">
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={!canPressReserve}
-              onClick={() => void reserve()}
-            >
-              {reserving ? 'Reserving…' : 'Reserve'}
-            </button>
-          </div>
-        </div>
+        </>
       )}
 
       <div className="form-actions">

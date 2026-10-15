@@ -188,6 +188,8 @@ export function EquipmentRequirementsSection({
                 status={requirement.status}
                 reserved={requirement.reserved_quantity}
                 reservations={requirement.reservations}
+                released={requirement.released_quantity}
+                unavailableReason={requirement.unavailable_reason}
                 origin={originOf(requirement, organiserLines)}
                 actions={
                   editable && (

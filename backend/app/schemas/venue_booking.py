@@ -38,6 +38,50 @@ class VenueBookingCreate(BaseModel):
     venues: list[VenueRequest] = []
 
 
+class VenueBookingChange(BaseModel):
+    """What a Coordinator may change on one booking: its venue, and what they
+    need of it. Every field is optional and only those sent are changed.
+
+    There is no time: a booking has the Event's, so one sent anyway is ignored,
+    not applied. A need sent blank goes back to what the Event says.
+    """
+
+    venue_id: int | None = None
+    room_layout_preference: str | None = Field(default=None, max_length=2000)
+    accessibility_needs: str | None = Field(default=None, max_length=2000)
+    facilities_needs: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("room_layout_preference", "accessibility_needs", "facilities_needs")
+    @classmethod
+    def blank_is_not_given(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
+
+
+class VenueBookingCancel(BaseModel):
+    """Cancel one booking. The reason is optional; blank counts as none."""
+
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def blank_is_not_given(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
+
+
+class VenueBookingCancelAll(BaseModel):
+    """Cancel every live booking of an event: exactly the ones the Coordinator
+    was shown. The ids are what makes the second confirmation real -- a
+    request without them cancels nothing."""
+
+    booking_ids: list[int] = Field(min_length=1)
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def blank_is_not_given(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
+
+
 class VenueBookingRejection(BaseModel):
     """What Venue Staff send when rejecting: a reason, an alternative, or
     both. Each is optional on its own, so "neither given" reaches the router

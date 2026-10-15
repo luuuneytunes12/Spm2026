@@ -8,6 +8,10 @@ from app.core.datetimes import as_utc
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
+from app.domain.venue_booking_changes import (
+    LIVE_BOOKING_STATUSES,
+    VenueBookingChangeService,
+)
 from app.domain.venue_occupancy import occupied_window, overlap_of
 from app.models.enums import BookingStatus, EventStatus, NotificationType
 from app.models.events import Event, EventStatusHistory
@@ -18,6 +22,9 @@ from app.schemas.venue_booking import (
     BookingConflict,
     ConflictCancel,
     ConflictKeep,
+    VenueBookingCancel,
+    VenueBookingCancelAll,
+    VenueBookingChange,
     VenueBookingCreate,
     VenueBookingOut,
     VenueBookingRejection,
@@ -34,14 +41,12 @@ router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 # the arrangement is judged as it stands.
 BOOKABLE_EVENT_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
 
-LIVE_BOOKING_STATUSES = (
-    BookingStatus.pending,
-    BookingStatus.tentative_hold,
-    BookingStatus.approved,
-)
-
 _coordinator = require_role(Role.COORDINATOR)
 _venue_staff = require_role(Role.VENUE_STAFF)
+
+
+def get_change_service(db: Session = Depends(get_db)) -> VenueBookingChangeService:
+    return VenueBookingChangeService(db)
 
 
 def _conflict_between(
@@ -456,6 +461,81 @@ def submit_venue_booking(
         _with_relations(select(VenueBooking).where(VenueBooking.id.in_(ids)).order_by(VenueBooking.id))
     ).unique()
     return _outs(rows, db, user)
+
+
+def _reloaded(db: Session, ids: list[int], viewer: User) -> list[VenueBookingOut]:
+    """The bookings as they are now, with their relations, in id order."""
+    rows = db.scalars(
+        _with_relations(select(VenueBooking).where(VenueBooking.id.in_(ids)).order_by(VenueBooking.id))
+    ).unique()
+    return _outs(rows, db, viewer)
+
+
+# The Coordinator changing or cancelling their event's bookings (SCRUM-96).
+# Thin on purpose: every rule lives in app/domain/venue_booking_changes.py. A
+# sweep of expired holds comes first -- it commits, so it cannot come after
+# the locks the service takes -- and the route commits what the service did.
+
+
+@router.patch("/{booking_id}", response_model=VenueBookingOut)
+def change_venue_booking(
+    booking_id: int,
+    body: VenueBookingChange,
+    db: Session = Depends(get_db),
+    service: VenueBookingChangeService = Depends(get_change_service),
+    user: User = Depends(_coordinator),
+) -> VenueBookingOut:
+    """Change one booking's venue, or what is needed of it. Only that booking
+    returns to Pending for Venue Staff; the others are untouched."""
+    expire_tentative_holds(db)
+    booking = service.change(booking_id, user, **body.model_dump(exclude_unset=True))
+    db.commit()
+    return _reloaded(db, [booking.id], user)[0]
+
+
+@router.post("/{booking_id}/cancel", response_model=VenueBookingOut)
+def cancel_venue_booking(
+    booking_id: int,
+    body: VenueBookingCancel,
+    db: Session = Depends(get_db),
+    service: VenueBookingChangeService = Depends(get_change_service),
+    user: User = Depends(_coordinator),
+) -> VenueBookingOut:
+    """Cancel one booking. The others, and the event, are untouched."""
+    expire_tentative_holds(db)
+    booking = service.cancel(booking_id, user, body.reason)
+    db.commit()
+    return _reloaded(db, [booking.id], user)[0]
+
+
+@router.get("/events/{event_id}/cancellable", response_model=list[VenueBookingOut])
+def list_cancellable_venue_bookings(
+    event_id: int,
+    db: Session = Depends(get_db),
+    service: VenueBookingChangeService = Depends(get_change_service),
+    user: User = Depends(_coordinator),
+) -> list[VenueBookingOut]:
+    """The bookings "cancel all" would cancel: the list shown before the
+    Coordinator confirms."""
+    expire_tentative_holds(db)
+    bookings = service.live_bookings(event_id, user)
+    return _reloaded(db, [b.id for b in bookings], user)
+
+
+@router.post("/events/{event_id}/cancel-all", response_model=list[VenueBookingOut])
+def cancel_all_venue_bookings(
+    event_id: int,
+    body: VenueBookingCancelAll,
+    db: Session = Depends(get_db),
+    service: VenueBookingChangeService = Depends(get_change_service),
+    user: User = Depends(_coordinator),
+) -> list[VenueBookingOut]:
+    """Cancel the listed bookings -- all of the event's live ones, or nothing:
+    409 if the live bookings are no longer exactly those that were shown."""
+    expire_tentative_holds(db)
+    cancelled = service.cancel_all(event_id, user, body.booking_ids, body.reason)
+    db.commit()
+    return _reloaded(db, [b.id for b in cancelled], user)
 
 
 @router.get("/events/{event_id}", response_model=list[VenueBookingOut])

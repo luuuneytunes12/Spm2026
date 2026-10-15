@@ -15,6 +15,7 @@ from app.schemas.equipment_requirement import (
     EquipmentRequirementIn,
     EquipmentRequirementOut,
     EquipmentRequirementUpdate,
+    RequestedRequirementOut,
     ReservationRequest,
     SupportEventRecord,
     SupportEventSummary,
@@ -61,6 +62,20 @@ def get_fulfillment_service(
 # ---------------------------------------------------------------------------
 # Technical Support -- declared first so "support" is never read as an id
 # ---------------------------------------------------------------------------
+
+
+@router.get("/support/requested", response_model=list[RequestedRequirementOut])
+def list_requested_requirements(
+    reader: TechSupportRequirementReader = Depends(get_requirement_reader),
+    _: User = Depends(_tech_support),
+) -> list[RequestedRequirementOut]:
+    """The requirements waiting for Technical Support, across every event,
+    oldest event date first: what to review and reserve next, without opening
+    each event."""
+    return [
+        RequestedRequirementOut.row(event, requirement, progress)
+        for event, requirement, progress in reader.requested()
+    ]
 
 
 @router.get("/support/events", response_model=list[SupportEventSummary])
@@ -116,11 +131,14 @@ def update_requirement(
     body: SupportRequirementUpdate,
     db: Session = Depends(get_db),
     service: EquipmentRequirementFulfillmentService = Depends(get_fulfillment_service),
-    _: User = Depends(_tech_support),
+    user: User = Depends(_tech_support),
 ) -> SupportRequirementOut:
     """Update the status and quantity Technical Support owns. The Coordinator
-    reads the result on the event record."""
-    requirement, progress = service.update(requirement_id, **body.model_dump(exclude_unset=True))
+    reads the result on the event record, and a change of status goes in the
+    Activity Log."""
+    requirement, progress = service.update(
+        requirement_id, actor=user, **body.model_dump(exclude_unset=True)
+    )
     db.commit()
     return SupportRequirementOut.of(requirement, progress)
 
@@ -136,7 +154,9 @@ def reserve_for_requirement(
     """Reserve an item for a requirement, through the Equipment Reservations
     capability. The stock and overlap rules are that capability's, not
     repeated here; this only says which requirement the reservation is for."""
-    requirement, progress = service.reserve(requirement_id, body.equipment_id, body.quantity, user)
+    requirement, progress = service.reserve(
+        requirement_id, body.equipment_id, body.quantity, user, body.placement_notes
+    )
     db.commit()
     return SupportRequirementOut.of(requirement, progress)
 

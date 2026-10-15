@@ -298,6 +298,9 @@ create table coordinator_equipment_requirements (
     quantity_needed integer not null check (quantity_needed > 0),
     technical_notes text,
     status equipment_status not null default 'requested',
+    -- Why Technical Support cannot provide it; kept while status is 'rejected',
+    -- which is how Unavailable is stored (sql/026).
+    unavailable_reason text,
     created_by bigint not null references users (id) on delete restrict,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
