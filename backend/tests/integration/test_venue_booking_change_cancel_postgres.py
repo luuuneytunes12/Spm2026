@@ -86,15 +86,18 @@ def test_scrum96_cancelling_one_booking_many_times_at_once_cancels_it_once(
     make_client, client, make_user, db
 ):
     sam_h, _vh, event, [booking], _spare, staff = _setup(make_user, db, status=BookingStatus.approved)
+    # Plain numbers, read here: the threads must not touch this test's own
+    # session, which belongs to one thread.
+    booking_id, event_id = booking.id, event.id
 
     results = race(
-        make_client, THREADS, lambda c: c.post(f"/venue-bookings/{booking.id}/cancel", json={}, headers=sam_h)
+        make_client, THREADS, lambda c: c.post(f"/venue-bookings/{booking_id}/cancel", json={}, headers=sam_h)
     )
 
     assert sorted(r.status_code for r in results) == [200] + [409] * (THREADS - 1)
     db.expire_all()
-    assert db.get(VenueBooking, booking.id).status is BookingStatus.cancelled
-    assert db.query(EventStatusHistory).filter_by(event_id=event.id).count() == 1
+    assert db.get(VenueBooking, booking_id).status is BookingStatus.cancelled
+    assert db.query(EventStatusHistory).filter_by(event_id=event_id).count() == 1
     for member in staff:
         assert _told(db, member, NotificationType.venue_booking_cancelled) == 1
 
@@ -129,17 +132,18 @@ def test_scrum96_a_change_racing_an_approval_never_leaves_a_half_decided_booking
     but never approved with nobody having approved it, or pending with an
     approval still attached."""
     sam_h, vera_h, event, [booking], spare, _staff = _setup(make_user, db)
+    booking_id, spare_id = booking.id, spare.id  # plain numbers: see above
 
     approve, change = _race_two(
         make_client,
-        lambda c: c.post(f"/venue-bookings/{booking.id}/approve", headers=vera_h),
-        lambda c: c.patch(f"/venue-bookings/{booking.id}", json={"venue_id": spare.id}, headers=sam_h),
+        lambda c: c.post(f"/venue-bookings/{booking_id}/approve", headers=vera_h),
+        lambda c: c.patch(f"/venue-bookings/{booking_id}", json={"venue_id": spare_id}, headers=sam_h),
     )
 
     assert approve.status_code in (200, 409) and change.status_code == 200
     db.expire_all()
-    row = db.get(VenueBooking, booking.id)
-    assert row.venue_id == spare.id  # the change always lands
+    row = db.get(VenueBooking, booking_id)
+    assert row.venue_id == spare_id  # the change always lands
     if row.status is BookingStatus.approved:
         assert row.reviewed_by is not None
     else:
