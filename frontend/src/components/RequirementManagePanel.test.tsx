@@ -329,7 +329,7 @@ describe('the status', () => {
     await screen.findByLabelText('Equipment')
 
     expect(screen.queryByRole('option', { name: /reserved/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: /available/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /^available$/i })).not.toBeInTheDocument()
   })
 
   it('shows an Unavailable requirement as such, with its reason', async () => {

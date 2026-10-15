@@ -25,19 +25,18 @@ export function canRecordEquipment(status: EventStatus): boolean {
   return EQUIPMENT_ACTIVE_STATUSES.includes(status)
 }
 
-/** How a requirement's status reads to a person. A status this client does
- *  not know yet is shown as it arrives rather than hiding the row.
+/** How a requirement's status reads to a person. These are the Definition of
+ *  Done's four (11b) and no others; a status this client does not know yet is
+ *  shown as it arrives rather than hiding the row.
  *
- *  `rejected` is how an "unavailable" requirement is stored: the status enum
- *  is shared with the Organiser's equipment requests, and one feature does
- *  not get a value added to it. It is shown the way the customer says it
- *  (W1: equipment "found to be unavailable"). */
+ *  What the server stores for Unavailable (`rejected`, in an enum shared with
+ *  the Organiser's equipment requests) never reaches the client: the API
+ *  speaks in these four words. */
 export const REQUIREMENT_STATUS_LABELS: Record<string, string> = {
   requested: 'Requested',
-  reviewing: 'In review',
   reserved: 'Reserved',
-  rejected: 'Unavailable',
-  cancelled: 'Cancelled',
+  unavailable: 'Unavailable',
+  available: 'Available',
 }
 
 export function requirementStatusLabel(status: string): string {
@@ -45,27 +44,33 @@ export function requirementStatusLabel(status: string): string {
 }
 
 /** The statuses Technical Support may set by hand. Reserved is not one: it is
- *  worked out from real reservations by the server, never chosen. Mirrors
+ *  worked out from real reservations by the server, never chosen. Nor is
+ *  Available: that is a reservation freed when the event ends. Mirrors
  *  TECH_SUPPORT_STATUSES in backend/app/domain/requirement_progress.py. */
 export const TECH_SUPPORT_STATUS_OPTIONS: readonly { value: string; label: string }[] = [
   { value: 'requested', label: REQUIREMENT_STATUS_LABELS.requested },
-  { value: 'reviewing', label: REQUIREMENT_STATUS_LABELS.reviewing },
-  { value: 'rejected', label: REQUIREMENT_STATUS_LABELS.rejected },
+  { value: 'unavailable', label: REQUIREMENT_STATUS_LABELS.unavailable },
 ]
 
 /** What a requirement's status reads as, on every screen that shows one.
  *
- *  With nothing reserved it is the status Technical Support set (Requested,
- *  In review, Unavailable). Once something is reserved it follows the
- *  reservations, and says how far: "In progress \u2014 3 of 5 reserved", then
- *  "Reserved \u2014 5 of 5". What is needed and what is reserved stay two
- *  numbers: 5 needed / 3 reserved is a normal state.
- *
- *  The figures decide, not the label sent with them. The server already works
- *  Reserved out from the reservations; this only gives it its wording. */
-export function requirementStatusText(status: string, reserved: number, needed: number): string {
-  if (reserved > 0 && reserved >= needed) return `Reserved \u2014 ${reserved} of ${needed}`
-  if (reserved > 0) return `In progress \u2014 ${reserved} of ${needed} reserved`
+ *  The status is the server's: Reserved and Available are worked out from the
+ *  reservations and the event, never stored, so this only gives them their
+ *  wording. Part reserved is still Requested -- the Definition of Done has no
+ *  "in progress" -- with how far it has got beside it: "Requested \u2014 3 of 5
+ *  reserved". What is needed and what is reserved stay two numbers: 5 needed /
+ *  3 reserved is a normal state. A freed reservation says how much was freed. */
+export function requirementStatusText(
+  status: string,
+  reserved: number,
+  needed: number,
+  released = 0,
+): string {
+  if (status === 'reserved') return `Reserved \u2014 ${reserved} of ${needed}`
+  if (status === 'available' && released > 0) return `Available \u2014 ${released} freed`
+  if (status === 'requested' && reserved > 0) {
+    return `Requested \u2014 ${reserved} of ${needed} reserved`
+  }
   return requirementStatusLabel(status)
 }
 
@@ -74,6 +79,9 @@ export interface ReservedItem {
   equipment_id: number
   equipment_name: string
   quantity: number
+  /** Where it will be set up at the venue: recorded by Technical Support when
+   *  they reserve, and read by the Safety Officer. Null if not given. */
+  placement_notes: string | null
 }
 
 /** A requirement as the Coordinator who wrote it sees it. */
@@ -87,11 +95,15 @@ export interface EquipmentRequirement {
   category: string
   quantity_needed: number
   technical_notes: string | null
-  /** The status everyone sees. Reserved is worked out from the reservations,
-   *  not stored; rejected is shown as Unavailable. */
+  /** The status everyone sees: requested, reserved, unavailable or available.
+   *  Reserved and Available are worked out, not stored. */
   status: string
-  /** How much of `quantity_needed` is reserved. Never changes it. */
+  /** How much of `quantity_needed` is reserved now. Never changes it. */
   reserved_quantity: number
+  /** How much was reserved and has since been freed (the event is over). */
+  released_quantity: number
+  /** Why Technical Support cannot provide it; only while Unavailable. */
+  unavailable_reason: string | null
   reservations: ReservedItem[]
   created_at: string
   updated_at: string
@@ -119,12 +131,16 @@ export interface SupportRequirement {
   technical_notes: string | null
   status: string
   reserved_quantity: number
+  released_quantity: number
+  unavailable_reason: string | null
   reservations: ReservedItem[]
 }
 
-/** What Technical Support may change: only these two. */
+/** What Technical Support may change. `reason` goes with Unavailable and is
+ *  required there; the server drops it with Requested. */
 export interface SupportRequirementChanges {
   status?: string
+  reason?: string
   quantity_needed?: number
 }
 
@@ -213,15 +229,21 @@ export function updateSupportRequirement(
 
 /** Reserve an item for a requirement, through the existing Equipment
  *  Reservations. Leave `quantity` out for an item the Organiser asked for --
- *  their quantity is reserved whole -- or to take what is still needed. */
+ *  their quantity is reserved whole -- or to take what is still needed.
+ *  `placementNotes` is where the item will be set up at the venue; optional. */
 export function reserveForRequirement(
   id: number,
   equipmentId: number,
   quantity?: number,
+  placementNotes?: string,
 ): Promise<SupportRequirement> {
   return apiFetch(`/equipment-requirements/${id}/reservations`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ equipment_id: equipmentId, quantity }),
+    body: JSON.stringify({
+      equipment_id: equipmentId,
+      quantity,
+      placement_notes: placementNotes,
+    }),
   }) as Promise<SupportRequirement>
 }
