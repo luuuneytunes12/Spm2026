@@ -47,10 +47,10 @@ cd frontend && npx vitest run src/lib/venueBookingChanges.test.ts \
                               src/components/VenueBookingChange.test.tsx
 ```
 
-**92 + 38 pytest · 3 Postgres · 53 Vitest · 1 manual script.** No Playwright.
+**92 + 38 pytest · 3 Postgres · 66 Vitest · 1 manual script.** No Playwright.
 Every one of the 21 deliberate breakages tried (no log line, no window, anyone
 may, everyone told, a stale list accepted, …) was caught by a failing test.
-The 3 Postgres tests were written but **not run** here (they need Docker).
+The 3 Postgres tests run against a throwaway Postgres in Docker and pass (the whole integration suite: 41 of 41).
 
 ## Design decisions the tests pin
 
@@ -70,6 +70,8 @@ The 3 Postgres tests were written but **not run** here (they need Docker).
 | The **list is from the server**, and the page never retries a refused cancel-all on its own | It asks again, with the fresh list | *lists what the server says is live* · *when the list had gone stale…* |
 | The **reason is optional**, and goes in the Activity Log and the notice — **not** `decision_notes` | That field is Venue Staff's; it would read as if they had given it | `…the_reason_is_optional_and_is_kept_in_the_log_and_the_notice` · `…a_reason_is_optional_and_goes_on_each_bookings_record` |
 | **Venue Staff, and nobody else, are told** — not the Coordinator who did it, another Coordinator, the Organiser, Technical Support or an Attendee | DoD §3: no notification outside the intended recipients | `…nobody_outside_venue_staff_is_told` |
+| Saving a change **does not refuse a venue that is not free** at the event's time; the venue list **tags** it ("not free at this time") and warns when it is chosen, and it can still be chosen and saved | Venue Staff are the authority and decide when they review the booking, exactly as for a new request (approval refuses a clash or a closure). The Coordinator should not learn it only afterwards | *tags a venue the search says is not free…* · *can still be saved* · *when availability cannot be checked* |
+| The tag comes from the **existing venue search** with the event's own window. If that cannot be answered nothing is tagged and the form says so | No second copy of the clash rules; a failed lookup never blocks a change | *asks the existing search about the event's own window* · *tags nothing, still offers every venue…* |
 | A **venue change tells Venue Staff about both venues**, each person once | The old venue's staff learn it was withdrawn; the new venue's staff learn of the request | `…changing_the_venue_tells_venue_staff_both_venues` · `…a_venue_change_tells_the_staff_of_both_venues_once_each` |
 | The **Activity Log** line has the actor, the time, the venue and the change, and the **same status before and after** | DoD 11a/§4: it is a log line, not a status change | `…the_activity_log_records_who_what_and_when` · `…the_log_line_leaves_the_events_status_as_it_was` |
 | A **refused action writes nothing**: no log line, no notice | Every rule is checked before anything is changed | the `_nothing_happened` check in every refusal test |
@@ -109,6 +111,7 @@ routes are thin: sweep expired holds, call the service, commit, shape the reply.
 | New venue, or a changed layout / accessibility / facilities, returns only that booking to Pending · the old decision is cleared · pending stays pending and is in the queue · a hold is dropped · does not count as approved until approved again, and does again once approved · time ignored · identity kept · blank need · the event is not moved on | pytest (API) |
 | Refused: a venue the event has · unknown / inactive · nothing changed (4 forms) · the same change twice · rejected / cancelled · outside planning | pytest (API) |
 | `BookingChange` (empty, venue, need, order, summary, "as the event says", unchanged left out, immutable) · returns to Pending, no time, nothing-changed, history, commit-free | pytest (unit) |
+| Venue tags: asks the search about the event's window when the form opens · tags a venue that is not free, not a free one or the booking's own · still lists and still saves a tagged one · warns when one is chosen, and not for a free one or before choosing · a failed lookup tags nothing and says so | Vitest |
 | Form opens filled in · venue choices (active, not another live booking's, a cancelled one's) · no time field · warning per status · nothing to save until changed · sends only what changed (venue / need / emptied → null) · shows that booking pending, others as they were · closes, says it went to Venue Staff, refreshes the page · server's reason · unreachable server · discard | Vitest |
 
 ### AC3 — cancel all, listed first, confirmed again
@@ -118,7 +121,7 @@ routes are thin: sweep expired holds, call the service, commit, shape the reply.
 | The list is the live bookings, in order · listing changes nothing · confirming cancels those and only those · the event stays but has no venue · a request without the list cancels nothing · stale / no-longer-live / another event's id → 409, nothing cancelled · nothing to cancel · confirming twice · reason · outside planning | pytest (API) |
 | Needs exactly the list shown · cancels each listed booking · the live list | pytest (unit) |
 | A first question, nothing listed or sent · then the list, from the server, and ask again · exactly the listed ids sent · reason · keep / go back send nothing · empty list offers no confirm · stale → message, fresh list, asked again, **not retried** · unreachable server | Vitest |
-| Cancelling all at once, many times · | Postgres (not run here) |
+| Cancelling all at once, many times · | Postgres |
 
 ### AC4 — Venue Staff told, Activity Log
 
@@ -137,6 +140,10 @@ routes are thin: sweep expired holds, call the service, commit, shape the reply.
 | **"Hold Expired" and "Venue Unavailable"** are DoD 11c statuses; an expired hold is stored as `cancelled`. | "Cancelled" here means the Coordinator cancelled it; the Activity Log note says which. |
 | **Venue Staff assigned to venues.** No document defines it. | `VenueStaffRecipients` is where a per-venue rule would go. |
 
+The change and cancel links are coloured: **Change** in the accent blue,
+**Cancel booking** in red (`--danger-text`), both from theme tokens so dark mode
+stays legible.
+
 Fixed along the way: the request form treated only pending and approved venues
 as taken, so a venue with a tentative hold could be ticked again and was then
 refused by the server. It now treats held ones as taken too.
@@ -150,7 +157,7 @@ pending, one held), its Coordinator, and Venue Staff (`staff@…`).
 |---|---|---|
 | 1 | As the Coordinator, open the event → **Venue bookings** | Each live booking has **Change** and **Cancel booking**; a rejected or cancelled one has neither. **Cancel all venue bookings** is shown |
 | 2 | **Change** the approved booking | A form opens under it: its venue and needs filled in, **no time field**, and "This booking will go back to Pending and will not count as approved until Venue Staff approve it again." **Save change** is disabled |
-| 3 | Choose another venue (the event's other venues are not offered) → **Save change** | "Sent back to Venue Staff for review." That booking reads **Pending review** at the new venue; the other two are unchanged |
+| 3 | Open the **Venue** list | Venues booked or closed at the event's time are tagged **"— not free at this time"**; the event's own other venues are not offered. Choose a tagged one: a note says it looks unavailable and Venue Staff will decide. It can still be saved. (Then choose a free one instead.) → **Save change** | "Sent back to Venue Staff for review." That booking reads **Pending review** at the new venue; the other two are unchanged |
 | 4 | As Venue Staff, open the booking queue | The changed booking is there; a notice names the old and the new venue |
 | 5 | As the Coordinator, open the event's Activity Log | One line: who changed which booking, from what to what. The event's status is unchanged |
 | 6 | **Cancel booking** on the pending one → **Keep booking** | Nothing happens |
