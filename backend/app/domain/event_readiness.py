@@ -47,7 +47,8 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
         .options(joinedload(VenueBooking.venue))
         .filter(
             VenueBooking.event_id == event.id,
-            VenueBooking.status != BookingStatus.cancelled,
+            # Withdrawn or lapsed: neither is a booking, nor outstanding.
+            VenueBooking.status.not_in((BookingStatus.cancelled, BookingStatus.hold_expired)),
             or_(
                 VenueBooking.status != BookingStatus.tentative_hold,
                 and_(

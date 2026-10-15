@@ -70,6 +70,9 @@ class BookingStatus(enum.StrEnum):
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
+    # A tentative hold whose expiry passed before it was approved: the venue
+    # is free again for that window (sql/027). Never counts as a booking.
+    hold_expired = "hold_expired"
 
 
 class EquipmentStatus(enum.StrEnum):

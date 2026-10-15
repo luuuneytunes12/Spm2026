@@ -361,7 +361,7 @@ def test_scrum94_an_active_hold_inside_the_period_is_flagged_and_an_expired_one_
     assert [a["booking_id"] for a in body["affected_bookings"]] == [active.id]
     assert _flagged(db_session, active) == [True]
     db_session.expire_all()
-    assert db_session.get(VenueBooking, expired.id).status == BookingStatus.cancelled
+    assert db_session.get(VenueBooking, expired.id).status == BookingStatus.hold_expired
 
 
 def test_scrum94_ending_or_editing_the_period_tells_the_coordinator_the_mark_is_gone(client, db_session):

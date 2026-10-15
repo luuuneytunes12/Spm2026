@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -187,6 +187,9 @@ create table venue_bookings (
     -- What the Coordinator must complete before a tentative hold expires;
     -- see sql/026.
     hold_action text,
+    -- When the Coordinator was reminded that the hold is about to expire;
+    -- null until then, so the reminder goes once. See sql/027.
+    hold_reminder_sent_at timestamptz,
     decision_notes text,
     -- What Venue Staff offer instead when rejecting; see sql/014.
     suggested_alternative text,

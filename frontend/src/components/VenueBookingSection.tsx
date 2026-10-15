@@ -213,6 +213,13 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
                   {b.hold_action ?? 'none given'}
                 </p>
               )}
+              {b.status === 'hold_expired' && (
+                <p className="notice" role="note">
+                  The hold lapsed{b.expires_at ? ` on ${formatTimestamp(b.expires_at)}` : ''} and{' '}
+                  {b.venue.name} is no longer held for this event. Request it again or choose another
+                  venue.
+                </p>
+              )}
               {b.conflict_flagged && (
                 <p className="notice" role="note">
                   <span className="badge">Conflict flagged</span> {CONFLICT_FLAG_LABEL}. Venue Staff

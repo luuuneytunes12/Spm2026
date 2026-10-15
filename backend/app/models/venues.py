@@ -106,6 +106,9 @@ class VenueBooking(Base):
     # (sql/026). Cleared when Venue Staff approve or reject; an expired hold
     # keeps it as the record of what was asked.
     hold_action: Mapped[str | None] = mapped_column(Text)
+    # When the Coordinator was reminded the hold is about to expire (sql/027);
+    # null until then, so the reminder is sent once.
+    hold_reminder_sent_at: Mapped[datetime | None] = mapped_column(default=None)
     decision_notes: Mapped[str | None] = mapped_column(Text)
     # What Venue Staff offer instead when rejecting -- another venue, another
     # time (see sql/014_venue_bookings_suggested_alternative.sql).

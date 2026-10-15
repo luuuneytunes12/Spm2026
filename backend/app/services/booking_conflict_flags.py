@@ -26,7 +26,7 @@ from app.services.venue_holds import active_hold_filter
 FLAGGABLE_STATUSES = (BookingStatus.approved, BookingStatus.tentative_hold)
 
 # A flagged booking in one of these is no longer something to resolve.
-INACTIVE_STATUSES = (BookingStatus.rejected, BookingStatus.cancelled)
+INACTIVE_STATUSES = (BookingStatus.rejected, BookingStatus.cancelled, BookingStatus.hold_expired)
 
 # What a flagged booking is compared against: other APPROVED bookings only
 # (the SCRUM-41 rule). A hold is soft for flagging: it never makes another

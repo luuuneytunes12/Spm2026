@@ -32,7 +32,7 @@ from app.schemas.venue_booking import (
 )
 from app.routers.venues import expire_tentative_holds
 from app.services.notifications import notify
-from app.services.venue_holds import active_hold_filter
+from app.services.venue_holds import active_hold_filter, reminder_lead
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 
@@ -309,6 +309,9 @@ def create_tentative_hold(
     booking.status = BookingStatus.tentative_hold
     booking.expires_at = expires_at
     booking.hold_action = body.required_action
+    # A hold placed already inside the reminder lead needs no separate
+    # reminder: the notice below tells the Coordinator the expiry and action.
+    booking.hold_reminder_sent_at = now if expires_at - now <= reminder_lead() else None
     booking.reviewed_by = user.id
     booking.reviewed_at = now
     # The Event's Activity Log keeps who placed the hold, until when and what

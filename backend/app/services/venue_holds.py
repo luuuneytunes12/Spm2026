@@ -1,17 +1,23 @@
-"""Tentative venue holds: which are still active, and releasing the expired ones.
+"""Tentative venue holds: which are still active, reminding before expiry,
+and expiring the lapsed ones.
 
 Lives in a service, not the venues router, so the conflict-flag service can use
 it without importing a router.
 
-`expire_tentative_holds` COMMITS. Call it before taking any row lock, never
-after: the commit would release the lock.
+`expire_tentative_holds` and `send_hold_reminders` COMMIT. Call them before
+taking any row lock, never after: the commit would release the lock. Both run
+on the background sweeper (app/services/hold_sweeper.py), so they happen on
+time even when nobody is using the app; the expiry also runs on each venue
+request, so no request ever sees a lapsed hold as active.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import settings
+from app.core.datetimes import as_utc
 from app.models.enums import BookingStatus, NotificationType
 from app.models.events import EventStatusHistory
 from app.models.venues import VenueBooking
@@ -29,10 +35,10 @@ def active_hold_filter(now: datetime):
 
 
 def expire_tentative_holds(db: Session, now: datetime | None = None) -> int:
-    """Release expired holds and notify their Coordinators on the next API use."""
+    """Expire lapsed holds: status 'hold_expired', the venue free again for
+    that window, the Coordinator and the Venue Staff who placed it notified,
+    and the Event's Activity Log keeps it."""
     current = now or datetime.now(timezone.utc)
-    # TODO(confirm): Schedule this operation periodically so notifications
-    # are delivered at expiry even when no venue page is being requested.
     holds = db.scalars(
         select(VenueBooking)
         .options(joinedload(VenueBooking.event))
@@ -43,10 +49,13 @@ def expire_tentative_holds(db: Session, now: datetime | None = None) -> int:
                 VenueBooking.expires_at <= current,
             ),
         )
+        # The sweeper and a request can expire at the same moment: whoever
+        # gets a hold first expires it, the other skips it, so nobody is told twice.
+        .with_for_update(of=VenueBooking, skip_locked=True)
     ).unique().all()
     for hold in holds:
-        hold.status = BookingStatus.cancelled
-        # A cancelled hold has nothing left to resolve (SCRUM-92).
+        hold.status = BookingStatus.hold_expired
+        # An expired hold has nothing left to resolve (SCRUM-92).
         hold.conflict_flagged_at = None
         hold.decision_notes = "Tentative hold expired."
         coordinator_id = hold.event.coordinator_id
@@ -82,6 +91,51 @@ def expire_tentative_holds(db: Session, now: datetime | None = None) -> int:
                 to_status=hold.event.status,
                 note=f"Tentative hold on '{hold.venue.name}' expired.",
             )
+        )
+    if holds:
+        db.commit()
+    return len(holds)
+
+
+def reminder_lead() -> timedelta:
+    """How long before expiry the Coordinator is reminded (configurable)."""
+    return timedelta(hours=settings.hold_reminder_hours)
+
+
+def send_hold_reminders(db: Session, now: datetime | None = None) -> int:
+    """Remind the Coordinator of each active hold that expires within the
+    reminder lead and has not been reminded yet. A hold that is approved or
+    rejected first is no longer a hold -- its required action is done -- so
+    it is never reminded. Each hold is reminded once."""
+    current = now or datetime.now(timezone.utc)
+    holds = db.scalars(
+        select(VenueBooking)
+        .options(joinedload(VenueBooking.event), joinedload(VenueBooking.venue))
+        .where(
+            VenueBooking.status == BookingStatus.tentative_hold,
+            VenueBooking.hold_reminder_sent_at.is_(None),
+            VenueBooking.expires_at > current,
+            VenueBooking.expires_at <= current + reminder_lead(),
+        )
+        .with_for_update(of=VenueBooking, skip_locked=True)
+    ).unique().all()
+    for hold in holds:
+        hold.hold_reminder_sent_at = current
+        coordinator_id = hold.event.coordinator_id
+        if coordinator_id is None:
+            continue
+        notify(
+            db,
+            user_id=coordinator_id,
+            type=NotificationType.venue_hold_expiring,
+            message=(
+                f"Reminder: your tentative hold on {hold.venue.name} for "
+                f"'{hold.event.name or 'your event'}' expires at "
+                f"{as_utc(hold.expires_at):%d %b %Y %H:%M} UTC. Required action: "
+                f"{hold.hold_action or 'none given'}. If it is not done by then the hold expires "
+                "and the venue is released."
+            ),
+            event_id=hold.event_id,
         )
     if holds:
         db.commit()
