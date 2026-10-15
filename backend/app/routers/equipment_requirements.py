@@ -15,6 +15,7 @@ from app.schemas.equipment_requirement import (
     EquipmentRequirementIn,
     EquipmentRequirementOut,
     EquipmentRequirementUpdate,
+    RequestedRequirementOut,
     ReservationRequest,
     SupportEventRecord,
     SupportEventSummary,
@@ -61,6 +62,20 @@ def get_fulfillment_service(
 # ---------------------------------------------------------------------------
 # Technical Support -- declared first so "support" is never read as an id
 # ---------------------------------------------------------------------------
+
+
+@router.get("/support/requested", response_model=list[RequestedRequirementOut])
+def list_requested_requirements(
+    reader: TechSupportRequirementReader = Depends(get_requirement_reader),
+    _: User = Depends(_tech_support),
+) -> list[RequestedRequirementOut]:
+    """The requirements waiting for Technical Support, across every event,
+    oldest event date first: what to review and reserve next, without opening
+    each event."""
+    return [
+        RequestedRequirementOut.row(event, requirement, progress)
+        for event, requirement, progress in reader.requested()
+    ]
 
 
 @router.get("/support/events", response_model=list[SupportEventSummary])

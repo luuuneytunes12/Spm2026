@@ -143,6 +143,42 @@ class SupportRequirementOut(BaseModel):
         )
 
 
+class RequestedEventRef(BaseModel):
+    """The event a listed requirement belongs to: what is needed to tell the
+    rows apart and to show when the equipment is wanted."""
+
+    id: int
+    name: str | None
+    proposed_start: datetime | None
+    proposed_end: datetime | None
+
+
+class RequestedRequirementOut(SupportRequirementOut):
+    """One row of Technical Support's list of requirements waiting for them.
+
+    Everything the Manage panel reads, plus the event, so a row opens in place
+    with no second request.
+    """
+
+    event: RequestedEventRef
+
+    @classmethod
+    def row(cls, event, requirement, progress: RequirementProgress) -> "RequestedRequirementOut":
+        return cls(
+            id=requirement.id,
+            category=requirement.category,
+            quantity_needed=requirement.quantity_needed,
+            technical_notes=requirement.technical_notes,
+            event=RequestedEventRef(
+                id=event.id,
+                name=event.name,
+                proposed_start=event.proposed_start,
+                proposed_end=event.proposed_end,
+            ),
+            **_progress_fields(progress),
+        )
+
+
 class SupportRequirementUpdate(BaseModel):
     """What Technical Support may change on a requirement.
 

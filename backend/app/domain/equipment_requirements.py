@@ -27,7 +27,9 @@ from sqlalchemy.orm import Session
 from app.domain.errors import Conflict, InvalidInput, NotFound
 from app.domain.activity_log import ActivityLog, EventHistoryLog
 from app.domain.requirement_progress import (
+    RequirementProgress,
     RequirementReservationLinks,
+    RequirementStatus,
     RequirementStatusLog,
     checked_quantity,
 )
@@ -316,8 +318,44 @@ class TechSupportRequirementReader:
     Drafts and events not yet approved are never shown.
     """
 
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, links: RequirementReservationLinks | None = None) -> None:
         self._db = db
+        self._links = links if links is not None else RequirementReservationLinks(db)
+
+    def requested(
+        self,
+    ) -> list[tuple[Event, CoordinatorEquipmentRequirement, RequirementProgress]]:
+        """Every requirement waiting for Technical Support, across events.
+
+        "Waiting" is the Definition of Done's Requested: nothing reserved, or
+        only part of it. Fully reserved, Unavailable and Available (freed) are
+        not waiting, so they are left out. Which of those a requirement is
+        comes from its progress, which is worked out rather than stored, so
+        the filter is made here and not in the query.
+
+        Oldest event date first, an event with no date last, and an event's
+        requirements in the order they were recorded. Events outside the
+        window (drafts, rejected, completed, ...) are never shown; a dated
+        event that has already happened still is, because Requested is a
+        status and not a date.
+        """
+        rows = self._db.execute(
+            select(Event, CoordinatorEquipmentRequirement)
+            .join(CoordinatorEquipmentRequirement, CoordinatorEquipmentRequirement.event_id == Event.id)
+            .where(Event.status.in_(EQUIPMENT_ACTIVE_STATUSES))
+            .order_by(
+                Event.proposed_start.is_(None),
+                Event.proposed_start,
+                Event.id,
+                CoordinatorEquipmentRequirement.id,
+            )
+        ).all()
+        progress = self._links.progress_of([requirement for _, requirement in rows])
+        return [
+            (event, requirement, progress[requirement.id])
+            for event, requirement in rows
+            if progress[requirement.id].status is RequirementStatus.REQUESTED
+        ]
 
     def events(self) -> list[tuple[Event, int]]:
         """Events in the window that have at least one requirement, soonest
