@@ -217,7 +217,7 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
                 <div className="form-actions">
                   <button
                     type="button"
-                    className="btn-link-muted"
+                    className="btn-link-accent"
                     aria-label={`Change ${b.venue.name} booking`}
                     onClick={() => {
                       setNotice(null)
@@ -228,7 +228,7 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
                   </button>
                   <button
                     type="button"
-                    className="btn-link-muted"
+                    className="btn-link-danger"
                     aria-label={`Cancel ${b.venue.name} booking`}
                     onClick={() => {
                       setNotice(null)

@@ -757,6 +757,39 @@
 /* An understated text action -- "give this one away" is real but is not
    the primary thing a row invites you to do, so it must not compete
    visually with the "View details" link next to it. */
+/* The two actions on a venue booking: Change reads as an action (accent),
+   Cancel as the one that cannot be taken back (red). Text colours come from
+   the theme tokens, so both stay legible in dark mode. */
+.btn-link-accent,
+.btn-link-danger {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  cursor: pointer;
+}
+
+.btn-link-accent {
+  color: var(--accent);
+
+  &:hover:not(:disabled) {
+    color: var(--accent-h);
+    text-decoration-color: currentColor;
+  }
+}
+
+.btn-link-danger {
+  color: var(--danger-text);
+
+  &:hover:not(:disabled) {
+    color: var(--danger);
+    text-decoration-color: currentColor;
+  }
+}
+
 .btn-link-muted {
   background: none;
   border: none;

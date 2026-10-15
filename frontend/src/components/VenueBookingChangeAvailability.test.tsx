@@ -95,7 +95,7 @@ async function openChange() {
   return { user, panel: within(await screen.findByRole('region', { name: 'Change Marina Hall booking' })) }
 }
 
-const optionTexts = (panel: ReturnType<typeof within>) =>
+const optionTexts = (panel: { getByLabelText: (text: string) => HTMLElement }) =>
   Array.from(panel.getByLabelText('Venue').querySelectorAll('option')).map((o) => o.textContent ?? '')
 
 beforeEach(() => {
