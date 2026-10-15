@@ -16,6 +16,9 @@ interface Props {
   released?: number
   /** Why Technical Support cannot provide it; shown only while Unavailable. */
   unavailableReason?: string | null
+  /** Where this row sits, when rows from different events share a list: its
+   *  event and when. Shown beneath the type. */
+  context?: ReactNode
   /** Where the requirement came from. Only the Coordinator's card passes it;
    *  Technical Support is shown what is needed, not what it was based on. */
   origin?: string
@@ -41,6 +44,7 @@ export function EquipmentRequirementItem({
   reservations = [],
   released = 0,
   unavailableReason = null,
+  context,
   origin,
   actions,
   panel,
@@ -49,6 +53,7 @@ export function EquipmentRequirementItem({
     <li className="requirement">
       <div className="requirement-main">
         <span className="requirement-title">{category}</span>
+        {context && <span className="request-meta requirement-context">{context}</span>}
         {notes && <span className="request-meta">{notes}</span>}
         {reservations.length > 0 && (
           <span className="request-meta">

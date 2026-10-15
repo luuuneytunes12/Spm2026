@@ -144,6 +144,20 @@ export interface SupportRequirementChanges {
   quantity_needed?: number
 }
 
+/** The event a listed requirement belongs to. */
+export interface RequestedEventRef {
+  id: number
+  name: string | null
+  proposed_start: string | null
+  proposed_end: string | null
+}
+
+/** One row of Technical Support's list of requirements waiting for them:
+ *  everything the Manage panel reads, plus the event it is for. */
+export interface RequestedRequirement extends SupportRequirement {
+  event: RequestedEventRef
+}
+
 export interface SupportEventSummary {
   id: number
   name: string | null
@@ -203,6 +217,13 @@ export async function deleteRequirement(id: number): Promise<void> {
 }
 
 // --- Technical Support -------------------------------------------------------
+
+/** The requirements waiting for Technical Support -- Requested, in an event
+ *  they can act on -- across every event, oldest event date first. The order
+ *  is the server's. */
+export function listRequestedRequirements(): Promise<RequestedRequirement[]> {
+  return apiFetch('/equipment-requirements/support/requested') as Promise<RequestedRequirement[]>
+}
 
 export function listSupportEvents(): Promise<SupportEventSummary[]> {
   return apiFetch('/equipment-requirements/support/events') as Promise<SupportEventSummary[]>
