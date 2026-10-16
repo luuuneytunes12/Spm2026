@@ -124,7 +124,13 @@ describe('SCRUM-39 AC2 - one or more venues are submitted', () => {
     await tick(/Marina Hall/)
     await userEvent.click(await submitButton())
     expect(mockSubmit).toHaveBeenCalledWith(7, [
-      { venue_id: 3, room_layout_preference: '', accessibility_needs: '', facilities_needs: '' },
+      {
+        venue_id: 3,
+        expected_attendance: 120,
+        room_layout_preference: '',
+        accessibility_needs: '',
+        facilities_needs: '',
+      },
     ])
     const list = await screen.findByRole('list', { name: /venue bookings/i })
     expect(list).toHaveTextContent('Marina Hall')
@@ -141,11 +147,38 @@ describe('SCRUM-39 AC2 - one or more venues are submitted', () => {
     await userEvent.click(await submitButton())
 
     expect(mockSubmit).toHaveBeenCalledWith(7, [
-      { venue_id: 3, room_layout_preference: 'Banquet', accessibility_needs: '', facilities_needs: '' },
-      { venue_id: 5, room_layout_preference: '', accessibility_needs: '', facilities_needs: 'Two microphones' },
+      {
+        venue_id: 3,
+        expected_attendance: 120,
+        room_layout_preference: 'Banquet',
+        accessibility_needs: '',
+        facilities_needs: '',
+      },
+      {
+        venue_id: 5,
+        expected_attendance: 120,
+        room_layout_preference: '',
+        accessibility_needs: '',
+        facilities_needs: 'Two microphones',
+      },
     ])
     const list = await screen.findByRole('list', { name: /venue bookings/i })
     expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('defaults attendance to the event total but sends a separate override per venue', async () => {
+    mockSubmit.mockResolvedValue([BOOKING, BOOKING_B])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    await tick(/Marina Hall/)
+    await tick(/Bay Room/)
+    await userEvent.clear(screen.getByLabelText('Expected attendance for Bay Room'))
+    await userEvent.type(screen.getByLabelText('Expected attendance for Bay Room'), '35')
+    await userEvent.click(await submitButton())
+
+    expect(mockSubmit).toHaveBeenCalledWith(7, [
+      expect.objectContaining({ venue_id: 3, expected_attendance: 120 }),
+      expect.objectContaining({ venue_id: 5, expected_attendance: 35 }),
+    ])
   })
 
   it('shows needs fields only for a ticked venue, and drops them when it is unticked', async () => {
@@ -312,12 +345,12 @@ describe('Tentative hold - the Coordinator sees it on the Event', () => {
     hold_action: 'Confirm final headcount',
   }
 
-  it('AC4: shows Tentative hold with its expiry and the required action', async () => {
+  it('AC4: shows Tentative Hold with its expiry and the required action', async () => {
     mockList.mockResolvedValue([HELD])
     render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
     const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
     const note = within(item).getByRole('note')
-    expect(within(item).getByText('Tentative hold')).toBeInTheDocument() // the status badge
+    expect(within(item).getByText('Tentative Hold')).toBeInTheDocument() // the status badge
     expect(note).toHaveTextContent('Held until')
     expect(note).toHaveTextContent(formatTimestamp(HELD.expires_at) as string)
     expect(note).toHaveTextContent('Required action: Confirm final headcount')
@@ -348,11 +381,11 @@ describe('Tentative hold expiry - the Event shows it as expired, never as confir
     reviewed_at: '2026-10-02T03:00:00Z',
   }
 
-  it('AC4: shows Hold expired with when it lapsed, and never Approved', async () => {
+  it('AC4: shows Hold Expired with when it lapsed, and never Approved', async () => {
     mockList.mockResolvedValue([EXPIRED])
     render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
     const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
-    expect(within(item).getByText('Hold expired')).toBeInTheDocument()
+    expect(within(item).getByText('Hold Expired')).toBeInTheDocument()
     expect(item).not.toHaveTextContent('Approved')
     const note = within(item).getByRole('note')
     expect(note).toHaveTextContent(`The hold lapsed on ${formatTimestamp(EXPIRED.expires_at)}`)

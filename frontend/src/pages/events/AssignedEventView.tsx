@@ -13,6 +13,7 @@ import {
   EventStatus,
   approveEvent,
   approveEventChangeRequest,
+  cancelEvent,
   submitForSafetyCheck,
   formatRange,
   formatTimestamp,
@@ -129,6 +130,9 @@ export function AssignedEventView() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState<string | null>(null)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
+  const [cancellationError, setCancellationError] = useState<string | null>(null)
   const [changeRequestNotes, setChangeRequestNotes] = useState<Record<number, string>>({})
   const [reviewingChangeRequest, setReviewingChangeRequest] = useState<number | null>(null)
   const [changeRequestError, setChangeRequestError] = useState<string | null>(null)
@@ -188,6 +192,25 @@ export function AssignedEventView() {
       setReviewError(err instanceof ApiError ? err.message : 'Could not save the review decision.')
     } finally {
       setReviewing(false)
+    }
+  }
+
+  async function cancel() {
+    if (!event) return
+    setCancelling(true)
+    setCancellationError(null)
+    try {
+      const updated = await cancelEvent(event.id, cancellationReason)
+      setEvent((current) => (current ? { ...current, ...updated } : current))
+      setCancellationReason('')
+      const refreshed = await getAssignedEvent(event.id).catch(() => null)
+      if (refreshed) setEvent(refreshed)
+    } catch (err) {
+      setCancellationError(
+        err instanceof ApiError ? err.message : 'Could not cancel this event.',
+      )
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -310,6 +333,11 @@ export function AssignedEventView() {
 
   const submitted = formatTimestamp(event.submitted_at)
   const pendingChangeRequest = event.change_requests.some((request) => request.status === 'pending')
+  const cancellable =
+    event.status !== EventStatus.DRAFT &&
+    event.status !== EventStatus.EVENT_COMPLETED &&
+    event.status !== EventStatus.EVENT_REJECTED &&
+    event.status !== EventStatus.EVENT_CANCELLED
 
   return (
     <div className="stack">
@@ -427,6 +455,36 @@ export function AssignedEventView() {
                 {confirmError}
               </p>
             )}
+          </div>
+        )}
+        {cancellable && (
+          <div className="status-actions">
+            <h3>Cancel event</h3>
+            <label className="field">
+              <span>Cancellation reason</span>
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                maxLength={2000}
+                rows={3}
+                disabled={cancelling}
+              />
+            </label>
+            {cancellationError && (
+              <p className="form-error" role="alert">
+                {cancellationError}
+              </p>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void cancel()}
+                disabled={cancelling || !cancellationReason.trim()}
+              >
+                {cancelling ? 'Cancelling…' : 'Cancel event'}
+              </button>
+            </div>
           </div>
         )}
       </section>

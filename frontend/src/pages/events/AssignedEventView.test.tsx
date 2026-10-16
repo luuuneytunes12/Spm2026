@@ -53,6 +53,7 @@ vi.mock('../../lib/events', async () => {
     ...actual,
     approveEvent: vi.fn(),
     approveEventChangeRequest: vi.fn(),
+    cancelEvent: vi.fn(),
     getAssignedEvent: vi.fn(),
     rejectEvent: vi.fn(),
     rejectEventChangeRequest: vi.fn(),
@@ -62,6 +63,7 @@ vi.mock('../../lib/events', async () => {
 import {
   approveEvent,
   approveEventChangeRequest,
+  cancelEvent,
   getAssignedEvent,
   rejectEvent,
   rejectEventChangeRequest,
@@ -71,6 +73,7 @@ import type { AssignedEventDetail } from '../../lib/events'
 const mockGet = vi.mocked(getAssignedEvent)
 const mockApprove = vi.mocked(approveEvent)
 const mockReject = vi.mocked(rejectEvent)
+const mockCancel = vi.mocked(cancelEvent)
 const mockApproveChangeRequest = vi.mocked(approveEventChangeRequest)
 const mockRejectChangeRequest = vi.mocked(rejectEventChangeRequest)
 
@@ -711,6 +714,67 @@ describe('Coordinator decisions', () => {
     expect(screen.queryByRole('button', { name: 'Approve request' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reject request' })).not.toBeInTheDocument()
   })
+})
+
+describe('Cancel Event', () => {
+  it('requires a reason and refreshes the event activity after cancelling', async () => {
+    const user = userEvent.setup()
+    mockGet
+      .mockResolvedValueOnce({ ...EVENT, status: 'planning_event' })
+      .mockResolvedValueOnce({
+        ...EVENT,
+        status: 'event_cancelled',
+        activity: [
+          {
+            from_status: 'planning_event',
+            to_status: 'event_cancelled',
+            note: 'Venue unavailable.',
+            changed_by_name: 'Sam Tan',
+            created_at: '2026-09-10T03:00:00Z',
+          },
+          ...EVENT.activity,
+        ],
+      })
+    mockCancel.mockResolvedValue({ ...EVENT, status: 'event_cancelled' })
+    renderView()
+
+    const reason = await screen.findByLabelText('Cancellation reason')
+    const button = screen.getByRole('button', { name: 'Cancel event' })
+    expect(button).toBeDisabled()
+
+    await user.type(reason, 'Venue unavailable.')
+    await user.click(button)
+
+    expect(mockCancel).toHaveBeenCalledWith(7, 'Venue unavailable.')
+    expect(await screen.findByText('Event Cancelled', { selector: '.badge' })).toBeInTheDocument()
+    expect(screen.getByText(/Sam Tan/)).toBeInTheDocument()
+    expect(screen.getByText('Venue unavailable.')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Cancellation reason')).toBeNull()
+  })
+
+  it('shows a useful error when the cancellation is refused', async () => {
+    const user = userEvent.setup()
+    mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
+    mockCancel.mockRejectedValue(new ApiError(409, 'This event can no longer be cancelled.'))
+    renderView()
+
+    await user.type(await screen.findByLabelText('Cancellation reason'), 'No longer proceeding.')
+    await user.click(screen.getByRole('button', { name: 'Cancel event' }))
+
+    expect(await screen.findByText('This event can no longer be cancelled.')).toBeInTheDocument()
+  })
+
+  it.each(['event_completed', 'event_rejected', 'event_cancelled'] as const)(
+    'does not offer cancellation for %s',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...EVENT, status })
+      renderView()
+
+      await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+      expect(screen.queryByLabelText('Cancellation reason')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Cancel event' })).toBeNull()
+    },
+  )
 })
 
 describe('SCRUM-39 - the venue booking card follows the event status', () => {

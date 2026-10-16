@@ -314,6 +314,15 @@ export function rejectEvent(id: number, reason: string): Promise<EventDetail> {
   }) as Promise<EventDetail>
 }
 
+/** Cancel an active event assigned to the signed-in Coordinator. */
+export function cancelEvent(id: number, reason: string): Promise<EventDetail> {
+  return apiFetch(`/events/${id}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  }) as Promise<EventDetail>
+}
+
 export function createEvent(input: EventInput): Promise<EventDetail> {
   return apiFetch('/events', {
     method: 'POST',

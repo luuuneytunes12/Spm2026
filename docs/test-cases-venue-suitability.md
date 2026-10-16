@@ -10,14 +10,17 @@ can actually accommodate the event.
 
 | AC | Given / When / Then |
 |---|---|
-| AC1 | Given I select one of my assigned events, when I run a suitability check, then every attached venue is independently checked for capacity, layout, accessibility features, and required facilities. |
+| AC1 | Given I select one of my assigned events, when I run a suitability check, then every active booking is independently checked using its own attendance, layout, accessibility features, and required facilities. |
 | AC2 | Each venue is marked suitable only when all of its recorded requirements are met. |
 | AC3 | Each failing venue identifies all unmet requirements. Combined venue capacity is separately compared with expected attendance and must exceed it. |
+| AC4 | A booking's attendance defaults to the event's total attendance, can be changed independently, and is used by that booking's recheck without changing another booking's result. |
 
 ## Requirement matching and workflow management
 
 - Expected attendance must be recorded; otherwise capacity cannot be confirmed
-  and the result is not suitable.
+  for that booking and the result is not suitable. Each booking can override
+  the event's attendance; older bookings and omitted overrides use the event's
+  current total.
 - Layout and requirement-item matching ignores case and surrounding spaces.
 - The existing `accessibility_needs` and `venue_requirements` fields are free
   text. For this check, multiple accessibility features and required facilities
@@ -30,8 +33,11 @@ can actually accommodate the event.
   failure; the Coordinator can choose a different event or retry after
   correcting the event or venue data.
 - On an assigned event's planning view, every active venue booking is checked
-  independently, and the combined-capacity result is shown separately. This
-  does not replace the direct selected-venue check on a venue detail page.
+  independently, and the combined-capacity result is shown separately. Each
+  booking has its own recheck action, which reloads only that booking's
+  current values and preserves the other displayed results. Results are
+  calculated live and are not persisted snapshots. This does not replace the
+  direct selected-venue check on a venue detail page.
 - The endpoint only returns a result for an event assigned to the requesting
   Coordinator. Other roles cannot run the check.
 - One venue's failed checks do not alter other bookings. Combined capacity
@@ -44,11 +50,15 @@ can actually accommodate the event.
 | AC1–AC2 | Capacity, layout, accessibility, and facilities all match; the result is suitable | `backend/tests/test_venue_suitability.py::test_suitability_marks_a_venue_suitable_when_every_requirement_is_met` |
 | AC1 | A venue with 250-person capacity is checked directly for an event without an existing venue booking | individual venue suitability endpoint; `VenueSuitability.test.tsx` |
 | AC1–AC3 | Two attached venues are checked independently; one can fail while combined capacity passes | `backend/tests/test_venue_suitability.py::test_event_suitability_checks_each_venue_and_combines_capacity`; `VenueSuitability.test.tsx` |
+| AC1, AC4 | Booking-specific attendance and needs are used; a capacity mismatch names both values | `backend/tests/test_venue_suitability.py::test_event_suitability_uses_each_bookings_attendance_and_needs_independently` |
+| AC4 | Rechecking a booking uses its latest attendance and needs without changing another booking's result | `backend/tests/test_venue_suitability.py::test_booking_suitability_endpoint_reloads_only_the_selected_bookings_current_data`; `frontend/src/components/EventVenueSuitability.test.tsx` |
 | AC1–AC3 | The assigned-event view shows each attached venue's result and the separate combined-capacity result | `frontend/src/components/EventVenueSuitability.test.tsx` |
 | AC1, AC3 | Several mismatches are all reported, including insufficient capacity, unsupported layout, missing accessibility, and missing facility | `backend/tests/test_venue_suitability.py::test_suitability_reports_each_unmet_requirement` |
 | AC3 | Missing expected attendance does not produce a false suitable result | `backend/tests/test_venue_suitability.py::test_suitability_does_not_claim_success_when_attendance_is_missing` |
 | Workflow | A Coordinator can select an assigned event; mismatch details remain visible for follow-up | `frontend/src/pages/venues/VenueSuitability.test.tsx` |
 | Workflow | Failed event-list and suitability requests retain the page workflow and can be retried | `frontend/src/pages/venues/VenueSuitability.test.tsx` |
+| Workflow | Per-venue attendance defaults to the Event total and is submitted independently for each booking | `backend/tests/test_venue_booking_request.py`; `frontend/src/components/VenueBookingSection.test.tsx` |
+| Workflow | A changed booking attendance is recorded in its Activity Log entry and does not alter sibling bookings | `backend/tests/test_venue_booking_change_service.py`; `backend/tests/test_venue_booking_change_cancel.py` |
 | Access | An event assigned to another Coordinator is indistinguishable from an unknown event; Venue Staff are denied | `test_suitability_only_exposes_events_assigned_to_the_coordinator`; `test_suitability_rejects_non_coordinator_roles` |
 
 ## How to run

@@ -1,16 +1,19 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventVenueSuitability } from './EventVenueSuitability'
 import { ApiError } from '../lib/api'
 
 vi.mock('../lib/venues', () => ({
   checkEventVenueSuitability: vi.fn(),
+  checkVenueBookingSuitability: vi.fn(),
 }))
 
-import { checkEventVenueSuitability } from '../lib/venues'
+import { checkEventVenueSuitability, checkVenueBookingSuitability } from '../lib/venues'
 import type { EventVenueSuitability as EventVenueSuitabilityResult } from '../lib/venues'
 
 const mockCheck = vi.mocked(checkEventVenueSuitability)
+const mockCheckBooking = vi.mocked(checkVenueBookingSuitability)
 
 const RESULT: EventVenueSuitabilityResult = {
   event_id: 7,
@@ -21,6 +24,7 @@ const RESULT: EventVenueSuitabilityResult = {
       booking_id: 14,
       venue_id: 3,
       venue_name: 'Main Hall',
+      expected_attendance: 120,
       suitable: true,
       checks: [{
         category: 'capacity',
@@ -34,6 +38,7 @@ const RESULT: EventVenueSuitabilityResult = {
       booking_id: 15,
       venue_id: 4,
       venue_name: 'Garden Room',
+      expected_attendance: 80,
       suitable: false,
       checks: [{
         category: 'layout',
@@ -60,7 +65,8 @@ describe('event-wide venue suitability', () => {
     render(<EventVenueSuitability eventId={7} />)
 
     expect(await screen.findByText('Main Hall: Suitable')).toBeInTheDocument()
-    expect(screen.getByText('Garden Room: Needs attention')).toBeInTheDocument()
+    expect(screen.getByText('Garden Room: Not suitable')).toBeInTheDocument()
+    expect(screen.getByText('Main Hall: Suitable')).toBeInTheDocument()
     expect(screen.getByText(/Unsupported layout/)).toBeInTheDocument()
     expect(screen.getByText(/Combined capacity: 360 \/ 300 required/)).toBeInTheDocument()
     expect(screen.getByText('Overall result: Not suitable.')).toBeInTheDocument()
@@ -84,6 +90,32 @@ describe('event-wide venue suitability', () => {
     expect(await screen.findByText('No active venue bookings are attached to this event yet.'))
       .toBeInTheDocument()
     expect(screen.getByText(/Combined capacity: 0 \/ 120 required/)).toBeInTheDocument()
+  })
+
+  it('rechecks only the selected booking and leaves the other result unchanged', async () => {
+    mockCheck.mockResolvedValue(RESULT)
+    mockCheckBooking.mockResolvedValue({
+      ...RESULT.venues[0],
+      expected_attendance: 300,
+      suitable: false,
+      checks: [{
+        category: 'capacity',
+        requirement: '300 people',
+        available: '250 people',
+        met: false,
+        message: 'Insufficient capacity: Capacity 250 < attendance 300.',
+      }],
+    })
+    render(<EventVenueSuitability eventId={7} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Recheck Main Hall' }))
+
+    expect(await screen.findByText('Main Hall: Not suitable')).toBeInTheDocument()
+    expect(screen.getByText('Garden Room: Not suitable')).toBeInTheDocument()
+    expect(screen.getByText('Attendance checked: 300')).toBeInTheDocument()
+    expect(screen.getByText(/Combined capacity: 360 \/ 300 required/)).toBeInTheDocument()
+    expect(screen.getByText('Overall result: Not suitable.')).toBeInTheDocument()
+    await waitFor(() => expect(mockCheckBooking).toHaveBeenCalledWith(14))
   })
 
   it('shows the server explanation and permits a retry after failure', async () => {

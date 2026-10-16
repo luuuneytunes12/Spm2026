@@ -114,6 +114,7 @@ export interface EventVenueSuitability {
     booking_id: number
     venue_id: number
     venue_name: string
+    expected_attendance: number | null
     suitable: boolean
     checks: VenueSuitabilityCheck[]
   }[]
@@ -123,6 +124,15 @@ export interface EventVenueSuitability {
     met: boolean
     message: string
   }
+}
+
+export type VenueBookingSuitability = EventVenueSuitability['venues'][number]
+
+/** Recalculate one active booking using its current attendance and needs. */
+export function checkVenueBookingSuitability(
+  bookingId: number,
+): Promise<VenueBookingSuitability> {
+  return apiFetch(`/venues/bookings/${bookingId}/suitability`) as Promise<VenueBookingSuitability>
 }
 
 /** The query string for a search. Empty criteria are left out entirely, so

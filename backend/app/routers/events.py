@@ -9,6 +9,7 @@ from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
 from app.models.enums import (
+    ACTIVE_ASSIGNMENT_STATUSES,
     CHANGE_REQUEST_ALLOWED_STATUSES,
     BookingStatus,
     ChangeRequestStatus,
@@ -167,6 +168,17 @@ class RejectionRequest(BaseModel):
     def reason_must_not_be_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Rejection reason cannot be blank")
+        return value.strip()
+
+
+class CancellationRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Cancellation reason cannot be blank")
         return value.strip()
 
 
@@ -1037,6 +1049,76 @@ def reject_event(
         type=NotificationType.event_rejected,
         message=f"Your event '{event.name or 'request'}' was rejected: {body.reason}",
         event_id=event.id,
+    )
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
+@router.post("/{event_id}/cancel", response_model=EventOut)
+def cancel_event(
+    event_id: int,
+    body: CancellationRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> EventOut:
+    """Cancel an active event assigned to this Coordinator and release its arrangements."""
+    event = db.get(Event, event_id, with_for_update=True)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.coordinator_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An event must be assigned to a Coordinator before it can be cancelled.",
+        )
+    if event.coordinator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned Event Coordinator may cancel this event.",
+        )
+    if event.status not in ACTIVE_ASSIGNMENT_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"An event in status '{event.status}' cannot be cancelled.",
+        )
+
+    previous_status = event.status
+    event.status = EventStatus.event_cancelled
+
+    release_note = f"Automatically released because the event was cancelled: {body.reason}"
+    for line in event.equipment_items:
+        if line.status is EquipmentStatus.reserved:
+            line.status = EquipmentStatus.cancelled
+            line.notes = f"{line.notes}\n{release_note}" if line.notes else release_note
+
+    live_bookings = (
+        db.query(VenueBooking)
+        .filter(
+            VenueBooking.event_id == event.id,
+            VenueBooking.status.in_(
+                (
+                    BookingStatus.pending,
+                    BookingStatus.tentative_hold,
+                    BookingStatus.approved,
+                )
+            ),
+        )
+        .with_for_update()
+        .all()
+    )
+    for booking in live_bookings:
+        booking.status = BookingStatus.cancelled
+        booking.expires_at = None
+        booking.decision_notes = f"Released because the event was cancelled: {body.reason}"
+
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=previous_status,
+            to_status=event.status,
+            note=body.reason,
+        )
     )
     db.commit()
     db.refresh(event)

@@ -80,6 +80,10 @@ class VenueBooking(Base):
             postgresql_where=text("status IN ('pending', 'tentative_hold', 'approved')"),
             sqlite_where=text("status IN ('pending', 'tentative_hold', 'approved')"),
         ),
+        CheckConstraint(
+            "expected_attendance is null or expected_attendance > 0",
+            name="ck_venue_booking_expected_attendance_positive",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -121,6 +125,8 @@ class VenueBooking(Base):
     # clash with another one (sql/022). The booking stays approved; Venue
     # Staff resolve it. Null means not flagged.
     conflict_flagged_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Attendance override for this venue (sql/028). Null uses the Event value.
+    expected_attendance: Mapped[int | None] = mapped_column(default=None)
     # What the Coordinator asked of THIS venue (sql/019). Null means "as the
     # Event says", which is how bookings made before 019 read.
     room_layout_preference: Mapped[str | None] = mapped_column(Text)

@@ -64,6 +64,7 @@ const BOOKING: VenueBooking = {
   occupied_end: '2026-11-02T17:00:00Z',
   expires_at: null,
   expected_attendance: 120,
+  attendance_is_overridden: true,
   room_layout_preference: 'Theatre',
   accessibility_needs: null,
   facilities_needs: 'Projector',
@@ -219,7 +220,7 @@ describe('SCRUM-96 AC2 - the change form', () => {
     renderSection()
     const { panel } = await openChange('Marina Hall')
 
-    expect(panel.queryByLabelText(/start|end|time/i)).not.toBeInTheDocument()
+    expect(panel.queryByLabelText(/start time|end time|start date|end date/i)).not.toBeInTheDocument()
   })
 
   it('warns that an approved booking goes back to Pending, and stops counting as approved', async () => {
@@ -295,6 +296,37 @@ describe('SCRUM-96 AC2 - saving a change', () => {
     await waitFor(() => expect(mockChange).toHaveBeenCalledWith(1, { room_layout_preference: 'Classroom' }))
   })
 
+  it('sends only the booking attendance that changed', async () => {
+    mockChange.mockResolvedValue({ ...BOOKING, status: 'pending', expected_attendance: 75 })
+    renderSection()
+    const { user, panel } = await openChange('Marina Hall')
+
+    const attendance = panel.getByLabelText('Expected attendance for Marina Hall')
+    await user.clear(attendance)
+    await user.type(attendance, '75')
+    await user.click(panel.getByRole('button', { name: 'Save change' }))
+
+    await waitFor(() => expect(mockChange).toHaveBeenCalledWith(1, { expected_attendance: 75 }))
+    expect(within(row('Garden Hall')).getByText('Pending review')).toBeInTheDocument()
+    expect(within(row('Sky Room')).getByText('Tentative Hold')).toBeInTheDocument()
+  })
+
+  it('clears an attendance override to use the Event total again', async () => {
+    mockChange.mockResolvedValue({
+      ...BOOKING,
+      status: 'pending',
+      expected_attendance: 120,
+      attendance_is_overridden: false,
+    })
+    renderSection()
+    const { user, panel } = await openChange('Marina Hall')
+
+    await user.clear(panel.getByLabelText('Expected attendance for Marina Hall'))
+    await user.click(panel.getByRole('button', { name: 'Save change' }))
+
+    await waitFor(() => expect(mockChange).toHaveBeenCalledWith(1, { expected_attendance: null }))
+  })
+
   it('sends a need that was emptied as null: it goes back to what the event says', async () => {
     mockChange.mockResolvedValue({ ...BOOKING, status: 'pending', facilities_needs: null })
     renderSection()
@@ -324,7 +356,7 @@ describe('SCRUM-96 AC2 - saving a change', () => {
 
     await waitFor(() => expect(within(row('Marina Hall')).getByText('Pending review')).toBeInTheDocument())
     expect(within(row('Garden Hall')).getByText('Pending review')).toBeInTheDocument()
-    expect(within(row('Sky Room')).getByText('Tentative hold')).toBeInTheDocument()
+    expect(within(row('Sky Room')).getByText('Tentative Hold')).toBeInTheDocument()
     expect(within(row('Marina Hall')).queryByText('Approved')).not.toBeInTheDocument()
   })
 
@@ -410,7 +442,7 @@ describe('SCRUM-96 AC1 - cancelling one booking', () => {
     await waitFor(() => expect(mockCancel).toHaveBeenCalledWith(2, undefined))
     await waitFor(() => expect(within(row('Garden Hall')).getByText('Cancelled')).toBeInTheDocument())
     expect(within(row('Marina Hall')).getByText('Approved')).toBeInTheDocument()
-    expect(within(row('Sky Room')).getByText('Tentative hold')).toBeInTheDocument()
+    expect(within(row('Sky Room')).getByText('Tentative Hold')).toBeInTheDocument()
     expect(onChanged).toHaveBeenCalled()
   })
 

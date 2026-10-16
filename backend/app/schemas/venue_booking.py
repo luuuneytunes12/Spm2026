@@ -11,11 +11,13 @@ from app.models.enums import BookingStatus
 class VenueRequest(BaseModel):
     """One venue a Coordinator is asking for, and what they need of it.
 
-    The three needs are optional: left out, the booking shows the Event's own
-    layout, accessibility and facilities needs. Blank counts as left out.
+    Attendance and the three needs are optional: left out, they use the
+    Event's attendance, layout, accessibility and facilities needs. Blank
+    counts as left out for the three text fields.
     """
 
     venue_id: int
+    expected_attendance: int | None = Field(default=None, gt=0)
     room_layout_preference: str | None = Field(default=None, max_length=2000)
     accessibility_needs: str | None = Field(default=None, max_length=2000)
     facilities_needs: str | None = Field(default=None, max_length=2000)
@@ -40,13 +42,15 @@ class VenueBookingCreate(BaseModel):
 
 class VenueBookingChange(BaseModel):
     """What a Coordinator may change on one booking: its venue, and what they
-    need of it. Every field is optional and only those sent are changed.
+    need of it, including expected attendance. Every field is optional and
+    only those sent are changed.
 
     There is no time: a booking has the Event's, so one sent anyway is ignored,
     not applied. A need sent blank goes back to what the Event says.
     """
 
     venue_id: int | None = None
+    expected_attendance: int | None = Field(default=None, gt=0)
     room_layout_preference: str | None = Field(default=None, max_length=2000)
     accessibility_needs: str | None = Field(default=None, max_length=2000)
     facilities_needs: str | None = Field(default=None, max_length=2000)
@@ -207,7 +211,9 @@ class VenueBookingOut(BaseModel):
     expires_at: datetime | None = None
     # Tentative holds only: what the Coordinator must complete before expiry.
     hold_action: str | None = None
+    # Effective per-booking attendance, falling back to the Event's value.
     expected_attendance: int | None
+    attendance_is_overridden: bool
     # What was asked of THIS venue; where the Coordinator gave nothing, the
     # Event's own needs.
     room_layout_preference: str | None

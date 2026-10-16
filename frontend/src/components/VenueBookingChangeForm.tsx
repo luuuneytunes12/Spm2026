@@ -18,6 +18,7 @@ interface Props {
 }
 
 type Need = 'room_layout_preference' | 'accessibility_needs' | 'facilities_needs'
+type ChangeField = Need | 'expected_attendance'
 
 const NEEDS: { field: Need; label: string }[] = [
   { field: 'room_layout_preference', label: 'Room layout' },
@@ -53,13 +54,15 @@ const NOT_FREE_TAG = 'not free at this time'
  *  window. If that cannot be answered nothing is tagged, and the form says so. */
 export function VenueBookingChangeForm({ booking, venues, takenVenueIds, onSaved, onClose }: Props) {
   const ids = useId()
-  const initial: Record<Need, string> = {
+  const initial: Record<ChangeField, string> = {
+    expected_attendance: booking.expected_attendance?.toString() ?? '',
     room_layout_preference: booking.room_layout_preference ?? '',
     accessibility_needs: booking.accessibility_needs ?? '',
     facilities_needs: booking.facilities_needs ?? '',
   }
   const [venueId, setVenueId] = useState(String(booking.venue.id))
   const [needs, setNeeds] = useState(initial)
+  const [attendance, setAttendance] = useState(initial.expected_attendance)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   // The venues free for the event's time; null until known, or if it could
@@ -88,12 +91,26 @@ export function VenueBookingChangeForm({ booking, venues, takenVenueIds, onSaved
 
   const venueChanged = Number(venueId) !== booking.venue.id
   const changedNeeds = NEEDS.filter(({ field }) => needs[field].trim() !== initial[field].trim())
-  const dirty = venueChanged || changedNeeds.length > 0
+  const attendanceChanged =
+    attendance.trim() !== initial.expected_attendance.trim() &&
+    (attendance.trim() !== '' || booking.attendance_is_overridden === true)
+  const dirty = venueChanged || changedNeeds.length > 0 || attendanceChanged
 
   async function save(e: FormEvent) {
     e.preventDefault()
+    const trimmedAttendance = attendance.trim()
+    if (
+      trimmedAttendance &&
+      (!Number.isInteger(Number(trimmedAttendance)) || Number(trimmedAttendance) <= 0)
+    ) {
+      setProblem('Expected attendance must be a whole number greater than 0.')
+      return
+    }
     const changes: VenueBookingChanges = {}
     if (venueChanged) changes.venue_id = Number(venueId)
+    if (attendanceChanged) {
+      changes.expected_attendance = trimmedAttendance ? Number(trimmedAttendance) : null
+    }
     for (const { field } of changedNeeds) changes[field] = needs[field].trim() || null
 
     setProblem(null)
@@ -114,6 +131,18 @@ export function VenueBookingChangeForm({ booking, venues, takenVenueIds, onSaved
       </h3>
       <p className="field-hint">{consequence(booking.status)}</p>
       <form onSubmit={(e) => void save(e)} noValidate className="stack-tight">
+        <div className="field">
+          <label htmlFor={`${ids}-attendance`}>Expected attendance for {booking.venue.name}</label>
+          <input
+            id={`${ids}-attendance`}
+            type="number"
+            min="1"
+            step="1"
+            value={attendance}
+            placeholder="Use the event's attendance"
+            onChange={(e) => setAttendance(e.target.value)}
+          />
+        </div>
         <div className="field">
           <label htmlFor={`${ids}-venue`}>Venue</label>
           <select id={`${ids}-venue`} value={venueId} onChange={(e) => setVenueId(e.target.value)}>

@@ -27,20 +27,26 @@ interface Props {
 
 /** What the Coordinator typed for one chosen venue. */
 interface Needs {
+  expected_attendance: string
   room_layout_preference: string
   accessibility_needs: string
   facilities_needs: string
 }
 
-const NO_NEEDS: Needs = { room_layout_preference: '', accessibility_needs: '', facilities_needs: '' }
+const NO_NEEDS: Needs = {
+  expected_attendance: '',
+  room_layout_preference: '',
+  accessibility_needs: '',
+  facilities_needs: '',
+}
 
 /** The Coordinator's "request venues" card for one event being planned.
  *
- *  One or more venues are ticked, each with the layout, accessibility and
- *  facilities it needs (left blank, a venue gets the Event's own). The
- *  event's date, time and attendance are not typed here: the server copies
- *  them from the event, so a request always matches what the Organiser asked
- *  for. A separate booking is made for each venue. With none ticked the
+ *  One or more venues are ticked, each with its own expected attendance,
+ *  layout, accessibility and facilities (attendance defaults to the Event's
+ *  total; blank needs use the Event's own). The event's date and time are
+ *  copied from the Event, so each request always matches its schedule. A
+ *  separate booking is made for each venue. With none ticked the
  *  submit is refused -- by the server, whose message is shown -- and nothing
  *  is created.
  *
@@ -146,7 +152,10 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
     setChosen((current) => {
       const next = { ...current }
       if (venueId in next) delete next[venueId]
-      else next[venueId] = { ...NO_NEEDS }
+      else next[venueId] = {
+        ...NO_NEEDS,
+        expected_attendance: expectedAttendance?.toString() ?? '',
+      }
       return next
     })
   }
@@ -157,11 +166,24 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    for (const [id, needs] of Object.entries(chosen)) {
+      const attendance = needs.expected_attendance.trim()
+      if (attendance && (!Number.isInteger(Number(attendance)) || Number(attendance) <= 0)) {
+        const venueName = venues.find((venue) => venue.id === Number(id))?.name ?? 'This venue'
+        setError(`Expected attendance for ${venueName} must be a whole number greater than 0.`)
+        return
+      }
+    }
     setSubmitting(true)
     setError(null)
     const requests: VenueRequest[] = Object.entries(chosen).map(([id, needs]) => ({
       venue_id: Number(id),
-      ...needs,
+      expected_attendance: needs.expected_attendance.trim()
+        ? Number(needs.expected_attendance)
+        : null,
+      room_layout_preference: needs.room_layout_preference,
+      accessibility_needs: needs.accessibility_needs,
+      facilities_needs: needs.facilities_needs,
     }))
     try {
       const created = await submitVenueBookings(eventId, requests)
@@ -294,8 +316,8 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
 
       <form onSubmit={(e) => void submit(e)} noValidate>
         <p className="page-subtitle">
-          Choose one or more venues. The event's date, time and expected attendance are sent with
-          each request; add what you need of each venue below it.
+          Choose one or more venues. The event's date and time are sent with each request.
+          Set attendance for each venue (defaults to the event total), then add its specific needs.
         </p>
         <fieldset disabled={submitting || bookings === null || bookingsLoadError !== null}>
           <legend>Venues</legend>
@@ -317,6 +339,17 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
                 </label>
                 {needs && (
                   <div className="venue-needs">
+                    <label className="field">
+                      <span>Expected attendance for {v.name}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={needs.expected_attendance}
+                        onChange={(e) => setNeed(v.id, 'expected_attendance', e.target.value)}
+                        placeholder="Enter attendance"
+                      />
+                    </label>
                     <label className="field">
                       <span>Room layout for {v.name}</span>
                       <input

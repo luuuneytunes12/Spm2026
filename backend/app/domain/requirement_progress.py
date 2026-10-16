@@ -14,8 +14,8 @@ The statuses are the Definition of Done's, and only those:
                  reserved so far is shown as a figure beside Requested
     Reserved     the full quantity is reserved. Never set by hand
     Unavailable  Technical Support cannot provide it; a reason is required
-    Available    its reservation was freed because the event is over. Never
-                 set by hand
+    Available    its reservation was freed because the event ended, was
+                 cancelled or was completed. Never set by hand
 
 Reserved and Available are worked out, never stored. Unavailable is stored in
 the shared enum's existing `rejected` value, which nothing else here uses:
@@ -23,10 +23,10 @@ adding a value to an enum that Ercong's table shares is not done for one
 feature. A stored `reviewing` -- what "In review" used to save -- reads as
 Requested.
 
-A requirement's reserved quantity is the sum of the reserved equipment_requests
-rows its links point at, read fresh every time, so it can never disagree with
-the reservations themselves -- which belong to Ercong's feature and are not
-touched here.
+A requirement's progress is read fresh from the equipment_requests rows its
+links point at. When an Event is cancelled, its reserved request rows become
+cancelled; their linked quantities remain visible as released for that
+terminal Event.
 """
 
 from collections.abc import Callable, Sequence
@@ -34,13 +34,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.datetimes import as_utc
 from app.domain.activity_log import ActivityLog
 from app.domain.errors import Conflict, InvalidInput
-from app.models.enums import EquipmentStatus
+from app.models.enums import EQUIPMENT_RELEASE_EVENT_STATUSES, EquipmentStatus
 from app.models.equipment import (
     CoordinatorEquipmentRequirement,
     Equipment,
@@ -62,7 +62,7 @@ class RequirementStatus(StrEnum):
 
 # What Technical Support may set by hand. Reserved is not on the list on
 # purpose: it has to be backed by a real reservation. Available is not either:
-# it is a reservation freed, which is the event ending, not a decision.
+# it is a reservation freed by event end, cancellation or completion.
 TECH_SUPPORT_STATUSES: tuple[RequirementStatus, ...] = (
     RequirementStatus.REQUESTED,
     RequirementStatus.UNAVAILABLE,
@@ -107,14 +107,16 @@ class RequirementProgress:
 
     `needed` is the Coordinator's and is never written by a reservation.
     `reserved` is what the reservations hold NOW; once they are freed (the
-    event is over) it is 0, and `was_reserved` is what was freed. 5 needed /
-    3 reserved is a normal state, and stays distinguishable.
+    event ended, was cancelled or completed) it is 0, and `was_reserved` is
+    what was freed. 5 needed / 3 reserved is a normal state, and stays
+    distinguishable.
     """
 
     needed: int
     stored_status: EquipmentStatus
     reservations: tuple[ReservedItem, ...] = ()
-    # True once the reservations no longer hold stock: the event has ended.
+    # True once the reservations no longer hold stock: the event ended, was
+    # cancelled or completed.
     released: bool = False
     unavailable_reason: str | None = None
 
@@ -175,7 +177,7 @@ class RequirementReservationLinks:
     session alone: it is committed by the reservation's own commit, which is
     what makes the link and the reservation a single transaction.
 
-    The clock is handed in so "the event is over" can be tested.
+    The clock is handed in so end-time release can be tested.
     """
 
     def __init__(self, db: Session, clock: Callable[[], datetime] | None = None) -> None:
@@ -190,12 +192,11 @@ class RequirementReservationLinks:
     ) -> dict[int, RequirementProgress]:
         """Progress for each requirement, read in two queries.
 
-        A link only counts while the reservation behind it exists: the join
-        to a RESERVED equipment_requests row is what makes an approved
-        Organiser change -- which rebuilds those rows -- reduce progress
-        instead of leaving a stale figure behind. A reservation holds its
-        stock until its event's end time (his rule), so after that it reads
-        as freed.
+        A link counts while its request is reserved, or when a cancelled
+        request belongs to an Event that has been cancelled. This preserves
+        the released quantity for the Available status. Rebuilt request rows
+        still remove stale links. A reservation holds its stock until its
+        event's end time, or until the event is cancelled or completed.
         """
         by_requirement: dict[int, list[ReservedItem]] = {r.id: [] for r in requirements}
         if not by_requirement:
@@ -216,29 +217,43 @@ class RequirementReservationLinks:
                 ),
             )
             .join(Equipment, Equipment.id == RequirementReservationLink.equipment_id)
+            .join(Event, Event.id == RequirementReservationLink.event_id)
             .where(
                 RequirementReservationLink.requirement_id.in_(by_requirement),
-                EquipmentRequest.status == EquipmentStatus.reserved,
+                or_(
+                    EquipmentRequest.status == EquipmentStatus.reserved,
+                    and_(
+                        Event.status.in_(EQUIPMENT_RELEASE_EVENT_STATUSES),
+                        EquipmentRequest.status == EquipmentStatus.cancelled,
+                    ),
+                ),
             )
             .order_by(RequirementReservationLink.id)
         ).all()
         for requirement_id, equipment_id, name, quantity, placement in rows:
             by_requirement[requirement_id].append(ReservedItem(equipment_id, name, quantity, placement))
 
-        ends = dict(
-            self._db.execute(
-                select(Event.id, Event.proposed_end).where(
+        event_windows = {
+            event_id: (end, status)
+            for event_id, end, status in self._db.execute(
+                select(Event.id, Event.proposed_end, Event.status).where(
                     Event.id.in_({r.event_id for r in requirements})
                 )
             ).all()
-        )
+        }
         now = self._clock()
         return {
             r.id: RequirementProgress(
                 needed=r.quantity_needed,
                 stored_status=r.status,
                 reservations=tuple(by_requirement[r.id]),
-                released=ends.get(r.event_id) is not None and as_utc(ends[r.event_id]) <= now,
+                released=(
+                    event_windows[r.event_id][1] in EQUIPMENT_RELEASE_EVENT_STATUSES
+                    or (
+                        event_windows[r.event_id][0] is not None
+                        and as_utc(event_windows[r.event_id][0]) <= now
+                    )
+                ),
                 unavailable_reason=r.unavailable_reason,
             )
             for r in requirements
