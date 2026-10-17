@@ -63,7 +63,13 @@ LIVE_BOOKING_STATUSES = (
 
 # What a change may touch. Never a time.
 _CHANGEABLE = frozenset(
-    {"venue_id", "room_layout_preference", "accessibility_needs", "facilities_needs"}
+    {
+        "venue_id",
+        "expected_attendance",
+        "room_layout_preference",
+        "accessibility_needs",
+        "facilities_needs",
+    }
 )
 
 _NEED_LABELS = {
@@ -90,6 +96,8 @@ class BookingChange:
 
     venue_before: str
     venue_after: str
+    attendance_before: int | None
+    attendance_after: int | None
     needs_before: Mapping[str, str | None]
     needs_after: Mapping[str, str | None]
 
@@ -97,6 +105,8 @@ class BookingChange:
     def changed_fields(self) -> list[str]:
         """What differs, in a fixed order: the venue, then each need."""
         fields = ["venue"] if self.venue_before != self.venue_after else []
+        if self.attendance_before != self.attendance_after:
+            fields.append("expected attendance")
         fields += [
             need
             for need in _NEED_LABELS
@@ -114,12 +124,21 @@ class BookingChange:
         for field in self.changed_fields:
             if field == "venue":
                 parts.append(f"venue {self.venue_before} → {self.venue_after}")
+            elif field == "expected attendance":
+                parts.append(
+                    f"attendance {_show_number(self.attendance_before)} "
+                    f"→ {_show_number(self.attendance_after)}"
+                )
             else:
                 parts.append(
                     f"{_NEED_LABELS[field]} {_show(self.needs_before.get(field))} "
                     f"→ {_show(self.needs_after.get(field))}"
                 )
         return "; ".join(parts)
+
+
+def _show_number(value: int | None) -> str:
+    return str(value) if value is not None else "as the event says"
 
 
 class VenueStaffRecipients(ABC):
@@ -224,9 +243,21 @@ class VenueBookingChangeService:
             need: (_clean(changes[need]) if need in changes else getattr(booking, need))
             for need in _NEED_LABELS
         }
+        attendance_after = changes.get("expected_attendance", booking.expected_attendance)
+        if attendance_after is not None and (
+            isinstance(attendance_after, bool)
+            or not isinstance(attendance_after, int)
+            or attendance_after <= 0
+        ):
+            raise InvalidInput(
+                "Expected attendance must be a whole number greater than 0.",
+                field="expected_attendance",
+            )
         change = BookingChange(
             venue_before=old_venue.name,
             venue_after=new_venue.name,
+            attendance_before=booking.expected_attendance,
+            attendance_after=attendance_after,
             needs_before={need: getattr(booking, need) for need in _NEED_LABELS},
             needs_after=needs_after,
         )
@@ -236,6 +267,7 @@ class VenueBookingChangeService:
         # Every rule has passed; from here on, things change.
         held_the_venue = booking.status in (BookingStatus.approved, BookingStatus.tentative_hold)
         booking.venue = new_venue
+        booking.expected_attendance = change.attendance_after
         for need, value in needs_after.items():
             setattr(booking, need, value)
         self._back_to_pending(booking)

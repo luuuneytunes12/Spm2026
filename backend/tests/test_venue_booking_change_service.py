@@ -81,6 +81,8 @@ def _change(venue_after="Marina Hall", needs_after=None, needs_before=None):
     return BookingChange(
         venue_before="Marina Hall",
         venue_after=venue_after,
+        attendance_before=None,
+        attendance_after=None,
         needs_before={**NO_NEEDS, "room_layout_preference": "Theatre", **(needs_before or {})},
         needs_after={**NO_NEEDS, "room_layout_preference": "Theatre", **(needs_after or {})},
     )
@@ -307,6 +309,43 @@ def test_changing_the_venue_sends_the_booking_back_to_pending(world):
     assert changed.status is BookingStatus.pending
     assert changed.venue_id == world.venues["Sky Room"].id
     assert changed.reviewed_by is None and changed.reviewed_at is None
+
+
+def test_changing_attendance_logs_it_and_leaves_other_bookings_unchanged(world):
+    booking = _booking(
+        world,
+        "Marina Hall",
+        BookingStatus.approved,
+        expected_attendance=120,
+    )
+    other = _booking(
+        world,
+        "Garden Hall",
+        BookingStatus.approved,
+        expected_attendance=35,
+    )
+
+    changed = _service(world).change(
+        booking.id, world.coordinator, expected_attendance=80
+    )
+
+    assert changed.expected_attendance == 80
+    assert changed.status is BookingStatus.pending
+    assert world.db.get(VenueBooking, other.id).expected_attendance == 35
+    [history] = world.db.query(EventStatusHistory).all()
+    assert history.changed_by == world.coordinator.id
+    assert "attendance 120 → 80" in history.note
+    assert history.from_status == history.to_status == EventStatus.planning_event
+
+
+def test_changing_attendance_rejects_invalid_values_before_mutating_booking(world):
+    booking = _booking(world, "Marina Hall", BookingStatus.approved, expected_attendance=120)
+
+    with pytest.raises(InvalidInput, match="whole number greater than 0"):
+        _service(world).change(booking.id, world.coordinator, expected_attendance=0)
+
+    assert world.db.get(VenueBooking, booking.id).expected_attendance == 120
+    assert world.db.query(EventStatusHistory).count() == 0
 
 
 def test_the_service_does_not_commit(world):

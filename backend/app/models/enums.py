@@ -28,6 +28,11 @@ TERMINAL_EVENT_STATUSES = (
     EventStatus.event_rejected,
 )
 
+EQUIPMENT_RELEASE_EVENT_STATUSES = (
+    EventStatus.event_completed,
+    EventStatus.event_cancelled,
+)
+
 ACTIVE_ASSIGNMENT_STATUSES = (
     EventStatus.submitted_awaiting_coordinator,
     EventStatus.under_review,

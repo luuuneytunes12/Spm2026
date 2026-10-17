@@ -171,7 +171,12 @@ def _out(booking: VenueBooking, conflicts: list[BookingConflict] | None = None) 
         venue=booking.venue,
         start_time=booking.start_time,
         end_time=booking.end_time,
-        expected_attendance=event.expected_attendance,
+        expected_attendance=(
+            booking.expected_attendance
+            if booking.expected_attendance is not None
+            else event.expected_attendance
+        ),
+        attendance_is_overridden=booking.expected_attendance is not None,
         room_layout_preference=booking.room_layout_preference or event.room_layout_preference,
         accessibility_needs=booking.accessibility_needs or event.accessibility_needs,
         facilities_needs=booking.facilities_needs or event.venue_requirements,
@@ -437,6 +442,7 @@ def submit_venue_booking(
             start_time=event.proposed_start,
             end_time=event.proposed_end,
             status=BookingStatus.pending,
+            expected_attendance=request.expected_attendance,
             room_layout_preference=request.room_layout_preference,
             accessibility_needs=request.accessibility_needs,
             facilities_needs=request.facilities_needs,

@@ -18,11 +18,11 @@ export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   pending: 'Pending review',
-  tentative_hold: 'Tentative hold',
+  tentative_hold: 'Tentative Hold',
   approved: 'Approved',
   rejected: 'Rejected',
   cancelled: 'Cancelled',
-  hold_expired: 'Hold expired',
+  hold_expired: 'Hold Expired',
 }
 
 /** Event statuses from which a venue can be requested. Mirrors
@@ -52,7 +52,10 @@ export interface VenueBooking {
   /** Tentative holds only: what the Coordinator must complete before
    *  `expires_at`. Null for anything else. */
   hold_action?: string | null
+  /** Effective attendance for this venue; falls back to the Event's total. */
   expected_attendance: number | null
+  /** True when this booking has its own attendance override. */
+  attendance_is_overridden?: boolean
   /** What was asked of THIS venue; the Event's own needs where nothing was
    *  entered for it. */
   room_layout_preference: string | null
@@ -104,6 +107,8 @@ export interface BookingConflict {
  *  blank) means "as the Event says". */
 export interface VenueRequest {
   venue_id: number
+  /** Attendance for this venue; omitted/null uses the Event's attendance. */
+  expected_attendance?: number | null
   room_layout_preference?: string
   accessibility_needs?: string
   facilities_needs?: string
@@ -327,6 +332,8 @@ export function isLiveBooking(status: BookingStatus): boolean {
  *  event says. There is no time: a booking has the event's. */
 export interface VenueBookingChanges {
   venue_id?: number
+  /** Null returns to the Event's attendance. */
+  expected_attendance?: number | null
   room_layout_preference?: string | null
   accessibility_needs?: string | null
   facilities_needs?: string | null

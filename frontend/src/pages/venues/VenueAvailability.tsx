@@ -60,7 +60,7 @@ function timeLabel(value: string): string {
 
 function itemStatus(item: VenueAvailabilityItem): string {
   if (item.kind === 'unavailability' || item.conflicts_with_unavailability) return 'Unavailable'
-  if (item.kind === 'tentative_hold') return 'Tentative hold'
+  if (item.kind === 'tentative_hold') return 'Tentative Hold'
   return 'Confirmed booking'
 }
 
@@ -401,7 +401,7 @@ export function VenueAvailability() {
 
           <div className="availability-legend" aria-label="Calendar legend">
             <span><i className="availability-marker availability-marker-confirmed_booking" /> Confirmed</span>
-            <span><i className="availability-marker availability-marker-tentative_hold" /> Tentative hold</span>
+            <span><i className="availability-marker availability-marker-tentative_hold" /> Tentative Hold</span>
             <span><i className="availability-marker availability-marker-unavailability" /> Unavailable</span>
           </div>
 

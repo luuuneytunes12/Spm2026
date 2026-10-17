@@ -59,6 +59,11 @@ _coordinator = require_role(Role.COORDINATOR)
 # Always pair this with _active_hold_filter(now): a hold past its expiry but
 # not yet swept must not block.
 _BLOCKING_BOOKING_STATUSES = (BookingStatus.approved, BookingStatus.tentative_hold)
+_SUITABILITY_BOOKING_STATUSES = (
+    BookingStatus.pending,
+    BookingStatus.approved,
+    BookingStatus.tentative_hold,
+)
 
 
 def _reject(field: str, message: str) -> None:
@@ -105,9 +110,15 @@ def _requirement_items(value: str | None) -> list[str]:
     return [item.strip() for item in re.split(r"[,;\n]", value or "") if item.strip()]
 
 
-def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityCheck]:
+def _checks_for_requirements(
+    venue: Venue,
+    expected_attendance: int | None,
+    room_layout_preference: str | None,
+    accessibility_needs: str | None,
+    facilities_needs: str | None,
+) -> list[VenueSuitabilityCheck]:
     checks: list[VenueSuitabilityCheck] = []
-    if event.expected_attendance is None:
+    if expected_attendance is None:
         checks.append(
             VenueSuitabilityCheck(
                 category="capacity",
@@ -118,23 +129,23 @@ def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityChec
             )
         )
     else:
-        capacity_met = venue.capacity >= event.expected_attendance
+        capacity_met = venue.capacity >= expected_attendance
         checks.append(
             VenueSuitabilityCheck(
                 category="capacity",
-                requirement=f"{event.expected_attendance} people",
+                requirement=f"{expected_attendance} people",
                 available=f"{venue.capacity} people",
                 met=capacity_met,
                 message=(
                     "Capacity is sufficient."
                     if capacity_met
-                    else f"Insufficient capacity: {venue.capacity} available; "
-                    f"{event.expected_attendance} required."
+                    else f"Insufficient capacity: Capacity {venue.capacity} "
+                    f"< attendance {expected_attendance}."
                 ),
             )
         )
 
-    layout = (event.room_layout_preference or "").strip()
+    layout = (room_layout_preference or "").strip()
     if layout:
         layout_met = layout.casefold() in _folded(venue.supported_layouts)
         checks.append(
@@ -151,7 +162,7 @@ def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityChec
             )
         )
 
-    for requirement in _requirement_items(event.accessibility_needs):
+    for requirement in _requirement_items(accessibility_needs):
         met = requirement.casefold() in _folded(venue.accessibility_features)
         checks.append(
             VenueSuitabilityCheck(
@@ -167,7 +178,7 @@ def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityChec
             )
         )
 
-    for requirement in _requirement_items(event.venue_requirements):
+    for requirement in _requirement_items(facilities_needs):
         met = requirement.casefold() in _folded(venue.facilities)
         checks.append(
             VenueSuitabilityCheck(
@@ -183,6 +194,30 @@ def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityChec
             )
         )
     return checks
+
+
+def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityCheck]:
+    return _checks_for_requirements(
+        venue,
+        event.expected_attendance,
+        event.room_layout_preference,
+        event.accessibility_needs,
+        event.venue_requirements,
+    )
+
+
+def _booking_suitability_checks(
+    event: Event, booking: VenueBooking
+) -> list[VenueSuitabilityCheck]:
+    return _checks_for_requirements(
+        booking.venue,
+        booking.expected_attendance
+        if booking.expected_attendance is not None
+        else event.expected_attendance,
+        booking.room_layout_preference or event.room_layout_preference,
+        booking.accessibility_needs or event.accessibility_needs,
+        booking.facilities_needs or event.venue_requirements,
+    )
 
 
 # Declared before "/{venue_id}". That route takes an int, so "filter-options"
@@ -772,21 +807,26 @@ def check_event_venue_suitability(
         .options(joinedload(VenueBooking.venue))
         .where(
             VenueBooking.event_id == event.id,
-            VenueBooking.status.in_(_BLOCKING_BOOKING_STATUSES),
+            VenueBooking.status.in_(_SUITABILITY_BOOKING_STATUSES),
             _active_hold_filter(now),
         )
         .order_by(VenueBooking.id)
     ).unique().all()
-    venue_results = [
-        EventVenueSuitabilityItem(
+    venue_results = []
+    for booking in bookings:
+        checks = _booking_suitability_checks(event, booking)
+        venue_results.append(EventVenueSuitabilityItem(
             booking_id=booking.id,
             venue_id=booking.venue.id,
             venue_name=booking.venue.name,
-            suitable=all(check.met for check in _suitability_checks(event, booking.venue)),
-            checks=_suitability_checks(event, booking.venue),
-        )
-        for booking in bookings
-    ]
+            expected_attendance=(
+                booking.expected_attendance
+                if booking.expected_attendance is not None
+                else event.expected_attendance
+            ),
+            suitable=all(check.met for check in checks),
+            checks=checks,
+        ))
     available_capacity = sum({booking.venue.id: booking.venue.capacity for booking in bookings}.values())
     if event.expected_attendance is None:
         combined = CombinedVenueCapacityCheck(
@@ -812,4 +852,46 @@ def check_event_venue_suitability(
         suitable=bool(venue_results) and all(result.suitable for result in venue_results) and combined.met,
         venues=venue_results,
         combined_capacity=combined,
+    )
+
+
+@router.get(
+    "/bookings/{booking_id}/suitability",
+    response_model=EventVenueSuitabilityItem,
+)
+def check_booking_venue_suitability(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_coordinator),
+) -> EventVenueSuitabilityItem:
+    """Recheck only one active booking for an event assigned to the caller."""
+    now = datetime.now(timezone.utc)
+    expire_tentative_holds(db, now)
+    booking = db.scalars(
+        select(VenueBooking)
+        .options(joinedload(VenueBooking.event), joinedload(VenueBooking.venue))
+        .where(
+            VenueBooking.id == booking_id,
+            VenueBooking.status.in_(_SUITABILITY_BOOKING_STATUSES),
+            _active_hold_filter(now),
+        )
+    ).unique().one_or_none()
+    if booking is None or booking.event.coordinator_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active venue booking not found",
+        )
+
+    checks = _booking_suitability_checks(booking.event, booking)
+    return EventVenueSuitabilityItem(
+        booking_id=booking.id,
+        venue_id=booking.venue.id,
+        venue_name=booking.venue.name,
+        expected_attendance=(
+            booking.expected_attendance
+            if booking.expected_attendance is not None
+            else booking.event.expected_attendance
+        ),
+        suitable=all(check.met for check in checks),
+        checks=checks,
     )

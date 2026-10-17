@@ -9,18 +9,28 @@ change, the reservation moves with them.
 
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.orm import Session
 
-from app.models.enums import EquipmentOperationalStatus, EquipmentStatus
+from app.models.enums import (
+    EQUIPMENT_RELEASE_EVENT_STATUSES,
+    EquipmentOperationalStatus,
+    EquipmentStatus,
+)
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event
 
 
 def held_after(moment: datetime) -> ColumnElement[bool]:
-    """Reserved stock still held after `moment`: it is freed at its event's
-    end time. The one rule every screen uses for when kit comes back."""
-    return Event.proposed_end > moment
+    """Reserved stock still held after `moment`.
+
+    Reservations are freed at the event's end time, or immediately when the
+    event is cancelled or completed.
+    """
+    return and_(
+        Event.proposed_end > moment,
+        Event.status.not_in(EQUIPMENT_RELEASE_EVENT_STATUSES),
+    )
 
 
 def reserved_units(db: Session, equipment_id: int, start: datetime, end: datetime) -> int:

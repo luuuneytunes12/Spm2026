@@ -158,11 +158,13 @@ def reserve_equipment(
     Technical Support adds the item with a quantity of their own, recorded
     as a request already reserved by them.
 
-    The item's row is locked before availability is read, so two
-    reservations for overlapping events cannot both see the same free units
-    and overcommit them: the second waits, then sees the first.
+    The Event row is locked before its status is read, serializing reservation
+    with Event cancellation/completion. The item's row is then locked before
+    availability is read, so overlapping reservations cannot overcommit stock.
     """
-    event = _get_event(db, body.event_id)
+    event = db.get(Event, body.event_id, with_for_update=True)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     if event.status not in PLANNED_EVENT_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -174,7 +174,11 @@ def test_event_suitability_checks_each_venue_and_combines_capacity(client, db_se
             requested_by=coordinator.id,
             start_time=_at(10),
             end_time=_at(11),
-            status=BookingStatus.approved,
+            status=(
+                BookingStatus.pending
+                if venue is suitable_venue
+                else BookingStatus.approved
+            ),
         )
         for venue in (suitable_venue, unsuitable_venue)
     ])
@@ -188,6 +192,7 @@ def test_event_suitability_checks_each_venue_and_combines_capacity(client, db_se
         ("Large Theatre", True),
         ("Small Boardroom", False),
     ]
+    assert [venue["expected_attendance"] for venue in result["venues"]] == [80, 80]
     assert any(
         check["category"] == "layout" and not check["met"]
         for check in result["venues"][1]["checks"]
@@ -199,3 +204,161 @@ def test_event_suitability_checks_each_venue_and_combines_capacity(client, db_se
         "message": "Combined capacity is 110; it must exceed 80 attendees.",
     }
     assert result["suitable"] is False
+
+
+def test_event_suitability_uses_each_bookings_attendance_and_needs_independently(
+    client, db_session
+):
+    headers = _coordinator(client, db_session)
+    coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
+    small_room = _venue(
+        db_session,
+        "Breakout Room",
+        capacity=30,
+        supported_layouts=["Classroom"],
+        accessibility_features=["Step-free access"],
+        facilities=["Whiteboard"],
+    )
+    large_room = _venue(
+        db_session,
+        "Main Hall",
+        capacity=100,
+        supported_layouts=["Theatre"],
+        accessibility_features=["Wheelchair access", "Hearing loop"],
+        facilities=["Projector", "Stage"],
+    )
+    event = _assigned_event(db_session, coordinator, expected_attendance=80)
+    db_session.add_all(
+        [
+            VenueBooking(
+                event_id=event.id,
+                venue_id=small_room.id,
+                requested_by=coordinator.id,
+                start_time=_at(10),
+                end_time=_at(11),
+                status=BookingStatus.pending,
+                expected_attendance=40,
+                room_layout_preference="Classroom",
+                accessibility_needs="Step-free access",
+                facilities_needs="Whiteboard",
+            ),
+            VenueBooking(
+                event_id=event.id,
+                venue_id=large_room.id,
+                requested_by=coordinator.id,
+                start_time=_at(10),
+                end_time=_at(11),
+                status=BookingStatus.pending,
+                expected_attendance=40,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/venues/events/{event.id}/suitability", headers=headers)
+
+    assert response.status_code == 200, response.text
+    results = response.json()["venues"]
+    assert [result["expected_attendance"] for result in results] == [40, 40]
+    assert [result["venue_name"] for result in results] == ["Breakout Room", "Main Hall"]
+    assert results[0]["suitable"] is False
+    assert results[1]["suitable"] is True
+    capacity_failure = next(
+        check for check in results[0]["checks"] if check["category"] == "capacity"
+    )
+    assert capacity_failure["message"] == "Insufficient capacity: Capacity 30 < attendance 40."
+    assert all(
+        check["met"] for check in results[0]["checks"] if check["category"] != "capacity"
+    )
+    assert response.json()["combined_capacity"]["required_capacity"] == 80
+
+
+def test_booking_suitability_endpoint_reloads_only_the_selected_bookings_current_data(
+    client, db_session
+):
+    headers = _coordinator(client, db_session)
+    coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
+    first_venue = _venue(
+        db_session, "First Room", capacity=50, supported_layouts=["Theatre"]
+    )
+    second_venue = _venue(
+        db_session, "Second Room", capacity=100, supported_layouts=["Boardroom"]
+    )
+    event = _assigned_event(db_session, coordinator, expected_attendance=80)
+    first = VenueBooking(
+        event_id=event.id,
+        venue_id=first_venue.id,
+        requested_by=coordinator.id,
+        start_time=_at(10),
+        end_time=_at(11),
+        status=BookingStatus.pending,
+        expected_attendance=40,
+        room_layout_preference="Theatre",
+    )
+    second = VenueBooking(
+        event_id=event.id,
+        venue_id=second_venue.id,
+        requested_by=coordinator.id,
+        start_time=_at(10),
+        end_time=_at(11),
+        status=BookingStatus.pending,
+        expected_attendance=60,
+        room_layout_preference="Boardroom",
+    )
+    db_session.add_all([first, second])
+    db_session.commit()
+
+    before_second = client.get(
+        f"/venues/bookings/{second.id}/suitability", headers=headers
+    ).json()
+    first.expected_attendance = 70
+    first.room_layout_preference = "Classroom"
+    db_session.commit()
+
+    updated_first = client.get(
+        f"/venues/bookings/{first.id}/suitability", headers=headers
+    )
+    after_second = client.get(
+        f"/venues/bookings/{second.id}/suitability", headers=headers
+    ).json()
+
+    assert updated_first.status_code == 200, updated_first.text
+    assert updated_first.json()["booking_id"] == first.id
+    assert updated_first.json()["expected_attendance"] == 70
+    assert any(
+        check["message"].startswith("Insufficient capacity")
+        for check in updated_first.json()["checks"]
+    )
+    assert before_second == after_second
+
+
+def test_booking_suitability_endpoint_hides_bookings_from_other_coordinators(
+    client, db_session
+):
+    headers = _coordinator(client, db_session)
+    coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
+    other = User(
+        name="Other Coordinator",
+        email="other-booking-coordinator@example.com",
+        password_hash="x",
+        role=Role.COORDINATOR.value,
+    )
+    db_session.add(other)
+    db_session.flush()
+    venue = _venue(db_session, "Hall")
+    event = _assigned_event(db_session, other)
+    booking = VenueBooking(
+        event_id=event.id,
+        venue_id=venue.id,
+        requested_by=coordinator.id,
+        start_time=_at(10),
+        end_time=_at(11),
+        status=BookingStatus.approved,
+    )
+    db_session.add(booking)
+    db_session.commit()
+
+    response = client.get(f"/venues/bookings/{booking.id}/suitability", headers=headers)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Active venue booking not found"

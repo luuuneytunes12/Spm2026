@@ -139,6 +139,51 @@ def test_scrum39_ac3_the_request_carries_venue_timing_attendance_layout_and_need
     assert body["created_at"]
 
 
+def test_each_venue_booking_can_use_its_own_attendance_or_default_to_the_event(
+    client, db_session
+):
+    _, coord_h, staff_h, event_id = _approved(client, db_session)
+    first = _venue(db_session, "Main Hall")
+    second = _venue(db_session, "Breakout Room")
+
+    response = _submit_many(
+        client,
+        coord_h,
+        event_id,
+        [
+            {"venue_id": first.id, "expected_attendance": 80},
+            {"venue_id": second.id},
+        ],
+    )
+
+    assert response.status_code == 201, response.text
+    bookings = response.json()
+    by_venue = {booking["venue"]["id"]: booking for booking in bookings}
+    assert by_venue[first.id]["expected_attendance"] == 80
+    assert by_venue[first.id]["attendance_is_overridden"] is True
+    assert by_venue[second.id]["expected_attendance"] == 120
+    assert by_venue[second.id]["attendance_is_overridden"] is False
+    staff_view = client.get(
+        f"/venue-bookings/{by_venue[first.id]['id']}", headers=staff_h
+    )
+    assert staff_view.json()["expected_attendance"] == 80
+
+
+def test_per_booking_attendance_must_be_a_positive_integer(client, db_session):
+    _, coord_h, _, event_id = _approved(client, db_session)
+    venue = _venue(db_session)
+
+    response = _submit_many(
+        client,
+        coord_h,
+        event_id,
+        [{"venue_id": venue.id, "expected_attendance": 0}],
+    )
+
+    assert response.status_code == 422
+    assert db_session.query(VenueBooking).count() == 0
+
+
 # --- Access control ----------------------------------------------------------
 
 

@@ -274,7 +274,7 @@ describe('View Venue Availability Calendar', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('The end must be after the start.')
     expect(mockGetAvailability).not.toHaveBeenCalled()
   })
-  it('Tentative hold AC4: a hold shows its expiry and the required action', async () => {
+  it('Tentative Hold AC4: a hold shows its expiry and the required action', async () => {
     const expires = '2026-11-02T03:00:00Z'
     mockGetAvailability.mockResolvedValue({
       ...CALENDAR,
@@ -293,7 +293,7 @@ describe('View Venue Availability Calendar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check availability' }))
 
     const selectedDate = await screen.findByRole('region', { name: /Availability on 2026-11-02/ })
-    expect(selectedDate).toHaveTextContent('Tentative hold')
+    expect(selectedDate).toHaveTextContent('Tentative Hold')
     expect(selectedDate).toHaveTextContent(`Expires ${new Date(expires).toLocaleString()}`)
     expect(selectedDate).toHaveTextContent('Required action: Confirm final headcount')
   })

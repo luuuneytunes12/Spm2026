@@ -183,6 +183,7 @@ class EventVenueSuitabilityItem(BaseModel):
     booking_id: int
     venue_id: int
     venue_name: str
+    expected_attendance: int | None
     suitable: bool
     checks: list[VenueSuitabilityCheck]
 

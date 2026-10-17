@@ -199,6 +199,9 @@ create table venue_bookings (
     -- Set when a venue setup/turnaround change made this approved booking
     -- clash with another; null means not flagged. See sql/022.
     conflict_flagged_at timestamptz,
+    -- Attendance override for this venue; null means use the Event value.
+    -- See sql/028.
+    expected_attendance integer,
     -- What the Coordinator asked of THIS venue; null means as the Event says.
     -- See sql/019.
     room_layout_preference text,
@@ -207,7 +210,9 @@ create table venue_bookings (
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time),
-    check (status <> 'tentative_hold' or expires_at is not null)
+    check (status <> 'tentative_hold' or expires_at is not null),
+    constraint ck_venue_booking_expected_attendance_positive
+        check (expected_attendance is null or expected_attendance > 0)
 );
 
 create index idx_venue_bookings_event on venue_bookings (event_id);
