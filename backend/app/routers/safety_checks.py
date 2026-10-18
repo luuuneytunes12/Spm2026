@@ -27,6 +27,7 @@ from app.models.venues import VenueBooking
 from app.routers.events import SAFETY_RESULT_NOTES, _event_activity
 from app.schemas.event import EventOut, OrganiserContact
 from app.schemas.safety_check import (
+    PastSafetyCheck,
     SafetyChangesIn,
     SafetyCheckDetail,
     SafetyCheckSummary,
@@ -35,6 +36,7 @@ from app.schemas.safety_check import (
     SafetyVenueBooking,
 )
 from app.services.notifications import notify
+from app.services.safety_decisions import EventSafetyDecisions, OfficerPastSafetyChecks
 
 router = APIRouter(prefix="/safety-checks", tags=["safety-checks"])
 
@@ -145,6 +147,18 @@ def safety_check_queue(
     ]
 
 
+@router.get("/history", response_model=list[PastSafetyCheck])
+def past_safety_checks(
+    db: Session = Depends(get_db),
+    user: User = Depends(_safety_officer),
+) -> list[PastSafetyCheck]:
+    """The events this Safety Officer has decided, one row each with their
+    latest decision, newest first. Empty when they have decided none.
+
+    Declared before `/{event_id}` so "history" is not read as an event id."""
+    return OfficerPastSafetyChecks(db, user.id).rows()
+
+
 @router.get("/{event_id}", response_model=SafetyCheckDetail)
 def get_safety_check(
     event_id: int,
@@ -173,6 +187,7 @@ def get_safety_check(
             if line.status is not EquipmentStatus.cancelled
         ],
         activity=_event_activity(db, event.id),
+        decisions=EventSafetyDecisions(db, event.id).decisions(),
     )
 
 
