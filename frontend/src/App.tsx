@@ -34,6 +34,7 @@ import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
 import { VenueAvailability } from './pages/venues/VenueAvailability'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
+import { PastSafetyChecks } from './pages/safety/PastSafetyChecks'
 import { SafetyCheckView } from './pages/safety/SafetyCheckView'
 import { SafetyChecks } from './pages/safety/SafetyChecks'
 
@@ -114,6 +115,7 @@ function App() {
           </Route>
           <Route element={<RequireRole roles={[Role.SAFETY_OFFICER]} />}>
             <Route path="/safety-checks" element={<SafetyChecks />} />
+            <Route path="/safety-checks/history" element={<PastSafetyChecks />} />
             <Route path="/safety-checks/:id" element={<SafetyCheckView />} />
           </Route>
         </Route>

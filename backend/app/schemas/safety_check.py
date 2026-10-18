@@ -1,6 +1,7 @@
 """Schemas for the Safety Officer's Operational Safety Check."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, computed_field, Field, field_validator
 
@@ -17,6 +18,32 @@ class SafetyCheckSummary(BaseModel):
     proposed_start: datetime | None
     proposed_end: datetime | None
     coordinator: OrganiserContact | None
+
+
+SafetyDecisionResult = Literal["Approved", "Changes Requested", "Rejected"]
+
+
+class SafetyDecision(BaseModel):
+    """One Safety Check decision on an event, read from the activity log."""
+
+    decision: SafetyDecisionResult
+    reason: str | None  # None for an approval: no reason is asked for
+    decided_by_name: str | None
+    decided_at: datetime
+
+
+class PastSafetyCheck(BaseModel):
+    """One row of a Safety Officer's past Safety Checks: an event they
+    decided, with their latest decision on it and its status now."""
+
+    id: int
+    name: str | None
+    proposed_start: datetime | None
+    proposed_end: datetime | None
+    status: EventStatus
+    decision: SafetyDecisionResult
+    reason: str | None
+    decided_at: datetime
 
 
 class SafetyVenue(BaseModel):
@@ -95,6 +122,8 @@ class SafetyCheckDetail(BaseModel):
     venue_bookings: list[SafetyVenueBooking]
     equipment: list[SafetyEquipmentLine]
     activity: list[ActivityEntry]
+    # Every Safety Check decision on the event, by any Safety Officer, newest first.
+    decisions: list[SafetyDecision] = []
 
 
 class SafetyReasonIn(BaseModel):

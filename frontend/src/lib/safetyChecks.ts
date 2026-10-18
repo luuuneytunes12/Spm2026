@@ -14,6 +14,30 @@ export interface SafetyCheckSummary {
   coordinator: EventContact | null
 }
 
+export type SafetyDecisionResult = 'Approved' | 'Changes Requested' | 'Rejected'
+
+/** One Safety Check decision on an event, read from its activity log. */
+export interface SafetyDecision {
+  decision: SafetyDecisionResult
+  /** Null for an approval: no reason is asked for. */
+  reason: string | null
+  decided_by_name: string | null
+  decided_at: string
+}
+
+/** One row of a Safety Officer's past Safety Checks: an event they decided,
+ *  with their latest decision on it and its status now. */
+export interface PastSafetyCheck {
+  id: number
+  name: string | null
+  proposed_start: string | null
+  proposed_end: string | null
+  status: EventStatus
+  decision: SafetyDecisionResult
+  reason: string | null
+  decided_at: string
+}
+
 export interface SafetyVenueBooking {
   id: number
   event_id: number
@@ -64,10 +88,17 @@ export interface SafetyCheckDetail {
   venue_bookings: SafetyVenueBooking[]
   equipment: SafetyEquipmentLine[]
   activity: ActivityEntry[]
+  /** Every Safety Check decision on the event, by any Safety Officer, newest first. */
+  decisions: SafetyDecision[]
 }
 
 export function listSafetyChecks(): Promise<SafetyCheckSummary[]> {
   return apiFetch('/safety-checks') as Promise<SafetyCheckSummary[]>
+}
+
+/** The events the signed-in Safety Officer has decided, newest decision first. */
+export function listPastSafetyChecks(): Promise<PastSafetyCheck[]> {
+  return apiFetch('/safety-checks/history') as Promise<PastSafetyCheck[]>
 }
 
 export function getSafetyCheck(eventId: number): Promise<SafetyCheckDetail> {

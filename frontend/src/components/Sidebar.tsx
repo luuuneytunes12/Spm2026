@@ -157,9 +157,14 @@ export function Sidebar({ id, open }: SidebarProps) {
             </>
           )}
           {user.role === Role.SAFETY_OFFICER && (
-            <Item to="/safety-checks" icon="check">
-              Safety Checks
-            </Item>
+            <>
+              <Item to="/safety-checks" icon="check" end>
+                Safety Checks
+              </Item>
+              <Item to="/safety-checks/history" icon="list">
+                Past Safety Checks
+              </Item>
+            </>
           )}
 
           <Item to="/notifications" icon="bell">
