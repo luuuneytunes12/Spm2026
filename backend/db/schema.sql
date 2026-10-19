@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired', 'replaced'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -171,6 +171,18 @@ create table venues (
     setup_turnaround_updated_at timestamptz
 );
 
+create unique index uq_venues_name_lower on venues (lower(name));
+
+-- Activity Log of venues added / edited (who, when); see sql/029.
+create table venue_activity (
+    id bigint generated always as identity primary key,
+    venue_id bigint not null references venues (id) on delete cascade,
+    changed_by bigint references users (id) on delete set null,
+    note text not null,
+    created_at timestamptz not null default now()
+);
+create index idx_venue_activity_venue on venue_activity (venue_id, created_at desc);
+
 create index idx_venues_facilities on venues using gin (facilities);
 create index idx_venues_accessibility on venues using gin (accessibility_features);
 
@@ -199,6 +211,9 @@ create table venue_bookings (
     -- Set when a venue setup/turnaround change made this approved booking
     -- clash with another; null means not flagged. See sql/022.
     conflict_flagged_at timestamptz,
+    -- Kept but flagged after a capacity cut / removed layout; sql/029.
+    review_flagged_at timestamptz,
+    review_reason text,
     -- Attendance override for this venue; null means use the Event value.
     -- See sql/028.
     expected_attendance integer,
@@ -207,6 +222,8 @@ create table venue_bookings (
     room_layout_preference text,
     accessibility_needs text,
     facilities_needs text,
+    -- The unavailable booking this one replaces; see sql/029.
+    replaces_booking_id bigint references venue_bookings (id) on delete set null,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time),

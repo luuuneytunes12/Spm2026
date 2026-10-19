@@ -28,10 +28,12 @@ from app.schemas.venue_booking import (
     VenueBookingCreate,
     VenueBookingOut,
     VenueBookingRejection,
+    VenueRequest,
     VenueHoldIn,
 )
 from app.routers.venues import expire_tentative_holds
 from app.services.notifications import notify
+from app.services.safety_reopen import SafetyCheckReopen
 from app.services.venue_holds import active_hold_filter, reminder_lead
 
 router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
@@ -190,11 +192,14 @@ def _out(booking: VenueBooking, conflicts: list[BookingConflict] | None = None) 
         reviewed_by=booking.reviewed_by_user,
         reviewed_at=booking.reviewed_at,
         conflict_flagged=booking.conflict_flagged_at is not None,
+        review_flagged=booking.review_flagged_at is not None,
+        review_reason=booking.review_reason,
         setup_minutes=setup,
         turnaround_minutes=turnaround,
         occupied_start=occupied.start,
         occupied_end=occupied.end,
         conflicts=conflicts or [],
+        replaces=booking.replaces,
     )
 
 
@@ -204,6 +209,7 @@ def _with_relations(stmt):
         joinedload(VenueBooking.venue),
         joinedload(VenueBooking.requested_by_user),
         joinedload(VenueBooking.reviewed_by_user),
+        joinedload(VenueBooking.replaces).joinedload(VenueBooking.venue),
     )
 
 
@@ -251,6 +257,35 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
     return booking
 
 
+def _retire_replaced(booking: VenueBooking, staff: User, db: Session) -> None:
+    """An approved replacement turns the booking it replaces into 'replaced':
+    kept as history, its flag cleared, its venue freed. Other bookings of the
+    Event are not touched (SCRUM-95 AC3)."""
+    original = db.get(VenueBooking, booking.replaces_booking_id, with_for_update=True)
+    if original is None or original.status not in LIVE_BOOKING_STATUSES:
+        return
+    original.status = BookingStatus.replaced
+    original.expires_at = None
+    original.hold_action = None
+    original.safety_recheck_reason = None
+    original.conflict_flagged_at = None
+    flags.log_resolution(
+        db,
+        original,
+        staff,
+        f"Venue booking '{original.venue.name}' replaced by '{booking.venue.name}' (approved by Venue Staff).",
+    )
+    db.flush()
+    flags.recheck_venue(db, original.venue, staff, may_flag=False)
+    event = db.get(Event, booking.event_id, with_for_update=True)
+    if event is not None:
+        SafetyCheckReopen(db).apply(
+            event,
+            staff,
+            f"the replacement venue '{booking.venue.name}' for '{original.venue.name}' was approved",
+        )
+
+
 def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Session) -> VenueBookingOut:
     """Record the outcome with who decided and when, and return it.
 
@@ -270,6 +305,8 @@ def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Ses
     booking.safety_recheck_reason = None
     booking.reviewed_by = staff.id
     booking.reviewed_at = datetime.now(timezone.utc)
+    if decision == BookingStatus.approved and booking.replaces_booking_id is not None:
+        _retire_replaced(booking, staff, db)
     if was_approved and decision != BookingStatus.approved:
         db.flush()
         flags.recheck_venue(db, booking.venue, staff, may_flag=False)
@@ -469,6 +506,107 @@ def submit_venue_booking(
         _with_relations(select(VenueBooking).where(VenueBooking.id.in_(ids)).order_by(VenueBooking.id))
     ).unique()
     return _outs(rows, db, user)
+
+
+@router.post(
+    "/{booking_id}/replacement",
+    response_model=VenueBookingOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def request_replacement_venue(
+    booking_id: int,
+    body: VenueRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(_coordinator),
+) -> VenueBookingOut:
+    """Ask for another venue to replace a booking marked 'Venue Unavailable -
+    Action Required' (SCRUM-95). The new request is an ordinary pending one
+    for the Event's own date and time that also records which booking it
+    replaces, so Venue Staff can see it. The original stays as it is until the
+    replacement is approved. 404 when not the caller's; 409 unless the booking
+    is flagged and live, or already has a live replacement request."""
+    expire_tentative_holds(db)
+    original = db.get(VenueBooking, booking_id)
+    if original is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    event = db.get(Event, original.event_id, with_for_update=True)
+    if event is None or event.coordinator_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    db.refresh(original, with_for_update=True)
+    if original.conflict_flagged_at is None or original.status not in LIVE_BOOKING_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a live booking marked 'Venue Unavailable - Action Required' can be replaced.",
+        )
+    if event.status not in (*BOOKABLE_EVENT_STATUSES, EventStatus.safety_check_passed):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A replacement can only be requested while the event is 'Event Approved', "
+                f"'Planning Event' or 'Safety Check Passed (Event Confirmed)'; it is '{event.status}'."
+            ),
+        )
+    if db.scalar(
+        select(VenueBooking.id).where(
+            VenueBooking.replaces_booking_id == original.id,
+            VenueBooking.status.in_(LIVE_BOOKING_STATUSES),
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A replacement has already been requested for this booking.",
+        )
+    venue = db.get(Venue, body.venue_id)
+    if venue is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="That venue does not exist."
+        )
+    if not venue.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{venue.name} is inactive and cannot be booked.",
+        )
+    if db.scalar(
+        select(VenueBooking.id).where(
+            VenueBooking.event_id == event.id,
+            VenueBooking.venue_id == venue.id,
+            VenueBooking.status.in_(LIVE_BOOKING_STATUSES),
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This event already has a live booking request for {venue.name}. Choose another venue.",
+        )
+    replacement = VenueBooking(
+        event_id=event.id,
+        venue_id=venue.id,
+        requested_by=user.id,
+        start_time=original.start_time,
+        end_time=original.end_time,
+        status=BookingStatus.pending,
+        replaces_booking_id=original.id,
+        expected_attendance=body.expected_attendance or original.expected_attendance,
+        room_layout_preference=body.room_layout_preference or original.room_layout_preference,
+        accessibility_needs=body.accessibility_needs or original.accessibility_needs,
+        facilities_needs=body.facilities_needs or original.facilities_needs,
+    )
+    db.add(replacement)
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=event.status,
+            to_status=event.status,
+            note=(
+                f"Replacement venue requested: '{venue.name}' to replace the unavailable "
+                f"booking '{original.venue.name}'."
+            ),
+        )
+    )
+    db.flush()
+    new_id = replacement.id
+    db.commit()
+    return _reloaded(db, [new_id], user)[0]
 
 
 def _reloaded(db: Session, ids: list[int], viewer: User) -> list[VenueBookingOut]:

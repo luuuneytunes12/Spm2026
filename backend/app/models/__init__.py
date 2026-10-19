@@ -8,7 +8,7 @@ from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.registrations import Registration
 from app.models.user import User
-from app.models.venues import Venue, VenueBooking, VenueUnavailability
+from app.models.venues import Venue, VenueActivity, VenueBooking, VenueUnavailability
 
 __all__ = [
     "CoordinatorEquipmentRequirement",
@@ -22,6 +22,7 @@ __all__ = [
     "RequirementReservationLink",
     "User",
     "Venue",
+    "VenueActivity",
     "VenueBooking",
     "VenueUnavailability",
 ]

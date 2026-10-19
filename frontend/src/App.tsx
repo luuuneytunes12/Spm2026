@@ -32,6 +32,7 @@ import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
 import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
 import { VenueAvailability } from './pages/venues/VenueAvailability'
+import { VenueManage } from './pages/venues/VenueManage'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
 import { SafetyCheckView } from './pages/safety/SafetyCheckView'
@@ -79,6 +80,8 @@ function App() {
           </Route>
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />
+            <Route path="/venue-staff/venues/new" element={<VenueManage />} />
+            <Route path="/venue-staff/venues/:id/edit" element={<VenueManage />} />
             <Route path="/venue-staff/bookings" element={<VenueBookingQueue />} />
             <Route path="/venue-staff/flagged" element={<Navigate to="/venue-staff/bookings?view=flagged" replace />} />
           </Route>

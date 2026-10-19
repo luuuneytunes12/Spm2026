@@ -23,6 +23,7 @@ from app.routers import (
     safety_checks,
     users,
     venue_bookings,
+    venue_catalogue,
     venues,
 )
 
@@ -67,6 +68,8 @@ app.include_router(equipment_requirements.router)
 app.include_router(equipment_reservations.router)
 app.include_router(users.router)
 app.include_router(registrations.router)
+# Before venues: its static GET /venues/activity must win over /venues/{venue_id}.
+app.include_router(venue_catalogue.router)
 app.include_router(venues.router)
 app.include_router(venue_bookings.router)
 app.include_router(safety_checks.router)
