@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VenueAvailability } from './VenueAvailability'
 
 vi.mock('../../lib/venues', () => ({
@@ -76,6 +76,14 @@ function renderCalendar() {
 beforeEach(() => {
   vi.resetAllMocks()
   mockGetVenue.mockResolvedValue(VENUE)
+  // The calendar opens on the current month; pin "today" to the month the
+  // fixtures are in. Only Date is faked, so findBy* waits keep real timers.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 10, 2, 8, 0))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('View Venue Availability Calendar', () => {
@@ -112,7 +120,7 @@ describe('View Venue Availability Calendar', () => {
     })
     renderCalendar()
     fireEvent.click(await screen.findByRole('button', { name: 'Check availability' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Monday, November 2, 2026/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Monday, (November 2,|2 November) 2026/ }))
     const day = screen.getByRole('region', { name: /Availability on 2026-11-02/ })
     expect(day).toHaveTextContent('Unavailable')
     expect(day).toHaveTextContent('Maintenance: Pipe repair')
@@ -123,7 +131,7 @@ describe('View Venue Availability Calendar', () => {
     renderCalendar()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Check availability' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Monday, November 2, 2026/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Monday, (November 2,|2 November) 2026/ }))
 
     const selectedDate = screen.getByRole('region', { name: /Availability on 2026-11-02/ })
     expect(selectedDate).toHaveTextContent('Planning Workshop')
@@ -155,7 +163,7 @@ describe('View Venue Availability Calendar', () => {
     })
     renderCalendar()
     fireEvent.click(await screen.findByRole('button', { name: 'Check availability' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Monday, November 2, 2026/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Monday, (November 2,|2 November) 2026/ }))
     const day = screen.getByRole('region', { name: /Availability on 2026-11-02/ })
     expect(day).toHaveTextContent(/Event .+ – .+ · Setup 20 min · Turnaround 40 min/)
   })
@@ -208,7 +216,7 @@ describe('View Venue Availability Calendar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check availability' }))
 
     fireEvent.click(
-      await screen.findByRole('button', { name: /Tuesday, November 3, 2026, 1 availability entry/ }),
+      await screen.findByRole('button', { name: /Tuesday, (November 3,|3 November) 2026, 1 availability entry/ }),
     )
     expect(screen.getByRole('region', { name: /Availability on 2026-11-03/ }))
       .toHaveTextContent('Overnight Conference')

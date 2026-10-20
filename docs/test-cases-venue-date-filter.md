@@ -44,7 +44,7 @@ Touching is not overlapping. With exactly `setup + turnaround` minutes between
 two events, the venue is free.
 
 **Hold Expired** is a tentative hold past its `expires_at`. The search releases
-it first (`expire_tentative_holds`: status `cancelled`, notes *"Tentative hold
+it first (`expire_tentative_holds`: status `hold_expired`, notes *"Tentative hold
 expired."*), so it never blocks. **Pending** requests (awaiting a decision, not
 a hold) and rejected or cancelled bookings never block.
 
@@ -107,7 +107,7 @@ a hold) and rejected or cancelled bookings never block.
 | ID | Test case | Type | Where |
 |---|---|---|---|
 | TC-DT-2a | A venue whose only overlapping booking is rejected or cancelled is shown, even with setup and turnaround set | pytest | `test_ac2_a_venue_whose_only_overlapping_booking_is_rejected_or_cancelled_is_still_shown` |
-| TC-DT-2b | A venue whose only overlapping hold has expired is shown, and the hold is released as cancelled | pytest | `test_ac2_a_venue_whose_only_overlapping_hold_has_expired_is_still_shown` |
+| TC-DT-2b | A venue whose only overlapping hold has expired is shown, and the hold is released as Hold Expired | pytest | `test_ac2_a_venue_whose_only_overlapping_hold_has_expired_is_still_shown` |
 | TC-DT-2c | "Only" matters: rejected and expired bookings do not cancel out an approved one | pytest | `test_ac2_one_live_booking_still_excludes_a_venue_that_also_has_dead_ones` |
 | TC-DT-2d | On PostgreSQL: the expired hold is listed, and its release persists | Postgres | `test_ac1_ac2_holds_bookings_closures_and_padding_on_postgres` |
 | TC-DT-2e | In a browser: the rejected venue and the expired-hold venue are listed | Playwright | *DT AC1 + AC2* |

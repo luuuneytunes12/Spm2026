@@ -22,7 +22,7 @@ def _at(hour, minute=0):
 
 
 def _venue(db, name, **fields):
-    venue = Venue(name=name, location="10 Bayfront Ave", capacity=250, **fields)
+    venue = Venue(name=name, location="10 Bayfront Ave", **{"capacity": 250, **fields})
     db.add(venue)
     db.commit()
     return venue
@@ -74,7 +74,7 @@ def test_ac1_ac2_holds_bookings_closures_and_padding_on_postgres(client, make_us
     assert _names(client, sam_h) == ["D Expired Hall", "E Rejected Hall", "F Free Hall"]
     # The expired hold was released, and that persisted (its own session).
     db.expire_all()
-    assert db.get(VenueBooking, lapsed.id).status == BookingStatus.cancelled
+    assert db.get(VenueBooking, lapsed.id).status == BookingStatus.hold_expired
 
     # The same window in Singapore time is the same moment.
     sgt = {"start": "2026-11-02T17:00:00+08:00", "end": "2026-11-03T01:00:00+08:00"}

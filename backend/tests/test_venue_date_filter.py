@@ -241,7 +241,7 @@ def test_ac2_a_venue_whose_only_overlapping_booking_is_rejected_or_cancelled_is_
 
 def test_ac2_a_venue_whose_only_overlapping_hold_has_expired_is_still_shown(client, db_session):
     """Hold Expired: a tentative hold past its expiry no longer holds the
-    venue. The search releases it first, recording it as cancelled."""
+    venue. The search releases it first, recording it as Hold Expired."""
     headers = _coordinator(client, db_session)
     venue = _venue(db_session, "Hall", setup_minutes=30, turnaround_minutes=60)
     hold = _booking(
@@ -250,7 +250,7 @@ def test_ac2_a_venue_whose_only_overlapping_hold_has_expired_is_still_shown(clie
 
     assert _search(client, headers) == ["Hall"]
     db_session.refresh(hold)
-    assert hold.status == BookingStatus.cancelled
+    assert hold.status == BookingStatus.hold_expired
     assert hold.decision_notes == "Tentative hold expired."
 
 
