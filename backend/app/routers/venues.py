@@ -4,7 +4,7 @@ import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, exists, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
@@ -257,7 +257,12 @@ def list_venues(
     accessibility: list[str] = Query(
         default=[], description="Repeat for each; the venue must have every one."
     ),
-    start: datetime | None = Query(None, description="Start of the window, ISO 8601."),
+    start: datetime | None = Query(
+        None,
+        description="Start of the window, ISO 8601. Venues with an approved booking, an "
+        "unexpired tentative hold or a closure clashing with it -- each venue's setup and "
+        "turnaround time included -- are excluded.",
+    ),
     end: datetime | None = Query(None, description="End of the window, ISO 8601."),
     db: Session = Depends(get_db),
     _: object = Depends(_internal),
@@ -297,20 +302,10 @@ def list_venues(
         # A venue that holds exactly the expected attendance fits it.
         stmt = stmt.where(Venue.capacity >= min_capacity)
 
-    if start is not None and end is not None:
-        window_start, window_end = as_utc(start), as_utc(end)
-        # A recorded closure (maintenance, renovation, ...) has no status:
-        # once recorded, it blocks. Closures are raw periods, no buffers.
-        blocked = exists().where(
-            VenueUnavailability.venue_id == Venue.id,
-            VenueUnavailability.start_time < window_end,
-            VenueUnavailability.end_time > window_start,
-        )
-        stmt = stmt.where(~blocked)
-
     venues = list(db.execute(stmt.order_by(Venue.name, Venue.id)).scalars().all())
 
     if start is not None and end is not None:
+        venues = _free_of_closures(db, venues, as_utc(start), as_utc(end))
         venues = _free_of_bookings(db, venues, as_utc(start), as_utc(end))
 
     # Layout, facilities and accessibility are matched here rather than in
@@ -328,6 +323,35 @@ def list_venues(
         venues = [v for v in venues if _has_all(v.accessibility_features, accessibility)]
 
     return [VenueSummary.model_validate(v) for v in venues]
+
+
+def _free_of_closures(db: Session, venues: list[Venue], start: datetime, end: datetime) -> list[Venue]:
+    """Drop venues with a recorded closure (maintenance, renovation, ...)
+    that clashes with the window.
+
+    A closure has no status: once recorded, it blocks. It is a raw period --
+    no setup or turnaround of its own -- but the event being searched for is
+    widened by the venue's setup and turnaround (Filter Venues by Date and
+    Time, AC1): a closed room cannot be set up before the event or reset
+    after it either. Touching edges are still free.
+    """
+    if not venues:
+        return venues
+    by_venue: dict[int, list[VenueUnavailability]] = {}
+    for closure in db.scalars(
+        select(VenueUnavailability).where(VenueUnavailability.venue_id.in_([v.id for v in venues]))
+    ):
+        by_venue.setdefault(closure.venue_id, []).append(closure)
+
+    free = []
+    for venue in venues:
+        wanted = occupied_window(start, end, venue.setup_minutes, venue.turnaround_minutes)
+        if not any(
+            wanted.overlaps(occupied_window(c.start_time, c.end_time, 0, 0))
+            for c in by_venue.get(venue.id, [])
+        ):
+            free.append(venue)
+    return free
 
 
 def _free_of_bookings(db: Session, venues: list[Venue], start: datetime, end: datetime) -> list[Venue]:

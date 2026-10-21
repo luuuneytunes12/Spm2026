@@ -43,8 +43,10 @@ export interface VenueSearch {
   facilities?: string[]
   /** Likewise: every accessibility feature listed. */
   accessibility?: string[]
-  /** ISO 8601. Venues booked or blocked in [start, end) are excluded. Both
-   *  or neither -- the server rejects half a window. */
+  /** ISO 8601. Venues with an approved booking, an unexpired tentative
+   *  hold or a recorded unavailability clashing with [start, end) -- each
+   *  venue's setup and turnaround time included -- are excluded. Both or neither:
+   *  the server rejects half a window, or one that ends before it starts. */
   start?: string
   end?: string
 }

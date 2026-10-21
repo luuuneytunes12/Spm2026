@@ -72,6 +72,7 @@ const DETAIL: SafetyCheckDetail = {
     },
   ],
   activity: [],
+  decisions: [],
 }
 
 function renderView() {
