@@ -11,6 +11,7 @@ from app.core.db import SessionLocal
 from app.core.error_handlers import register_error_handlers
 from app.routers import (
     auth,
+    clarifications,
     coordinator_lead,
     coordinators,
     equipment,
@@ -60,6 +61,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(events.router)
+app.include_router(clarifications.router)
 app.include_router(coordinators.router)
 app.include_router(coordinator_lead.router)
 app.include_router(notifications.router)

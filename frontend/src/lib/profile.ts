@@ -13,6 +13,8 @@ export interface UserProfile {
   phone_country_code: string | null
   phone_number: string | null
   communication_preference: string | null
+  department: string | null
+  responsibilities: string | null
   created_at: string
 }
 
@@ -23,6 +25,9 @@ export interface ProfileInput {
   phone_country_code?: string | null
   phone_number?: string | null
   communication_preference?: string | null
+  /** Internal staff only; the backend refuses these from anyone else. */
+  department?: string | null
+  responsibilities?: string | null
 }
 
 export function updateMyProfile(input: ProfileInput): Promise<UserProfile> {

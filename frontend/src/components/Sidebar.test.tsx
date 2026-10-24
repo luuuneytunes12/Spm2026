@@ -37,6 +37,8 @@ function signedInAs(role: Role) {
       phone_country_code: null,
       phone_number: null,
       communication_preference: null,
+      department: null,
+      responsibilities: null,
       created_at: '2026-09-01T00:00:00Z',
     },
     permissions: [],
@@ -122,6 +124,21 @@ describe('everyone else', () => {
       expect(screen.queryByRole('link', { name: 'Equipment Requirements' })).not.toBeInTheDocument()
     },
   )
+})
+
+describe('Staff directory link (SCRUM-19)', () => {
+  it.each([Role.COORDINATOR, Role.COORDINATOR_LEAD, Role.VENUE_STAFF, Role.TECH_SUPPORT, Role.SAFETY_OFFICER])(
+    'AC2: internal staff can open the staff directory (%s)',
+    (role) => {
+      signedInAs(role)
+      expect(screen.getByRole('link', { name: 'Staff directory' })).toHaveAttribute('href', '/staff')
+    },
+  )
+
+  it.each([Role.ORGANISER, Role.ATTENDEE])('AC6: %s is not offered the staff directory', (role) => {
+    signedInAs(role)
+    expect(screen.queryByRole('link', { name: 'Staff directory' })).not.toBeInTheDocument()
+  })
 })
 
 describe('Event Coordinator Lead', () => {

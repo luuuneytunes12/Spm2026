@@ -1037,7 +1037,7 @@
 }
 
 .status-step-branch-warning .status-step-label {
-  color: var(--warning);
+  color: var(--warning-text);
   font-weight: 600;
 }
 
@@ -2317,3 +2317,16 @@ label.required::after {
 .bq-bubble { min-width: 1.4rem; padding: 0 0.4rem; border-radius: 999px; background: var(--accent, #2563eb); color: #fff; font-size: 0.75rem; text-align: center; line-height: 1.4rem; }
 .bq-bubble-danger { background: var(--danger, #b91c1c); }
 .bq-empty { margin: 0; font-size: 0.85rem; color: var(--text); }
+
+/* Staff directory (SCRUM-19) */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.table th,
+.table td {
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border, #ddd);
+}

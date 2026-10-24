@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../lib/api'
 import { COMMUNICATION_PREFERENCE_LABELS, CommunicationPreference } from '../lib/communication'
+import { DEPARTMENT_LABELS, Department, RESPONSIBILITIES_MAX_LENGTH } from '../lib/departments'
+import { isInternalStaff } from '../lib/roles'
 import { expectedDigitsLabel, PHONE_COUNTRIES } from '../lib/phone'
 import { updateMyProfile } from '../lib/profile'
 
@@ -13,6 +15,8 @@ interface FormState {
   phone_country_code: string
   phone_number: string
   communication_preference: string
+  department: string
+  responsibilities: string
 }
 
 function toFormState(user: {
@@ -22,6 +26,8 @@ function toFormState(user: {
   phone_country_code: string | null
   phone_number: string | null
   communication_preference: string | null
+  department: string | null
+  responsibilities: string | null
 }): FormState {
   return {
     name: user.name,
@@ -30,6 +36,8 @@ function toFormState(user: {
     phone_country_code: user.phone_country_code ?? '',
     phone_number: user.phone_number ?? '',
     communication_preference: user.communication_preference ?? '',
+    department: user.department ?? '',
+    responsibilities: user.responsibilities ?? '',
   }
 }
 
@@ -53,6 +61,7 @@ export function Profile() {
   const [busy, setBusy] = useState(false)
 
   if (!user) return null
+  const staff = isInternalStaff(user.role)
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -81,6 +90,12 @@ export function Profile() {
     setError(null)
     setInvalidFields([])
     setSaved(false)
+    // Department is required of internal staff: blocked here, nothing sent.
+    if (staff && form.department === '') {
+      setError('Select your department.')
+      setInvalidFields(['department'])
+      return
+    }
     setBusy(true)
     try {
       const updated = await updateMyProfile({
@@ -90,6 +105,10 @@ export function Profile() {
         phone_country_code: orNull(form.phone_country_code),
         phone_number: orNull(form.phone_number),
         communication_preference: orNull(form.communication_preference),
+        // Only staff have these; anyone else would be refused by the API.
+        ...(staff
+          ? { department: form.department, responsibilities: orNull(form.responsibilities) }
+          : {}),
       })
       setForm(toFormState(updated))
       await refreshUser()
@@ -157,6 +176,44 @@ export function Profile() {
             />
           </div>
         </section>
+
+        {staff && (
+          <section className="card stack-tight">
+            <h2>Work</h2>
+
+            <div className={fieldClass('department')}>
+              <label htmlFor="department">Department</label>
+              <select
+                id="department"
+                value={form.department}
+                onChange={(e) => set('department', e.target.value)}
+                aria-invalid={flagged('department')}
+                aria-required="true"
+              >
+                <option value="">Select a department</option>
+                {Object.values(Department).map((d) => (
+                  <option key={d} value={d}>
+                    {DEPARTMENT_LABELS[d]}
+                  </option>
+                ))}
+              </select>
+              {flagged('department') && <p className="field-error">Select your department.</p>}
+            </div>
+
+            <div className={fieldClass('responsibilities')}>
+              <label htmlFor="responsibilities">Responsibilities</label>
+              <textarea
+                id="responsibilities"
+                rows={4}
+                maxLength={RESPONSIBILITIES_MAX_LENGTH}
+                placeholder="Optional -- what colleagues can come to you for"
+                value={form.responsibilities}
+                onChange={(e) => set('responsibilities', e.target.value)}
+                aria-invalid={flagged('responsibilities')}
+              />
+            </div>
+          </section>
+        )}
 
         <section className="card stack-tight">
           <h2>Contact details</h2>

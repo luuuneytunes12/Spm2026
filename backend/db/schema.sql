@@ -45,6 +45,11 @@ create type communication_preference as enum (
     'email', 'sms', 'phone_call'
 );
 
+-- Internal staff's department (SCRUM-19); see sql/031_user_department_responsibilities.sql.
+create type department as enum (
+    'events_coordination', 'venue_operations', 'technical_support', 'safety_compliance'
+);
+
 -- ===== Identity =====
 
 create table users (
@@ -65,7 +70,10 @@ create table users (
     organisation text,
     phone_country_code text,
     phone_number text,
-    communication_preference communication_preference
+    communication_preference communication_preference,
+    -- Internal staff only; see sql/031_user_department_responsibilities.sql.
+    department department,
+    responsibilities text
 );
 
 -- One row per real change of a Coordinator's is_available flag -- see
@@ -380,3 +388,16 @@ create table notifications (
 );
 
 create index idx_notifications_user_unread on notifications (user_id, is_read);
+
+-- The clarification exchange on an Event (SCRUM-27 request, SCRUM-103 reply)
+-- -- see sql/032_event_clarifications.sql.
+create table event_clarifications (
+    id bigint generated always as identity primary key,
+    event_id bigint not null references events (id) on delete cascade,
+    kind text not null check (kind in ('request', 'reply')),
+    message text not null,
+    author_id bigint not null references users (id) on delete restrict,
+    created_at timestamptz not null default now()
+);
+
+create index idx_event_clarifications_event on event_clarifications (event_id);

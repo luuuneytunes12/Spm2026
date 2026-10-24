@@ -1,4 +1,4 @@
-"""Tests for "Identify Booking Conflicts" (SCRUM-41), AC1-AC5.
+"""Tests for "Identify Booking Conflicts" (SCRUM-41), AC1-AC6.
 
 A pending request is flagged to Venue Staff with every APPROVED booking of the
 same venue whose occupied period (event +/- setup/turnaround) strictly
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.core.roles import Role
-from app.models.enums import BookingStatus
+from app.models.enums import BookingStatus, EventStatus
 from app.models.events import Event
 from app.models.venues import VenueBooking, VenueUnavailability
 from tests.test_venue_booking_decision import _approve, _setup
@@ -221,6 +221,45 @@ def test_ac4_rejecting_the_clashing_booking_clears_the_flag(client, db_session):
     assert _conflicts(client, s) == []
 
 
+def _owned_by_coordinator(db_session, s, booking):
+    """Make the other booking's event the same Coordinator's, in planning, so
+    the real cancel / change endpoints accept it."""
+    event = db_session.get(Event, booking.event_id)
+    event.coordinator_id = db_session.get(Event, s["event_id"]).coordinator_id
+    event.status = EventStatus.event_approved
+    db_session.commit()
+
+
+def test_ac4_cancelling_an_approved_booking_through_the_api_clears_the_conflict(client, db_session):
+    s = _setup(client, db_session)
+    other = _other(db_session, s, _at(15), _at(20))
+    _owned_by_coordinator(db_session, s, other)
+    assert [c["booking_id"] for c in _conflicts(client, s)] == [other.id]
+
+    res = client.post(f"/venue-bookings/{other.id}/cancel", json={}, headers=s["coord_h"])
+    assert res.status_code == 200
+    assert _conflicts(client, s) == []
+    assert _availability(client, s["staff_h"], s["venue"].id, _at(0), _at(23)).json()["busy"] == []
+    assert _approve(client, s["staff_h"], s["booking_id"]).status_code == 200
+
+
+def test_ac4_a_replaced_booking_stops_conflicting_until_it_is_approved_again(client, db_session):
+    s = _setup(client, db_session)
+    other = _other(db_session, s, _at(15), _at(20))
+    _owned_by_coordinator(db_session, s, other)
+    elsewhere = _second_venue(db_session)
+    assert [c["booking_id"] for c in _conflicts(client, s)] == [other.id]
+
+    # The Coordinator replaces its venue: the booking is Pending at the new venue.
+    res = client.patch(f"/venue-bookings/{other.id}", json={"venue_id": elsewhere.id}, headers=s["coord_h"])
+    assert res.status_code == 200
+    assert _conflicts(client, s) == []
+    assert _availability(client, s["staff_h"], s["venue"].id, _at(0), _at(23)).json()["busy"] == []
+    db_session.expire_all()
+    assert db_session.get(VenueBooking, other.id).status == BookingStatus.pending
+    assert _approve(client, s["staff_h"], s["booking_id"]).status_code == 200
+
+
 # --- AC5: what it conflicts with, and the overlapping time --------------------
 
 
@@ -245,6 +284,60 @@ def test_ac5_several_conflicts_are_all_listed_in_start_order(client, db_session)
     late = _other(db_session, s, _at(14), _at(16), name="Late")
     early = _other(db_session, s, _at(8), _at(10), name="Early")
     assert [c["booking_id"] for c in _conflicts(client, s)] == [early.id, late.id]
+
+
+def test_ac5_this_requests_own_occupied_time_is_start_minus_setup_to_end_plus_turnaround(client, db_session):
+    s = _setup(client, db_session)
+    _buffers(db_session, s, 30, 45)  # the request's event is 09:00-17:00
+    review = _review(client, s).json()
+    assert review["start_time"].startswith("2026-11-02T09:00")
+    assert review["end_time"].startswith("2026-11-02T17:00")
+    assert review["occupied_start"].startswith("2026-11-02T08:30")
+    assert review["occupied_end"].startswith("2026-11-02T17:45")
+    [queued] = client.get("/venue-bookings/queue", headers=s["staff_h"]).json()
+    assert queued["occupied_start"].startswith("2026-11-02T08:30")
+    assert queued["occupied_end"].startswith("2026-11-02T17:45")
+
+
+def test_ac5_with_no_setup_or_turnaround_the_occupied_time_is_the_event_time(client, db_session):
+    s = _setup(client, db_session)
+    _buffers(db_session, s, 0, 0)
+    review = _review(client, s).json()
+    assert review["occupied_start"][:16] == review["start_time"][:16]
+    assert review["occupied_end"][:16] == review["end_time"][:16]
+
+
+# --- AC6: an overlapping request cannot be approved --------------------------
+
+
+def test_ac6_a_buffer_only_overlap_refuses_approval_and_the_request_stays_pending(client, db_session):
+    s = _setup(client, db_session)
+    _buffers(db_session, s, 0, 45)  # request occupies 09:00-17:45
+    other = _other(db_session, s, _at(17, 30), _at(20))  # events never overlap; the turnaround does
+    res = _approve(client, s["staff_h"], s["booking_id"])
+    assert res.status_code == 409
+    assert "Alumni Gala" in res.json()["detail"]
+    db_session.expire_all()
+    booking = db_session.get(VenueBooking, s["booking_id"])
+    assert booking.status == BookingStatus.pending and booking.reviewed_by is None
+    assert s["booking_id"] in [b["id"] for b in client.get("/venue-bookings/queue", headers=s["staff_h"]).json()]
+    assert db_session.get(VenueBooking, other.id).status == BookingStatus.approved
+
+
+def test_ac6_refusal_is_the_same_for_a_repeated_direct_request(client, db_session):
+    s = _setup(client, db_session)
+    _other(db_session, s, _at(15), _at(20))
+    first = _approve(client, s["staff_h"], s["booking_id"])
+    second = _approve(client, s["staff_h"], s["booking_id"])
+    assert first.status_code == second.status_code == 409
+    assert first.json()["detail"] == second.json()["detail"]
+    assert _review(client, s).json()["status"] == "pending"
+
+
+def test_ac6_only_an_approved_booking_blocks_approval(client, db_session):
+    s = _setup(client, db_session)
+    _other(db_session, s, _at(15), _at(20), status=BookingStatus.pending)
+    assert _approve(client, s["staff_h"], s["booking_id"]).status_code == 200
 
 
 # --- Visibility: nobody but Venue Staff learns other events' names ------------

@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../auth/useAuth'
-import { ROLE_HOME_PATH, Role } from '../lib/roles'
+import { ROLE_HOME_PATH, Role, isInternalStaff } from '../lib/roles'
 import { listFlaggedBookings, listVenueBookingQueue } from '../lib/venueBookings'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
@@ -165,6 +165,12 @@ export function Sidebar({ id, open }: SidebarProps) {
                 Past Safety Checks
               </Item>
             </>
+          )}
+
+          {isInternalStaff(user.role) && (
+            <Item to="/staff" icon="user">
+              Staff directory
+            </Item>
           )}
 
           <Item to="/notifications" icon="bell">

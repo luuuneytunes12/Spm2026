@@ -4,6 +4,7 @@ from app.models.equipment import (
     EquipmentRequest,
     RequirementReservationLink,
 )
+from app.models.clarifications import EventClarification
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.registrations import Registration
@@ -13,6 +14,7 @@ from app.models.venues import Venue, VenueActivity, VenueBooking, VenueUnavailab
 __all__ = [
     "CoordinatorEquipmentRequirement",
     "Equipment",
+    "EventClarification",
     "EquipmentRequest",
     "Event",
     "EventChangeRequest",
