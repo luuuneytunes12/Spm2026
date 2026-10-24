@@ -147,6 +147,10 @@ describe('Safety Officer and Event Coordinator Lead side by side', () => {
 
     const nav = within(screen.getByRole('navigation', { name: 'Main' }))
     expect(nav.getByRole('link', { name: 'Safety Checks' })).toHaveAttribute('href', '/safety-checks')
+    expect(nav.getByRole('link', { name: 'Past Safety Checks' })).toHaveAttribute(
+      'href',
+      '/safety-checks/history',
+    )
     expect(nav.queryByRole('link', { name: 'Coordinator Assignments' })).not.toBeInTheDocument()
     expect(nav.queryByRole('link', { name: 'Unassigned Requests' })).not.toBeInTheDocument()
   })

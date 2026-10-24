@@ -58,6 +58,9 @@ export function Venues() {
     error: null,
   })
   const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean)
+  // The prefilled window arrives as ISO instants; the form wants a local day and hours.
+  const [fromDate, fromTime = ''] = toDateTimeLocal(params.get('from')).split('T')
+  const [, untilTime = ''] = toDateTimeLocal(params.get('until')).split('T')
 
   // --- what the user has entered -----------------------------------------
   const [keyword, setKeyword] = useState('')
@@ -65,8 +68,10 @@ export function Venues() {
   const [layout, setLayout] = useState(params.get('layout') ?? '')
   const [facilities, setFacilities] = useState<string[]>(() => list('facilities'))
   const [accessibility, setAccessibility] = useState<string[]>(() => list('accessibility'))
-  const [from, setFrom] = useState(() => toDateTimeLocal(params.get('from')))
-  const [until, setUntil] = useState(() => toDateTimeLocal(params.get('until')))
+  // The day and the hours an event needs, in the Coordinator's local time.
+  const [date, setDate] = useState(fromDate ?? '')
+  const [startTime, setStartTime] = useState(fromTime)
+  const [endTime, setEndTime] = useState(untilTime)
 
   // --- which filter panel is open (one at a time) -------------------------
   const [open, setOpen] = useState<FilterKey | null>(null)
@@ -80,23 +85,33 @@ export function Venues() {
   const [error, setError] = useState<string | null>(null)
 
   // The time window only counts once it is complete and the right way
-  // round. Half a window is not a search -- the API would reject it -- so
-  // until then it is left out and the user is told what is missing.
-  const startIso = fromDateTimeLocal(from)
-  const endIso = fromDateTimeLocal(until)
+  // round. An unfinished one is left out of the search and the missing
+  // fields are flagged. One that ends before it starts BLOCKS the search
+  // (Filter Venues by Date and Time, AC3): showing results for it would
+  // present venues as free for a time nobody asked about.
+  const startIso = date && startTime ? fromDateTimeLocal(`${date}T${startTime}`) : null
+  const endIso = date && endTime ? fromDateTimeLocal(`${date}T${endTime}`) : null
   let windowError: string | null = null
   let windowState: 'none' | 'incomplete' | 'invalid' | 'valid' = 'none'
-  if (from || until) {
+  // Which of the three fields to mark invalid.
+  const flagged = { date: false, start: false, end: false }
+  if (date || startTime || endTime) {
     if (!startIso || !endIso) {
-      windowError = 'Enter both a start and an end.'
+      windowError = 'Enter a date, a start time and an end time.'
       windowState = 'incomplete'
+      flagged.date = !date
+      flagged.start = !startTime
+      flagged.end = !endTime
     } else if (new Date(endIso) <= new Date(startIso)) {
-      windowError = 'The end must be after the start.'
+      windowError = 'The end time must be after the start time.'
       windowState = 'invalid'
+      flagged.start = true
+      flagged.end = true
     } else {
       windowState = 'valid'
     }
   }
+  const blocked = windowState === 'invalid'
 
   // The search, with every empty criterion left out, so a cleared filter
   // means "no filter" rather than "match nothing".
@@ -132,9 +147,11 @@ export function Venues() {
   const loading = loadedKey !== sentKey
 
   useEffect(() => {
+    // Nothing is sent while the window is back to front -- see `blocked`.
+    if (blocked) return
     const timer = setTimeout(() => setSentKey(key), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [key])
+  }, [key, blocked])
 
   useEffect(() => {
     let cancelled = false
@@ -183,8 +200,9 @@ export function Venues() {
     setLayout('')
     setFacilities([])
     setAccessibility([])
-    setFrom('')
-    setUntil('')
+    setDate('')
+    setStartTime('')
+    setEndTime('')
     setOpen(null)
     // Straight back to every venue, without waiting out the debounce.
     setSentKey('{}')
@@ -334,38 +352,55 @@ export function Venues() {
             warning={windowState === 'incomplete' || windowState === 'invalid'}
             panelLabel="Filter by date & time"
             onClear={() => {
-              setFrom('')
-              setUntil('')
+              setDate('')
+              setStartTime('')
+              setEndTime('')
             }}
             {...panelProps('dates')}
           >
-            <div className="field">
-              <label htmlFor="venue-from">Available from</label>
+            <div className={flagged.date ? 'field field-invalid' : 'field'}>
+              <label htmlFor="venue-date">Date</label>
               <input
-                id="venue-from"
-                type="datetime-local"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                aria-invalid={windowError !== null}
+                id="venue-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                aria-invalid={flagged.date}
+                aria-describedby="venue-window-message"
               />
             </div>
-            <div className="field">
-              <label htmlFor="venue-until">Available until</label>
-              <input
-                id="venue-until"
-                type="datetime-local"
-                value={until}
-                onChange={(e) => setUntil(e.target.value)}
-                aria-invalid={windowError !== null}
-              />
+            <div className="form-row form-row-tight">
+              <div className={flagged.start ? 'field field-invalid' : 'field'}>
+                <label htmlFor="venue-start-time">Start time</label>
+                <input
+                  id="venue-start-time"
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  aria-invalid={flagged.start}
+                  aria-describedby="venue-window-message"
+                />
+              </div>
+              <div className={flagged.end ? 'field field-invalid' : 'field'}>
+                <label htmlFor="venue-end-time">End time</label>
+                <input
+                  id="venue-end-time"
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  aria-invalid={flagged.end}
+                  aria-describedby="venue-window-message"
+                />
+              </div>
             </div>
             {windowError ? (
-              <p className="field-error" aria-live="polite">
+              <p id="venue-window-message" className="field-error" aria-live="polite">
                 {windowError}
               </p>
             ) : (
-              <p className="field-hint">
-                Leaves out venues already booked or closed during this time.
+              <p id="venue-window-message" className="field-hint">
+                Leaves out venues booked, tentatively held or closed then, counting each
+                venue's setup and turnaround time.
               </p>
             )}
           </FilterChip>
@@ -420,7 +455,14 @@ export function Venues() {
         </p>
       )}
 
-      {loading ? null : venues.length === 0 ? (
+      {blocked ? (
+        <div className="card notice-empty">
+          <p>Search paused.</p>
+          <p className="page-subtitle">
+            The end time is earlier than the start time. Fix the date and time to see venues.
+          </p>
+        </div>
+      ) : loading ? null : venues.length === 0 ? (
         <div className="card notice-empty">
           {searching ? (
             <>

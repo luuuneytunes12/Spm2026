@@ -308,6 +308,27 @@ export function SafetyCheckView() {
         </section>
       )}
 
+      <section className="card" aria-labelledby="decisions-heading">
+        <h2 id="decisions-heading">Safety Check decisions</h2>
+        {event.decisions.length === 0 ? (
+          <p className="text-muted">No Safety Check decision yet.</p>
+        ) : (
+          <ol className="activity-list" aria-label="Safety Check decisions">
+            {event.decisions.map((d) => (
+              <li key={`${d.decided_at}-${d.decision}-${d.reason ?? ''}`} className="activity-item">
+                <p className="activity-change">
+                  <strong>{d.decision}</strong>
+                </p>
+                <p className="activity-meta">
+                  {d.decided_by_name ?? 'Unknown'} · {formatTimestamp(d.decided_at)}
+                </p>
+                <p className="activity-note">{d.reason ? `Reason: ${d.reason}` : 'No reason given'}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
       <section className="card" aria-labelledby="activity-heading">
         <h2 id="activity-heading">Activity log</h2>
         <ol className="activity-list" aria-label="Activity log">
@@ -331,7 +352,11 @@ export function SafetyCheckView() {
       </section>
 
       <p>
-        <Link to="/safety-checks">← Back to safety checks</Link>
+        {awaiting ? (
+          <Link to="/safety-checks">← Back to safety checks</Link>
+        ) : (
+          <Link to="/safety-checks/history">← Back to past safety checks</Link>
+        )}
       </p>
     </div>
   )
