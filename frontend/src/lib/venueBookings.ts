@@ -13,6 +13,8 @@ export const BookingStatus = {
   CANCELLED: 'cancelled',
   /** A tentative hold whose expiry passed before approval: not a booking. */
   HOLD_EXPIRED: 'hold_expired',
+  /** Superseded by an approved replacement (SCRUM-95); kept as history. */
+  REPLACED: 'replaced',
 } as const
 export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
@@ -23,6 +25,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   rejected: 'Rejected',
   cancelled: 'Cancelled',
   hold_expired: 'Hold Expired',
+  replaced: 'Replaced',
 }
 
 /** Event statuses from which a venue can be requested. Mirrors
@@ -80,6 +83,11 @@ export interface VenueBooking {
    *  overlap another. It is not counted as approved (e.g. for Safety Check
    *  submit) until the flag is cleared. Absent means not flagged. */
   conflict_flagged?: boolean
+  /** Kept but flagged after the venue's capacity was cut or a layout removed. */
+  review_flagged?: boolean
+  review_reason?: string | null
+  /** Set on a replacement request: the booking it replaces (SCRUM-95). */
+  replaces?: { id: number; status: BookingStatus; venue: { id: number; name: string } } | null
 }
 
 /** One booking whose occupied window overlaps this request's. All ISO 8601.
@@ -112,6 +120,32 @@ export interface VenueRequest {
   room_layout_preference?: string
   accessibility_needs?: string
   facilities_needs?: string
+}
+
+/** The Venue Search address for finding a replacement of a flagged booking
+ *  (SCRUM-95 AC1): the booking's date and time and the needs it was made with
+ *  are already filled in. */
+export function findReplacementPath(booking: VenueBooking): string {
+  const params = new URLSearchParams({
+    replaces: String(booking.id),
+    event: String(booking.event.id),
+    replacesVenue: booking.venue.name,
+    from: booking.start_time,
+    until: booking.end_time,
+  })
+  if (booking.expected_attendance) params.set('attendance', String(booking.expected_attendance))
+  if (booking.room_layout_preference) params.set('layout', booking.room_layout_preference)
+  return `/venues?${params.toString()}`
+}
+
+/** Ask for a venue to replace a booking marked "Venue Unavailable - Action
+ *  Required". The new request has the original's date and time. */
+export function requestReplacementVenue(bookingId: number, request: VenueRequest): Promise<VenueBooking> {
+  return apiFetch(`/venue-bookings/${bookingId}/replacement`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  }) as Promise<VenueBooking>
 }
 
 /** Ask for one or more venues. A separate booking is made for each, under the

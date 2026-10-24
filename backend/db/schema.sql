@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired', 'replaced'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -45,6 +45,11 @@ create type communication_preference as enum (
     'email', 'sms', 'phone_call'
 );
 
+-- Internal staff's department (SCRUM-19); see sql/031_user_department_responsibilities.sql.
+create type department as enum (
+    'events_coordination', 'venue_operations', 'technical_support', 'safety_compliance'
+);
+
 -- ===== Identity =====
 
 create table users (
@@ -65,7 +70,10 @@ create table users (
     organisation text,
     phone_country_code text,
     phone_number text,
-    communication_preference communication_preference
+    communication_preference communication_preference,
+    -- Internal staff only; see sql/031_user_department_responsibilities.sql.
+    department department,
+    responsibilities text
 );
 
 -- One row per real change of a Coordinator's is_available flag -- see
@@ -171,6 +179,18 @@ create table venues (
     setup_turnaround_updated_at timestamptz
 );
 
+create unique index uq_venues_name_lower on venues (lower(name));
+
+-- Activity Log of venues added / edited (who, when); see sql/029.
+create table venue_activity (
+    id bigint generated always as identity primary key,
+    venue_id bigint not null references venues (id) on delete cascade,
+    changed_by bigint references users (id) on delete set null,
+    note text not null,
+    created_at timestamptz not null default now()
+);
+create index idx_venue_activity_venue on venue_activity (venue_id, created_at desc);
+
 create index idx_venues_facilities on venues using gin (facilities);
 create index idx_venues_accessibility on venues using gin (accessibility_features);
 
@@ -199,6 +219,9 @@ create table venue_bookings (
     -- Set when a venue setup/turnaround change made this approved booking
     -- clash with another; null means not flagged. See sql/022.
     conflict_flagged_at timestamptz,
+    -- Kept but flagged after a capacity cut / removed layout; sql/029.
+    review_flagged_at timestamptz,
+    review_reason text,
     -- Attendance override for this venue; null means use the Event value.
     -- See sql/028.
     expected_attendance integer,
@@ -207,6 +230,8 @@ create table venue_bookings (
     room_layout_preference text,
     accessibility_needs text,
     facilities_needs text,
+    -- The unavailable booking this one replaces; see sql/029.
+    replaces_booking_id bigint references venue_bookings (id) on delete set null,
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time),
@@ -363,3 +388,16 @@ create table notifications (
 );
 
 create index idx_notifications_user_unread on notifications (user_id, is_read);
+
+-- The clarification exchange on an Event (SCRUM-27 request, SCRUM-103 reply)
+-- -- see sql/032_event_clarifications.sql.
+create table event_clarifications (
+    id bigint generated always as identity primary key,
+    event_id bigint not null references events (id) on delete cascade,
+    kind text not null check (kind in ('request', 'reply')),
+    message text not null,
+    author_id bigint not null references users (id) on delete restrict,
+    created_at timestamptz not null default now()
+);
+
+create index idx_event_clarifications_event on event_clarifications (event_id);

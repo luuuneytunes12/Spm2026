@@ -40,6 +40,7 @@
   --success: #1a8f5a;
   --success-bg: rgba(26, 143, 90, 0.1);
   --warning: #b8720a;
+  --warning-text: #8a5508; /* --warning fails 4.5:1 as small text on white */
   --warning-bg: rgba(184, 114, 10, 0.1);
   --warning-border: rgba(184, 114, 10, 0.32);
 
@@ -99,6 +100,7 @@
     --success: #4ade9a;
     --success-bg: rgba(74, 222, 154, 0.12);
     --warning: #e0a542;
+    --warning-text: #e0a542;
     --warning-bg: rgba(224, 165, 66, 0.14);
     --warning-border: rgba(224, 165, 66, 0.36);
 
@@ -135,6 +137,7 @@
   --success: #4ade9a;
   --success-bg: rgba(74, 222, 154, 0.12);
   --warning: #e0a542;
+  --warning-text: #e0a542;
   --warning-bg: rgba(224, 165, 66, 0.14);
   --warning-border: rgba(224, 165, 66, 0.36);
 

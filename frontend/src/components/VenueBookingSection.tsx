@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, useInRouterContext } from 'react-router'
 import { ApiError } from '../lib/api'
 import { formatRange, formatTimestamp } from '../lib/events'
 import { listVenues } from '../lib/venues'
@@ -6,6 +7,7 @@ import type { VenueSummary } from '../lib/venues'
 import {
   BOOKING_STATUS_LABELS,
   CONFLICT_FLAG_LABEL,
+  findReplacementPath,
   formatBookingPeriods,
   isLiveBooking,
   listEventVenueBookings,
@@ -23,6 +25,23 @@ interface Props {
    *  request moves an approved event into planning, and every change is a line
    *  in the Activity Log, so the page reloads the event to show both. */
   onChanged?: () => void
+}
+
+/** "Find replacement" for a booking marked Venue Unavailable - Action Required.
+ *  A router link where there is a router, a plain link otherwise. */
+function FindReplacementLink({ booking }: { booking: VenueBooking }) {
+  const inRouter = useInRouterContext()
+  const to = findReplacementPath(booking)
+  const label = `Find replacement for ${booking.venue.name} booking`
+  return inRouter ? (
+    <Link to={to} className="btn-link-accent" aria-label={label}>
+      Find replacement
+    </Link>
+  ) : (
+    <a href={to} className="btn-link-accent" aria-label={label}>
+      Find replacement
+    </a>
+  )
 }
 
 /** What the Coordinator typed for one chosen venue. */
@@ -245,12 +264,24 @@ export function VenueBookingSection({ eventId, expectedAttendance, onChanged }: 
               {b.conflict_flagged && (
                 <p className="notice" role="note">
                   <span className="badge">Conflict flagged</span> {CONFLICT_FLAG_LABEL}. Venue Staff
-                  are reviewing it; it is still held.
+                  are reviewing it; it is still held. Venue Unavailable - Action Required: your Event is not
+                  cancelled, so find a replacement venue.
+                </p>
+              )}
+              {b.status === 'replaced' && (
+                <p className="notice" role="note">
+                  Replaced by another venue booking. Kept here as history.
+                </p>
+              )}
+              {b.replaces && (
+                <p className="notice" role="note">
+                  Replaces your booking at {b.replaces.venue.name}.
                 </p>
               )}
               <Decision booking={b} />
               {isLiveBooking(b.status) && (
                 <div className="form-actions">
+                  {b.conflict_flagged && <FindReplacementLink booking={b} />}
                   <button
                     type="button"
                     className="btn-link-accent"

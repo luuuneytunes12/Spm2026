@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, field_validator, model_val
 import app.schemas.types  # noqa: F401
 
 from app.core.communication import CommunicationPreference
+from app.core.departments import MAX_RESPONSIBILITIES_LENGTH, Department
 from app.core.phone import PHONE_DIGIT_RANGE
 from app.core.roles import Permission, Role
 from app.schemas.event import OrganiserContact
@@ -31,6 +32,8 @@ class UserOut(BaseModel):
     phone_country_code: str | None
     phone_number: str | None
     communication_preference: str | None
+    department: str | None = None
+    responsibilities: str | None = None
     created_at: datetime
 
 
@@ -51,6 +54,8 @@ class UserProfileUpdate(BaseModel):
     phone_country_code: str | None = None
     phone_number: str | None = None
     communication_preference: str | None = None
+    department: str | None = None
+    responsibilities: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -93,6 +98,23 @@ class UserProfileUpdate(BaseModel):
             raise ValueError("Unsupported communication preference.")
         return v
 
+    @field_validator("department")
+    @classmethod
+    def _known_department(cls, v: str | None) -> str | None:
+        if v is not None and v not in {d.value for d in Department}:
+            raise ValueError("Choose a department from the list.")
+        return v
+
+    @field_validator("responsibilities")
+    @classmethod
+    def _tidy_responsibilities(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if len(v) > MAX_RESPONSIBILITIES_LENGTH:
+            raise ValueError(f"Responsibilities must be {MAX_RESPONSIBILITIES_LENGTH} characters or fewer.")
+        return v or None
+
     @model_validator(mode="after")
     def _phone_fields_together(self) -> "UserProfileUpdate":
         has_code = self.phone_country_code is not None
@@ -102,6 +124,20 @@ class UserProfileUpdate(BaseModel):
                 "Provide both a country code and a phone number, or leave both blank."
             )
         return self
+
+
+class StaffMemberOut(BaseModel):
+    """A colleague as other internal staff see them. Deliberately narrower
+    than UserOut: no phone, organisation or preferences."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: EmailStr
+    role: str
+    department: str | None
+    responsibilities: str | None
 
 
 class MeOut(BaseModel):

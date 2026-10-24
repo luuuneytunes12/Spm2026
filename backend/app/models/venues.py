@@ -125,6 +125,11 @@ class VenueBooking(Base):
     # clash with another one (sql/022). The booking stays approved; Venue
     # Staff resolve it. Null means not flagged.
     conflict_flagged_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Set when Venue Staff reduced the venue's capacity or removed a layout
+    # this booking relies on (sql/029). The booking is kept as it was; Venue
+    # Staff review it. Null means not flagged.
+    review_flagged_at: Mapped[datetime | None] = mapped_column(default=None)
+    review_reason: Mapped[str | None] = mapped_column(Text)
     # Attendance override for this venue (sql/028). Null uses the Event value.
     expected_attendance: Mapped[int | None] = mapped_column(default=None)
     # What the Coordinator asked of THIS venue (sql/019). Null means "as the
@@ -132,11 +137,19 @@ class VenueBooking(Base):
     room_layout_preference: Mapped[str | None] = mapped_column(Text)
     accessibility_needs: Mapped[str | None] = mapped_column(Text)
     facilities_needs: Mapped[str | None] = mapped_column(Text)
+    # The unavailable booking this one replaces (sql/029). Null for an
+    # ordinary request. The original becomes 'replaced' when this is approved.
+    replaces_booking_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("venue_bookings.id", ondelete="SET NULL"), default=None
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]
 
     event: Mapped[Event] = relationship()
     venue: Mapped[Venue] = relationship()
+    replaces: Mapped["VenueBooking | None"] = relationship(
+        remote_side="VenueBooking.id", foreign_keys=[replaces_booking_id]
+    )
     requested_by_user: Mapped[User] = relationship(foreign_keys=[requested_by])
     reviewed_by_user: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])
 
@@ -163,3 +176,20 @@ class VenueUnavailability(Base):
 
     venue: Mapped[Venue] = relationship()
     created_by_user: Mapped[User] = relationship(foreign_keys=[created_by])
+
+
+class VenueActivity(Base):
+    """The Venue catalogue's Activity Log (SCRUM-108): one append-only row per
+    venue added or edited -- what changed, who did it, and when (sql/029)."""
+
+    __tablename__ = "venue_activity"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venue_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("venues.id", ondelete="CASCADE"))
+    changed_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    note: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    actor: Mapped[User | None] = relationship(foreign_keys=[changed_by])

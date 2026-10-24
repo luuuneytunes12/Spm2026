@@ -31,6 +31,8 @@ test('TC-CL-2e: a Lead lands on the Lead page, edits their profile and logs out'
   const organisation = `E2E-${Date.now()} Lead Org`
   await page.goto('/profile')
   await page.getByLabel('Organisation').fill(organisation)
+  // Internal staff must have a department before a profile can be saved (SCRUM-19).
+  await page.getByLabel('Department').selectOption({ label: 'Events Coordination' })
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Your profile has been updated.')).toBeVisible()
   await page.reload()

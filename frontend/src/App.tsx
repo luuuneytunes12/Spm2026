@@ -2,12 +2,13 @@ import { Navigate, Route, Routes } from 'react-router'
 import { RequireAuth } from './auth/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import { RequireRole } from './auth/RequireRole'
-import { Role } from './lib/roles'
+import { INTERNAL_STAFF_ROLES, Role } from './lib/roles'
 import { Forbidden } from './pages/Forbidden'
 import { Login } from './pages/Login'
 import { My } from './pages/My'
 import { Notifications } from './pages/Notifications'
 import { Profile } from './pages/Profile'
+import { StaffDirectory } from './pages/StaffDirectory'
 import { Register } from './pages/Register'
 import { EquipmentCatalogue } from './pages/equipment/EquipmentCatalogue'
 import { EquipmentRequirementsList } from './pages/equipment/EquipmentRequirementsList'
@@ -32,6 +33,7 @@ import { TechSupport } from './pages/roles/TechSupport'
 import { VenueStaff } from './pages/roles/VenueStaff'
 import { VenueBookingQueue } from './pages/venues/VenueBookingQueue'
 import { VenueAvailability } from './pages/venues/VenueAvailability'
+import { VenueManage } from './pages/venues/VenueManage'
 import { VenueView } from './pages/venues/VenueView'
 import { Venues } from './pages/venues/Venues'
 import { PastSafetyChecks } from './pages/safety/PastSafetyChecks'
@@ -55,6 +57,11 @@ function App() {
               these routes sit outside every RequireRole group below. */}
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/profile" element={<Profile />} />
+
+          {/* Colleagues' departments are for internal staff only (SCRUM-19). */}
+          <Route element={<RequireRole roles={[...INTERNAL_STAFF_ROLES]} />}>
+            <Route path="/staff" element={<StaffDirectory />} />
+          </Route>
 
           <Route element={<RequireRole roles={[Role.ORGANISER]} />}>
             <Route path="/organiser" element={<Organiser />} />
@@ -80,6 +87,8 @@ function App() {
           </Route>
           <Route element={<RequireRole roles={[Role.VENUE_STAFF]} />}>
             <Route path="/venue-staff" element={<VenueStaff />} />
+            <Route path="/venue-staff/venues/new" element={<VenueManage />} />
+            <Route path="/venue-staff/venues/:id/edit" element={<VenueManage />} />
             <Route path="/venue-staff/bookings" element={<VenueBookingQueue />} />
             <Route path="/venue-staff/flagged" element={<Navigate to="/venue-staff/bookings?view=flagged" replace />} />
           </Route>
