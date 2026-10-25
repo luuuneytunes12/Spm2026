@@ -176,3 +176,13 @@ def submit_event(client: TestClient, organiser_headers: dict[str, str], **overri
     submitted = client.post(f"/events/{event_id}/submit", headers=organiser_headers)
     assert submitted.status_code == 200, submitted.text
     return event_id
+
+
+def assign_event(client: TestClient, lead_headers: dict[str, str], event_id: int, coordinator_id: int) -> None:
+    """Assign a submitted request through the Lead's queue (it becomes Under Review)."""
+    res = client.post(
+        f"/lead/unassigned-queue/{event_id}/assign",
+        json={"coordinator_id": coordinator_id},
+        headers=lead_headers,
+    )
+    assert res.status_code == 200, res.text
