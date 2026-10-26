@@ -32,6 +32,7 @@ from app.schemas.venue_booking import (
     VenueHoldIn,
 )
 from app.routers.venues import expire_tentative_holds
+from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.notifications import notify
 from app.services.safety_reopen import SafetyCheckReopen
 from app.services.venue_holds import active_hold_filter, reminder_lead
@@ -279,6 +280,12 @@ def _retire_replaced(booking: VenueBooking, staff: User, db: Session) -> None:
     flags.recheck_venue(db, original.venue, staff, may_flag=False)
     event = db.get(Event, booking.event_id, with_for_update=True)
     if event is not None:
+        # Before the reopen below moves it out of 'confirmed': its registered
+        # Attendees are told the new venue.
+        if event.status == CONFIRMED:
+            EventChangedNotice(
+                EventChangedNotice.venue_change(booking.venue.name, original.venue.name)
+            ).send(db, event)
         SafetyCheckReopen(db).apply(
             event,
             staff,
