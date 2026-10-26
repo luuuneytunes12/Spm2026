@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired', 'replaced'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired', 'replaced', 'released'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -132,7 +132,8 @@ create index idx_events_status on events (status);
 create table event_status_history (
     id bigint generated always as identity primary key,
     event_id bigint not null references events (id) on delete cascade,
-    changed_by bigint not null references users (id) on delete restrict,
+    -- Null when the System made the change (sql/033).
+    changed_by bigint references users (id) on delete restrict,
     from_status text,
     to_status text not null,
     note text,

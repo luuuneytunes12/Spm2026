@@ -30,6 +30,7 @@ from app.routers import (
 
 import app.models  # noqa: F401  (registers models on Base.metadata)
 from app.services.hold_sweeper import HoldSweeper
+import app.services.venue_release  # noqa: F401  (releases venues on cancel/complete)
 
 
 @asynccontextmanager

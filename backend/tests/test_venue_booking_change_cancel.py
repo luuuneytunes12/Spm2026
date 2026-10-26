@@ -391,12 +391,16 @@ def test_scrum96_ac1_a_booking_cannot_be_cancelled_outside_planning(
     w.event.status = status
     db_session.commit()
     before = _snap(db_session, booking)
+    # Cancelled / completed already released the bookings (venue_release.py).
+    baseline = len(_log(db_session, w.event)), sum(
+        len(_told(db_session, u)) for u in (w.staff, w.staff2, w.coordinator, w.other)
+    )
 
     res = _cancel(client, w.h, booking.id)
 
     assert res.status_code == 409
     assert _snap(db_session, booking) == before
-    _nothing_happened(db_session, w, 0, 0)
+    _nothing_happened(db_session, w, *baseline)
 
 
 # ---------------------------------------------------------------------------
@@ -670,12 +674,16 @@ def test_scrum96_ac2_a_booking_cannot_be_changed_outside_planning(
     w.event.status = status
     db_session.commit()
     before = _snap(db_session, booking)
+    # Cancelled / completed already released the bookings (venue_release.py).
+    baseline = len(_log(db_session, w.event)), sum(
+        len(_told(db_session, u)) for u in (w.staff, w.staff2, w.coordinator, w.other)
+    )
 
     res = _change(client, w.h, booking.id, venue_id=w.sky.id)
 
     assert res.status_code == 409
     assert _snap(db_session, booking) == before
-    _nothing_happened(db_session, w, 0, 0)
+    _nothing_happened(db_session, w, *baseline)
 
 
 # ---------------------------------------------------------------------------
@@ -865,12 +873,16 @@ def test_scrum96_ac3_nothing_is_listed_or_cancelled_outside_planning(
     w.event.status = status
     db_session.commit()
     before = {b.id: _snap(db_session, b) for b in bookings}
+    # Cancelled / completed already released the bookings (venue_release.py).
+    baseline = len(_log(db_session, w.event)), sum(
+        len(_told(db_session, u)) for u in (w.staff, w.staff2, w.coordinator, w.other)
+    )
 
     assert _preview(client, w.h, w.event.id).status_code == 409
     assert _cancel_all(client, w.h, w.event.id, ids).status_code == 409
 
     assert {b.id: _snap(db_session, b) for b in bookings} == before
-    _nothing_happened(db_session, w, 0, 0)
+    _nothing_happened(db_session, w, *baseline)
 
 
 # ---------------------------------------------------------------------------
