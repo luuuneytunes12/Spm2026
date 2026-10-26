@@ -122,7 +122,8 @@ create table events (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     check (proposed_end > proposed_start),
-    check (registration_closes_at >= registration_opens_at)
+    constraint events_registration_window_check
+        check (registration_closes_at >= registration_opens_at)
 );
 
 create index idx_events_organiser on events (organiser_id);
@@ -236,7 +237,8 @@ create table venue_bookings (
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time),
-    check (status <> 'tentative_hold' or expires_at is not null),
+    constraint ck_venue_booking_hold_requires_expiry
+        check (status <> 'tentative_hold' or expires_at is not null),
     constraint ck_venue_booking_expected_attendance_positive
         check (expected_attendance is null or expected_attendance > 0)
 );
