@@ -171,6 +171,16 @@ class BookingPerson(BaseModel):
     email: str
 
 
+class ReplacedBookingRef(BaseModel):
+    """The Venue Booking a replacement request stands in for (SCRUM-95)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: BookingStatus
+    venue: BookingVenueRef
+
+
 class BookingConflict(BaseModel):
     """What a booking request clashes with: an approved booking of the same
     venue whose occupied period (event plus setup/turnaround) overlaps, or
@@ -237,7 +247,13 @@ class VenueBookingOut(BaseModel):
     # True while a venue setup/turnaround change has left this approved
     # booking overlapping another (SCRUM-92); it stays approved.
     conflict_flagged: bool = False
+    # SCRUM-108: kept but flagged after the venue's capacity was reduced or a
+    # layout removed; the reason says which.
+    review_flagged: bool = False
+    review_reason: str | None = None
     # Only filled for Venue Staff looking at a pending request, or at a
     # flagged approved booking: the other approved bookings it overlaps.
     # [] for everyone else and once decided.
     conflicts: list[BookingConflict] = []
+    # Set on a replacement request: the booking it replaces (SCRUM-95).
+    replaces: ReplacedBookingRef | None = None

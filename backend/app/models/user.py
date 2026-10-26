@@ -1,11 +1,12 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Integer, String, TypeDecorator, cast, func
+from sqlalchemy import BigInteger, DateTime, Integer, String, Text, TypeDecorator, cast, func
 from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.communication import CommunicationPreference
 from app.core.db import Base
+from app.core.departments import Department
 from app.core.roles import DEFAULT_ROLE, Role
 
 # This model is intentionally a thin mirror of the *existing* live
@@ -96,3 +97,14 @@ class User(Base):
         ).with_variant(String(32), "sqlite"),
         nullable=True,
     )
+    # Internal staff only (see sql/031_user_department_responsibilities.sql):
+    # nullable because every existing row predates them and non-staff never set them.
+    department: Mapped[str | None] = mapped_column(
+        PGEnum(
+            *(d.value for d in Department),
+            name="department",
+            create_type=False,
+        ).with_variant(String(32), "sqlite"),
+        nullable=True,
+    )
+    responsibilities: Mapped[str | None] = mapped_column(Text, nullable=True)

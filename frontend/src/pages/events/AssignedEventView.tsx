@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttendeeListSection } from '../../components/AttendeeListSection'
+import { ClarificationRequestPanel } from '../../components/ClarificationRequestPanel'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
 import { EventVenueSuitability } from '../../components/EventVenueSuitability'
@@ -488,6 +489,12 @@ export function AssignedEventView() {
           </div>
         )}
       </section>
+
+      <ClarificationRequestPanel
+        eventId={event.id}
+        status={event.status}
+        onChanged={() => void refreshEvent()}
+      />
 
       {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
         <>

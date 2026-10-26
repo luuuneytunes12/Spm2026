@@ -37,6 +37,8 @@ const USER: AuthUser = {
   phone_country_code: '+65',
   phone_number: '91234567',
   communication_preference: 'email',
+  department: null,
+  responsibilities: null,
   created_at: '2026-09-10T00:00:00Z',
 }
 

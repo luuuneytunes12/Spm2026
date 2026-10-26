@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../lib/api'
-import { fromDateTimeLocal } from '../../lib/events'
+import { fromDateTimeLocal, toDateTimeLocal } from '../../lib/events'
+import { requestReplacementVenue } from '../../lib/venueBookings'
+import { AddVenueLink } from './AddVenueLink'
 import { listVenueFilterOptions, listVenues } from '../../lib/venues'
 import type { VenueFilterOptions, VenueSearch, VenueSummary } from '../../lib/venues'
 
@@ -46,16 +48,30 @@ function formatWindow(startIso: string, endIso: string): string {
  *  Read-only: creating and editing venues is its own story. With nothing
  *  entered, this is the same list the page showed before search existed. */
 export function Venues() {
+  // "Find replacement" (SCRUM-95) opens this page with the affected booking's
+  // date, time and requirements already filled in, and the booking it replaces.
+  const [params] = useSearchParams()
+  const replacesId = Number(params.get('replaces')) || null
+  const [replaceState, setReplaceState] = useState<{ busy: number | null; done: string | null; error: string | null }>({
+    busy: null,
+    done: null,
+    error: null,
+  })
+  const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean)
+  // The prefilled window arrives as ISO instants; the form wants a local day and hours.
+  const [fromDate, fromTime = ''] = toDateTimeLocal(params.get('from')).split('T')
+  const [, untilTime = ''] = toDateTimeLocal(params.get('until')).split('T')
+
   // --- what the user has entered -----------------------------------------
   const [keyword, setKeyword] = useState('')
-  const [attendance, setAttendance] = useState('')
-  const [layout, setLayout] = useState('')
-  const [facilities, setFacilities] = useState<string[]>([])
-  const [accessibility, setAccessibility] = useState<string[]>([])
+  const [attendance, setAttendance] = useState(params.get('attendance') ?? '')
+  const [layout, setLayout] = useState(params.get('layout') ?? '')
+  const [facilities, setFacilities] = useState<string[]>(() => list('facilities'))
+  const [accessibility, setAccessibility] = useState<string[]>(() => list('accessibility'))
   // The day and the hours an event needs, in the Coordinator's local time.
-  const [date, setDate] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
+  const [date, setDate] = useState(fromDate ?? '')
+  const [startTime, setStartTime] = useState(fromTime)
+  const [endTime, setEndTime] = useState(untilTime)
 
   // --- which filter panel is open (one at a time) -------------------------
   const [open, setOpen] = useState<FilterKey | null>(null)
@@ -192,6 +208,28 @@ export function Venues() {
     setSentKey('{}')
   }
 
+  async function requestReplacement(venue: VenueSummary) {
+    if (replacesId === null) return
+    setReplaceState({ busy: venue.id, done: null, error: null })
+    try {
+      await requestReplacementVenue(replacesId, {
+        venue_id: venue.id,
+        expected_attendance: search.minCapacity ?? null,
+      })
+      setReplaceState({
+        busy: null,
+        done: `Replacement requested at ${venue.name}. Venue Staff will see it replaces the booking at ${params.get('replacesVenue') ?? 'the affected venue'}.`,
+        error: null,
+      })
+    } catch (err) {
+      setReplaceState({
+        busy: null,
+        done: null,
+        error: err instanceof ApiError ? err.message : 'Could not request the replacement.',
+      })
+    }
+  }
+
   function panelProps(which: FilterKey) {
     return {
       open: open === which,
@@ -208,7 +246,29 @@ export function Venues() {
           Search by name or location and filter by what your event needs, then open a venue
           to check it against the event's requirements.
         </p>
+        <AddVenueLink />
       </header>
+
+      {replacesId !== null && (
+        <section className="card" aria-label="Replacement venue request">
+          <p>
+            Finding a replacement for your booking at{' '}
+            <strong>{params.get('replacesVenue') ?? 'the affected venue'}</strong>. Its date, time and
+            requirements are filled in below.
+          </p>
+          {replaceState.done && (
+            <p role="status" className="field-hint">
+              {replaceState.done}{' '}
+              {params.get('event') && <Link to={`/coordinator/events/${params.get('event')}`}>Back to the event</Link>}
+            </p>
+          )}
+          {replaceState.error && (
+            <p className="form-error" role="alert">
+              {replaceState.error}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* Outside the loading swap below: the filters are how you get out of
           an unhelpful result, so they never disappear while a search runs. */}
@@ -443,6 +503,17 @@ export function Venues() {
                 </div>
                 <div className="request-side">
                   {!venue.is_active && <span className="badge badge-muted">Inactive</span>}
+                  {replacesId !== null && venue.is_active && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={replaceState.busy !== null || replaceState.done !== null}
+                      aria-label={`Request as replacement: ${venue.name}`}
+                      onClick={() => void requestReplacement(venue)}
+                    >
+                      Request as replacement
+                    </button>
+                  )}
                   <Link to={`/venues/${venue.id}`} aria-label={`View details of ${venue.name}`}>
                     View details →
                   </Link>

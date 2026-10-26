@@ -149,6 +149,26 @@ ROLE_PERMISSIONS[Role.COORDINATOR_LEAD] = CoordinatorLeadProfile().permissions
 # granted by an ORGANISER via PATCH /users/{id}/role.
 DEFAULT_ROLE = Role.ATTENDEE
 
+# Internal staff: the roles that record a department and responsibilities
+# and can see each other's. Organisers and Attendees are outside the team.
+INTERNAL_ROLES: frozenset[Role] = frozenset(
+    {
+        Role.COORDINATOR,
+        Role.COORDINATOR_LEAD,
+        Role.VENUE_STAFF,
+        Role.TECH_SUPPORT,
+        Role.SAFETY_OFFICER,
+    }
+)
+
+
+def is_internal_staff(role: str | Role | None) -> bool:
+    """Whether `role` is internal staff. An unrecognised role fails closed."""
+    try:
+        return Role(role) in INTERNAL_ROLES
+    except ValueError:
+        return False
+
 
 def role_has(role: Role, permission: Permission) -> bool:
     """Return whether `role` grants `permission`."""
