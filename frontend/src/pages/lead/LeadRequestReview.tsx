@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { EquipmentLines } from '../../components/EquipmentLines'
+import { EventActivityLog } from '../../components/EventActivityLog'
 import { ApiError } from '../../lib/api'
 import type { LeadEventDetail } from '../../lib/coordinatorLead'
 import { EVENT_STATUS_LABELS, formatRange, formatTimestamp } from '../../lib/events'
@@ -134,6 +135,36 @@ export function LeadRequestReview({ load, backTo, backLabel, notFoundText, actio
           )}
         </dl>
       </section>
+      {event.change_requests.length > 0 && (
+        <section className="card" aria-labelledby="lead-change-requests-heading">
+          <h2 id="lead-change-requests-heading">Event change requests</h2>
+          <div className="stack">
+            {event.change_requests.map((request) => (
+              <article className="activity-item" key={request.id}>
+                <h3>
+                  {request.status[0].toUpperCase() + request.status.slice(1)} change request
+                </h3>
+                <p>{request.description}</p>
+                <dl className="detail-list">
+                  {Object.entries(request.proposed_changes).map(([field, value]) => (
+                    <div className="detail-row" key={field}>
+                      <dt>{field.replaceAll('_', ' ')}</dt>
+                      <dd>
+                        {Array.isArray(value)
+                          ? value.map((entry) => JSON.stringify(entry)).join(', ') || 'None'
+                          : typeof value === 'object' && value !== null
+                            ? JSON.stringify(value)
+                            : String(value ?? 'Not provided')}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      <EventActivityLog status={event.status} activity={event.activity} />
       {actions?.(event)}
     </div>
   )

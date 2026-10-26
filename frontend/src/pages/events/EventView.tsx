@@ -2,22 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttendeeListSection } from '../../components/AttendeeListSection'
 import { EquipmentLines } from '../../components/EquipmentLines'
+import { EventActivityLog } from '../../components/EventActivityLog'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { ApiError } from '../../lib/api'
 import {
   EVENT_STATUS_LABELS,
   EventStatus,
   formatRange,
-  formatTimestamp,
   getEvent,
   getOwnEventActivity,
   listOwnChangeRequests,
 } from '../../lib/events'
 import type { ActivityEntry, EventChangeRequest, EventDetail } from '../../lib/events'
-
-function activityStatusLabel(value: string): string {
-  return EVENT_STATUS_LABELS[value as EventStatus] ?? value
-}
 
 /** View an event request and offer corrections until its review is decided. */
 export function EventView() {
@@ -194,49 +190,7 @@ export function EventView() {
         </section>
       )}
 
-      {event.status !== EventStatus.DRAFT && (
-        <section className="card">
-          <h2>Activity Log</h2>
-          {activity.length === 0 ? (
-            <p className="page-subtitle">No activity recorded yet.</p>
-          ) : (
-            <ol className="activity-list" aria-label="Activity log">
-              {activity.map((entry, index) => {
-                const sameStatus = entry.from_status === entry.to_status
-                const assignment =
-                  sameStatus &&
-                  (entry.note?.startsWith('Assigned to ') ||
-                    entry.note?.startsWith('Reassigned from '))
-                const timestamp = formatTimestamp(entry.created_at)
-                return (
-                  <li key={`${entry.created_at}-${index}`} className="activity-item">
-                    <p className="activity-change">
-                      {assignment ? (
-                        <strong>Assignment</strong>
-                      ) : sameStatus ? (
-                        <strong>Request update</strong>
-                      ) : entry.from_status ? (
-                        <>
-                          {activityStatusLabel(entry.from_status)}{' '}
-                          <span aria-hidden="true">→</span>{' '}
-                          <strong>{activityStatusLabel(entry.to_status)}</strong>
-                        </>
-                      ) : (
-                        <strong>{activityStatusLabel(entry.to_status)}</strong>
-                      )}
-                    </p>
-                    <p className="activity-meta">
-                      {entry.changed_by_name ?? 'Unknown user'}
-                      {timestamp && ` · ${timestamp}`}
-                    </p>
-                    {entry.note && <p className="activity-note">{entry.note}</p>}
-                  </li>
-                )
-              })}
-            </ol>
-          )}
-        </section>
-      )}
+      <EventActivityLog status={event.status} activity={activity} />
 
       <p>
         <Link to="/organiser/events">← Back to my requests</Link>

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, BigInteger, Enum, ForeignKey, Text
+from sqlalchemy import JSON, BigInteger, Enum, ForeignKey, Text, event as sqlalchemy_event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -29,6 +29,8 @@ class Event(Base):
     # validation lives in the submit endpoint, not here, so that it can
     # report *which* fields are missing (see sql/003_events_draft_fields.sql).
     name: Mapped[str | None] = mapped_column(Text)
+    event_contact_name: Mapped[str | None] = mapped_column(Text)
+    event_contact_email: Mapped[str | None] = mapped_column(Text)
     purpose: Mapped[str | None] = mapped_column(Text)
     event_type: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
@@ -87,16 +89,25 @@ class EventStatusHistory(Base):
     event_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("events.id", ondelete="CASCADE")
     )
-    changed_by: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
+    changed_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     from_status: Mapped[str | None] = mapped_column(Text)
     to_status: Mapped[str] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
+    actor_name: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     event: Mapped[Event] = relationship()
-    changed_by_user: Mapped[User] = relationship(foreign_keys=[changed_by])
+    changed_by_user: Mapped[User | None] = relationship(foreign_keys=[changed_by])
+
+
+def _refuse_activity_mutation(*_args: object) -> None:
+    raise ValueError("Event activity log entries are immutable")
+
+
+sqlalchemy_event.listen(EventStatusHistory, "before_update", _refuse_activity_mutation)
+sqlalchemy_event.listen(EventStatusHistory, "before_delete", _refuse_activity_mutation)
 
 
 class EventChangeRequest(Base):

@@ -148,6 +148,8 @@ export interface EventDetail extends EventSummary {
    *  see AC2 of "Mark myself unavailable": this is what lets the Organiser
    *  see who is coordinating their event, right on the event page. */
   coordinator: EventContact | null
+  event_contact_name: string | null
+  event_contact_email: string | null
   purpose: string | null
   description: string | null
   programme: string | null
@@ -215,12 +217,16 @@ export interface EventChangeRequest {
   created_at: string
   reviewed_at: string | null
   important_change: boolean
+  safety_check_required: boolean
   venue_bookings_to_reconsider: {
     id: number
     venue_name: string
     start_time: string
     end_time: string
     status: string
+    suitable: boolean
+    unmet_requirements: string[]
+    conflicts: string[]
   }[]
   equipment_reservations_to_reconsider: {
     id: number
@@ -228,11 +234,20 @@ export interface EventChangeRequest {
     quantity_requested: number
     status: string
   }[]
+  equipment_requirements_to_reconsider: {
+    id: number
+    category: string
+    status: string
+    quantity_needed: number
+    reserved_items: string[]
+  }[]
 }
 
 /** Every field optional -- a draft is allowed to be incomplete. */
 export interface EventInput {
   name?: string | null
+  event_contact_name?: string | null
+  event_contact_email?: string | null
   purpose?: string | null
   event_type?: string | null
   description?: string | null
@@ -248,6 +263,11 @@ export interface EventInput {
   equipment_items?: EquipmentLineInput[]
   special_arrangements?: string | null
   registration_enabled?: boolean
+}
+
+export interface PlanningEventEdit extends EventDetail {
+  affected_venue_bookings: string[]
+  affected_equipment_requirements: string[]
 }
 
 export function listMyEvents(status?: EventStatus): Promise<EventSummary[]> {
@@ -275,6 +295,17 @@ export function listAssignedEvents(): Promise<EventSummary[]> {
  *  an event id that does not exist. */
 export function getAssignedEvent(id: number): Promise<AssignedEventDetail> {
   return apiFetch(`/events/assigned/${id}`) as Promise<AssignedEventDetail>
+}
+
+/** Edit an event in planning, scoped to its assigned Coordinator. */
+export function editPlanningEvent(
+  id: number,
+  changes: EventInput,
+): Promise<PlanningEventEdit> {
+  return apiFetch(`/events/assigned/${id}/planning`, {
+    method: 'PATCH',
+    body: JSON.stringify(changes),
+  }) as Promise<PlanningEventEdit>
 }
 
 /** Approve an event assigned to the signed-in Coordinator. */
@@ -321,6 +352,11 @@ export function cancelEvent(id: number, reason: string): Promise<EventDetail> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason }),
   }) as Promise<EventDetail>
+}
+
+/** Mark a confirmed event completed after its scheduled end time. */
+export function completeEvent(id: number): Promise<EventDetail> {
+  return apiFetch(`/events/${id}/complete`, { method: 'POST' }) as Promise<EventDetail>
 }
 
 export function createEvent(input: EventInput): Promise<EventDetail> {

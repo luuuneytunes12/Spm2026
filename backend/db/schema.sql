@@ -94,6 +94,8 @@ create table events (
     -- enforced at submit time by the API, which reports which mandatory
     -- fields are missing. See sql/003_events_draft_fields.sql.
     name text,
+    event_contact_name text,
+    event_contact_email text,
     purpose text,
     event_type text,
     description text,
@@ -124,14 +126,28 @@ create index idx_events_status on events (status);
 create table event_status_history (
     id bigint generated always as identity primary key,
     event_id bigint not null references events (id) on delete cascade,
-    changed_by bigint not null references users (id) on delete restrict,
+    changed_by bigint references users (id) on delete restrict,
     from_status text,
     to_status text not null,
     note text,
+    actor_name text,
     created_at timestamptz not null default now()
 );
 
 create index idx_event_status_history_event on event_status_history (event_id);
+
+create or replace function public.refuse_event_activity_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+    raise exception 'Event activity log entries are immutable';
+end;
+$$;
+
+create trigger event_status_history_immutable
+    before update or delete on event_status_history
+    for each row execute function public.refuse_event_activity_mutation();
 
 create table event_change_requests (
     id bigint generated always as identity primary key,

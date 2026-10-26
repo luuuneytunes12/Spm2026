@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.enums import BookingStatus, ChangeRequestStatus, EquipmentStatus, EventStatus
 
@@ -82,6 +82,8 @@ class EventIn(BaseModel):
     """
 
     name: str | None = Field(default=None, max_length=200)
+    event_contact_name: str | None = Field(default=None, max_length=200)
+    event_contact_email: EmailStr | None = None
     purpose: str | None = None
     event_type: str | None = Field(default=None, max_length=100)
     description: str | None = None
@@ -146,6 +148,9 @@ class VenueBookingImpact(BaseModel):
     start_time: datetime
     end_time: datetime
     status: BookingStatus
+    suitable: bool
+    unmet_requirements: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
 
 
 class EquipmentReservationImpact(BaseModel):
@@ -153,6 +158,14 @@ class EquipmentReservationImpact(BaseModel):
     equipment_name: str
     quantity_requested: int
     status: EquipmentStatus
+
+
+class EquipmentRequirementImpact(BaseModel):
+    id: int
+    category: str
+    status: str
+    quantity_needed: int
+    reserved_items: list[str] = Field(default_factory=list)
 
 
 class EventChangeRequestOut(BaseModel):
@@ -171,6 +184,16 @@ class EventChangeRequestOut(BaseModel):
     safety_check_required: bool = False
     venue_bookings_to_reconsider: list[VenueBookingImpact]
     equipment_reservations_to_reconsider: list[EquipmentReservationImpact]
+    equipment_requirements_to_reconsider: list[EquipmentRequirementImpact] = Field(
+        default_factory=list
+    )
+
+class LeadChangeRequestOut(BaseModel):
+    id: int
+    description: str
+    proposed_changes: dict
+    status: ChangeRequestStatus
+    created_at: datetime
 
 
 class OrganiserContact(BaseModel):
@@ -205,6 +228,8 @@ class EventOut(BaseModel):
     # coordinating their event, straight off GET /events/{id}.
     coordinator: OrganiserContact | None
     name: str | None
+    event_contact_name: str | None
+    event_contact_email: str | None
     purpose: str | None
     event_type: str | None
     description: str | None
@@ -227,6 +252,11 @@ class EventOut(BaseModel):
     submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class PlanningEventEditOut(EventOut):
+    affected_venue_bookings: list[str] = Field(default_factory=list)
+    affected_equipment_requirements: list[str] = Field(default_factory=list)
 
 
 class ActivityEntry(BaseModel):
@@ -321,6 +351,8 @@ class LeadEventDetail(EventOut):
     Organiser entered (EventOut) plus who the Organiser is. Read-only."""
 
     organiser: OrganiserContact
+    activity: list[ActivityEntry] = Field(default_factory=list)
+    change_requests: list[LeadChangeRequestOut] = Field(default_factory=list)
 
 
 class LeadCoordinatorOut(BaseModel):

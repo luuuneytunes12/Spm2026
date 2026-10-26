@@ -34,6 +34,8 @@ const DETAIL: LeadEventDetail = {
   organiser_id: 2,
   coordinator_id: 3,
   coordinator: { id: 3, name: 'Sam Tan', email: 'sam@cs.local' },
+  event_contact_name: null,
+  event_contact_email: null,
   purpose: 'Annual partner briefing',
   description: 'A full-day briefing for our regional partners.',
   programme: null,
@@ -46,6 +48,16 @@ const DETAIL: LeadEventDetail = {
   registration_enabled: false,
   created_at: '2026-10-01T09:00:00Z',
   organiser: { id: 2, name: 'Olivia Organiser', email: 'olivia@cs.local' },
+  activity: [
+    {
+      from_status: 'event_approved',
+      to_status: 'planning_event',
+      note: 'Planning started.',
+      changed_by_name: 'Sam Tan',
+      created_at: '2026-10-02T09:30:00Z',
+    },
+  ],
+  change_requests: [],
 }
 
 function renderAt(id: string) {
@@ -84,7 +96,9 @@ describe('AssignedEventReview', () => {
     ]) {
       expect(screen.getByText(text)).toBeInTheDocument()
     }
-    expect(screen.getByText('Planning Event')).toBeInTheDocument() // current status, not the queue's badge
+    expect(screen.getAllByText('Planning Event').length).toBeGreaterThan(0) // current status and log
+    expect(screen.getByText('Current status: Planning Event')).toBeInTheDocument()
+    expect(screen.getByText('Planning started.')).toBeInTheDocument()
     expect(screen.queryByText('Submitted – Awaiting Coordinator')).not.toBeInTheDocument()
     expect(screen.getByText('No')).toBeInTheDocument() // registration needed
     expect(screen.getByRole('link', { name: /Back to Coordinator Assignments/ })).toHaveAttribute(
