@@ -72,7 +72,7 @@ import {
   rejectEvent,
   rejectEventChangeRequest,
 } from '../../lib/events'
-import type { AssignedEventDetail } from '../../lib/events'
+import type { AssignedEventDetail, EventChangeRequest } from '../../lib/events'
 
 const mockGet = vi.mocked(getAssignedEvent)
 const mockApprove = vi.mocked(approveEvent)
@@ -206,6 +206,55 @@ describe('AC1 - the full requirements are visible', () => {
       )
       expect(screen.getByText('Venue bookings: Main Hall')).toBeInTheDocument()
       expect(screen.getByText('Equipment requirements: Projector')).toBeInTheDocument()
+    })
+
+    it.each(['event_approved', 'planning_event', 'awaiting_safety_check', 'safety_check_passed'] as const)(
+      'US2 AC1/AC4: offers the edit form for a %s Event',
+      async (status) => {
+        mockGet.mockResolvedValue({ ...EVENT, status })
+        renderView()
+
+        expect(await screen.findByRole('heading', { name: 'Edit event details' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Save event details' })).toBeInTheDocument()
+      },
+    )
+
+    it.each(['under_review', 'event_cancelled', 'event_completed', 'event_rejected'] as const)(
+      'US2 AC5: offers no edit form for a %s Event',
+      async (status) => {
+        mockGet.mockResolvedValue({ ...EVENT, status })
+        renderView()
+        await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+
+        expect(screen.queryByRole('heading', { name: 'Edit event details' })).toBeNull()
+        expect(screen.queryByRole('button', { name: 'Save event details' })).toBeNull()
+      },
+    )
+
+    it('US2 AC3: shows the server refusal and does not claim the details were saved', async () => {
+      mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event' })
+      mockEditPlanning.mockRejectedValue(
+        new ApiError(422, 'Event name cannot be empty.'),
+      )
+      const user = userEvent.setup()
+      renderView()
+
+      await user.clear(await screen.findByLabelText('Event name'))
+      await user.click(screen.getByRole('button', { name: 'Save event details' }))
+
+      expect(await screen.findByText('Event name cannot be empty.')).toHaveAttribute('role', 'alert')
+      expect(screen.queryByText('Event details saved.')).toBeNull()
+    })
+
+    it('US2: a network failure shows a readable message, not a crash', async () => {
+      mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event' })
+      mockEditPlanning.mockRejectedValue(new TypeError('Failed to fetch'))
+      const user = userEvent.setup()
+      renderView()
+
+      await user.click(await screen.findByRole('button', { name: 'Save event details' }))
+
+      expect(await screen.findByText('Could not save event details.')).toHaveAttribute('role', 'alert')
     })
   })
 
@@ -719,6 +768,101 @@ describe('what this screen deliberately does not offer', () => {
   })
 })
 
+describe('US3 AC2 - arrangements the change does not touch', () => {
+  const pendingRequest: EventChangeRequest = {
+    id: 21,
+    event_id: 7,
+    requested_by: 1,
+    description: 'More attendees',
+    proposed_changes: { expected_attendance: 180 },
+    status: 'pending',
+    review_notes: null,
+    created_at: '2026-09-10T02:00:00Z',
+    reviewed_at: null,
+    important_change: true,
+    safety_check_required: true,
+    venue_bookings_to_reconsider: [],
+    equipment_reservations_to_reconsider: [],
+    equipment_requirements_to_reconsider: [],
+    other_venue_bookings: [
+      {
+        id: 5,
+        venue_name: 'Annex',
+        start_time: '2026-11-02T09:00:00Z',
+        end_time: '2026-11-02T17:00:00Z',
+        status: 'approved',
+      },
+    ],
+    other_equipment_reservations: [
+      { id: 6, equipment_name: 'Projector', quantity_requested: 2, status: 'reserved' },
+    ],
+  }
+
+  it('lists them as unticked choices, so by default they stay unchanged', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event', change_requests: [pendingRequest] })
+    const user = userEvent.setup()
+    renderView()
+
+    const annex = await screen.findByRole('checkbox', { name: /Venue Booking #5 — Annex/ })
+    const projector = screen.getByRole('checkbox', { name: /Equipment reservation #6 — Projector × 2/ })
+    expect(annex).not.toBeChecked()
+    expect(projector).not.toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Approve changes' }))
+
+    await waitFor(() => expect(mockApproveChangeRequest).toHaveBeenCalledWith(21, undefined))
+  })
+
+  it('sends only the ones the Coordinator ticks', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event', change_requests: [pendingRequest] })
+    const user = userEvent.setup()
+    renderView()
+
+    await user.click(await screen.findByRole('checkbox', { name: /Venue Booking #5/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Equipment reservation #6/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Equipment reservation #6/ }))
+    await user.click(screen.getByRole('button', { name: 'Approve changes' }))
+
+    await waitFor(() =>
+      expect(mockApproveChangeRequest).toHaveBeenCalledWith(21, undefined, {
+        venueBookingIds: [5],
+        equipmentReservationIds: [],
+      }),
+    )
+  })
+
+  it('does not offer the choice once the request has been decided', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'planning_event',
+      change_requests: [{ ...pendingRequest, status: 'approved' }],
+    })
+    renderView()
+    await screen.findByText('More attendees')
+
+    expect(screen.queryByRole('checkbox', { name: /Venue Booking #5/ })).toBeNull()
+  })
+
+  it('shows a readable refusal from the server', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event', change_requests: [pendingRequest] })
+    mockApproveChangeRequest.mockRejectedValueOnce(
+      new ApiError(
+        422,
+        'reopen_venue_booking_ids: Venue Booking #5 is not an active booking on this Event, so it cannot be reopened for review.',
+      ),
+    )
+    const user = userEvent.setup()
+    renderView()
+
+    await user.click(await screen.findByRole('checkbox', { name: /Venue Booking #5/ }))
+    await user.click(screen.getByRole('button', { name: 'Approve changes' }))
+
+    expect(
+      await screen.findByText(/Venue Booking #5 is not an active booking on this Event/),
+    ).toHaveAttribute('role', 'alert')
+  })
+})
+
 describe('Coordinator decisions', () => {
   it('approves the assigned request and refreshes its activity', async () => {
     mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
@@ -1013,7 +1157,9 @@ describe('ER AC1 - the equipment requirements card', () => {
     renderView()
     await screen.findByLabelText('equipment requirements stub')
 
-    // What the Organiser asked for is still part of their request.
-    expect(screen.getByText('Equipment requirements')).toBeInTheDocument()
+    // What the Organiser asked for is still part of their request. Scoped to
+    // the Event Details list: an approved Event also has the edit form, whose
+    // field has the same label.
+    expect(screen.getByText('Equipment requirements', { selector: 'dt' })).toBeInTheDocument()
   })
 })

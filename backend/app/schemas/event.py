@@ -142,12 +142,23 @@ class EventChangeDecisionIn(BaseModel):
     review_notes: str | None = Field(default=None, max_length=2000)
 
 
-class VenueBookingImpact(BaseModel):
+class EventChangeApprovalIn(EventChangeDecisionIn):
+    """An approval may also send arrangements the change does not touch back
+    for review -- the Coordinator's "unless I choose otherwise"."""
+
+    reopen_venue_booking_ids: list[int] = Field(default_factory=list)
+    reopen_equipment_reservation_ids: list[int] = Field(default_factory=list)
+
+
+class VenueBookingRef(BaseModel):
     id: int
     venue_name: str
     start_time: datetime
     end_time: datetime
     status: BookingStatus
+
+
+class VenueBookingImpact(VenueBookingRef):
     suitable: bool
     unmet_requirements: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
@@ -185,6 +196,12 @@ class EventChangeRequestOut(BaseModel):
     venue_bookings_to_reconsider: list[VenueBookingImpact]
     equipment_reservations_to_reconsider: list[EquipmentReservationImpact]
     equipment_requirements_to_reconsider: list[EquipmentRequirementImpact] = Field(
+        default_factory=list
+    )
+    # Active arrangements the change does not touch: they stay as they are
+    # unless the Coordinator chooses to reopen them on approval.
+    other_venue_bookings: list[VenueBookingRef] = Field(default_factory=list)
+    other_equipment_reservations: list[EquipmentReservationImpact] = Field(
         default_factory=list
     )
 

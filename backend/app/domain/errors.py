@@ -39,6 +39,11 @@ class Conflict(DomainError):
     status_code = 409
 
 
+class ImmutableRecord(Conflict):
+    """A permanent record, such as an Event Activity Log entry, was asked to
+    change or disappear."""
+
+
 class InvalidInput(DomainError):
     """A value that no state of the world could make acceptable."""
 

@@ -243,6 +243,27 @@ export interface EventChangeRequest {
     quantity_needed: number
     reserved_items: string[]
   }[]
+  /** Active arrangements the change does not touch; offered, while the
+   *  request is pending, as ones the Coordinator may also reopen. */
+  other_venue_bookings?: {
+    id: number
+    venue_name: string
+    start_time: string
+    end_time: string
+    status: string
+  }[]
+  other_equipment_reservations?: {
+    id: number
+    equipment_name: string
+    quantity_requested: number
+    status: string
+  }[]
+}
+
+/** Arrangements the Coordinator chose to send back for review on approval. */
+export interface ReopenChoices {
+  venueBookingIds: number[]
+  equipmentReservationIds: number[]
 }
 
 /** Every field optional -- a draft is allowed to be incomplete. */
@@ -393,11 +414,19 @@ export function requestEventChanges(
   }) as Promise<EventChangeRequest>
 }
 
-export function approveEventChangeRequest(id: number, reviewNotes?: string): Promise<EventChangeRequest> {
+export function approveEventChangeRequest(
+  id: number,
+  reviewNotes?: string,
+  reopen?: ReopenChoices,
+): Promise<EventChangeRequest> {
   return apiFetch(`/events/change-requests/${id}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ review_notes: reviewNotes || null }),
+    body: JSON.stringify({
+      review_notes: reviewNotes || null,
+      reopen_venue_booking_ids: reopen?.venueBookingIds ?? [],
+      reopen_equipment_reservation_ids: reopen?.equipmentReservationIds ?? [],
+    }),
   }) as Promise<EventChangeRequest>
 }
 

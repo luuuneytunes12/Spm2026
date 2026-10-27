@@ -151,6 +151,12 @@ returns trigger
 language plpgsql
 as $$
 begin
+    -- An entry may go only with its Event (ON DELETE CASCADE); see
+    -- supabase/migrations/20261027150209_event_workflow_stories.sql.
+    if tg_op = 'DELETE'
+       and not exists (select 1 from public.events where id = old.event_id) then
+        return old;
+    end if;
     raise exception 'Event activity log entries are immutable';
 end;
 $$;

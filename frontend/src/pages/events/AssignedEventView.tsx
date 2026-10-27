@@ -28,7 +28,26 @@ import {
   setEventRegistration,
   toDateTimeLocal,
 } from '../../lib/events'
-import type { AssignedEventDetail, EventChangeRequest, EventInput } from '../../lib/events'
+import type {
+  AssignedEventDetail,
+  EventChangeRequest,
+  EventInput,
+  ReopenChoices,
+} from '../../lib/events'
+
+const EMPTY_REOPEN: ReopenChoices = { venueBookingIds: [], equipmentReservationIds: [] }
+
+/** Add `id` to, or take it out of, one list of a request's reopen choices. */
+function toggleChoice(
+  choices: ReopenChoices | undefined,
+  list: keyof ReopenChoices,
+  id: number,
+  checked: boolean,
+): ReopenChoices {
+  const current = choices ?? EMPTY_REOPEN
+  const ids = current[list].filter((existing) => existing !== id)
+  return { ...current, [list]: checked ? [...ids, id] : ids }
+}
 
 function statusLabel(value: string): string {
   return EVENT_STATUS_LABELS[value as EventStatus] ?? value
@@ -115,6 +134,7 @@ export function AssignedEventView() {
   const [changeRequestNotes, setChangeRequestNotes] = useState<Record<number, string>>({})
   const [reviewingChangeRequest, setReviewingChangeRequest] = useState<number | null>(null)
   const [changeRequestError, setChangeRequestError] = useState<string | null>(null)
+  const [reopenChoices, setReopenChoices] = useState<Record<number, ReopenChoices>>({})
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [registrationOn, setRegistrationOn] = useState(false)
@@ -313,12 +333,18 @@ export function AssignedEventView() {
     try {
       const notes = changeRequestNotes[request.id]?.trim()
       if (decision === 'approve') {
-        await approveEventChangeRequest(request.id, notes)
+        const chosen = reopenChoices[request.id]
+        if (chosen && (chosen.venueBookingIds.length > 0 || chosen.equipmentReservationIds.length > 0)) {
+          await approveEventChangeRequest(request.id, notes, chosen)
+        } else {
+          await approveEventChangeRequest(request.id, notes)
+        }
       } else {
         await rejectEventChangeRequest(request.id, notes)
       }
       setEvent(await getAssignedEvent(event.id))
       setChangeRequestNotes((current) => ({ ...current, [request.id]: '' }))
+      setReopenChoices((current) => ({ ...current, [request.id]: EMPTY_REOPEN }))
     } catch (err) {
       setChangeRequestError(
         err instanceof ApiError ? err.message : 'Could not save the change-request decision.',
@@ -646,7 +672,8 @@ export function AssignedEventView() {
       {event.registration_enabled && <AttendeeListSection eventId={event.id} />}
 
       {planningDraftValues &&
-        (event.status === EventStatus.PLANNING_EVENT ||
+        (event.status === EventStatus.EVENT_APPROVED ||
+          event.status === EventStatus.PLANNING_EVENT ||
           event.status === EventStatus.AWAITING_SAFETY_CHECK ||
           event.status === EventStatus.SAFETY_CHECK_PASSED) && (
         <section className="card" aria-labelledby="planning-edit-heading">
@@ -935,6 +962,65 @@ export function AssignedEventView() {
                         disabled={reviewingChangeRequest === request.id}
                       />
                     </label>
+                    {((request.other_venue_bookings ?? []).length > 0 ||
+                      (request.other_equipment_reservations ?? []).length > 0) && (
+                      <fieldset className="stack-tight">
+                        <legend>Also reopen for review (optional)</legend>
+                        <p className="page-subtitle">
+                          These arrangements are not affected by the change and stay as they are
+                          unless you tick them.
+                        </p>
+                        {(request.other_venue_bookings ?? []).map((booking) => (
+                          <label key={`venue-${booking.id}`} className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={(reopenChoices[request.id]?.venueBookingIds ?? []).includes(booking.id)}
+                              onChange={(e) =>
+                                setReopenChoices((current) => ({
+                                  ...current,
+                                  [request.id]: toggleChoice(
+                                    current[request.id],
+                                    'venueBookingIds',
+                                    booking.id,
+                                    e.target.checked,
+                                  ),
+                                }))
+                              }
+                              disabled={reviewingChangeRequest !== null}
+                            />
+                            <span>
+                              Venue Booking #{booking.id} — {booking.venue_name} ({booking.status})
+                            </span>
+                          </label>
+                        ))}
+                        {(request.other_equipment_reservations ?? []).map((reservation) => (
+                          <label key={`equipment-${reservation.id}`} className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={(reopenChoices[request.id]?.equipmentReservationIds ?? []).includes(
+                                reservation.id,
+                              )}
+                              onChange={(e) =>
+                                setReopenChoices((current) => ({
+                                  ...current,
+                                  [request.id]: toggleChoice(
+                                    current[request.id],
+                                    'equipmentReservationIds',
+                                    reservation.id,
+                                    e.target.checked,
+                                  ),
+                                }))
+                              }
+                              disabled={reviewingChangeRequest !== null}
+                            />
+                            <span>
+                              Equipment reservation #{reservation.id} — {reservation.equipment_name} ×{' '}
+                              {reservation.quantity_requested} ({reservation.status})
+                            </span>
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
                     <div className="form-actions">
                       <button
                         type="button"

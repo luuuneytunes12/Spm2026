@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.db import Base
+from app.domain.errors import ImmutableRecord
 from app.models.enums import ChangeRequestStatus, EventStatus
 from app.models.user import User
 
@@ -103,8 +104,13 @@ class EventStatusHistory(Base):
     changed_by_user: Mapped[User | None] = relationship(foreign_keys=[changed_by])
 
 
+ACTIVITY_LOG_IMMUTABLE_MESSAGE = (
+    "Activity Log entries are a permanent record and cannot be changed or removed."
+)
+
+
 def _refuse_activity_mutation(*_args: object) -> None:
-    raise ValueError("Event activity log entries are immutable")
+    raise ImmutableRecord(ACTIVITY_LOG_IMMUTABLE_MESSAGE)
 
 
 sqlalchemy_event.listen(EventStatusHistory, "before_update", _refuse_activity_mutation)

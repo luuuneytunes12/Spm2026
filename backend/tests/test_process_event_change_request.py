@@ -1,3 +1,23 @@
+"""US3 - Process Event Change Request.
+
+Each test is named after the acceptance criterion it proves:
+
+  AC1   a Pending request on an Event not assigned to me cannot be approved
+        or rejected (screen or direct request); it stays Pending
+  AC2   a major request lists each affected Venue Booking and Equipment
+        Requirement separately; the others stay unchanged unless I choose
+        otherwise
+  AC3   the Event Organiser is notified of my decision
+  AC4   the decision is in the Activity Log with my name and the time
+  AC5   unassigned: the Lead sees it; assigned: only the assignee and the Lead
+  AC6   each affected Venue Booking's suitability is re-checked with the new values
+  AC7   a request already Approved or Rejected cannot be decided again
+  AC8   a date/time move shows conflicts at the Venue, setup and turnaround included
+  AC9   approving a major request on an Awaiting Safety Check / Confirmed Event
+        returns it to Planning Event and it must pass the Safety Check again
+  AC10  a request on a Cancelled or Completed Event cannot be approved
+"""
+
 from datetime import datetime, timezone
 
 import pytest
@@ -50,7 +70,69 @@ def _assign(db_session, event_id, coordinator):
     db_session.commit()
 
 
-def test_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assignee(
+def _assigned(client, db_session, status=EventStatus.under_review):
+    organiser, organiser_headers, event_id = _submitted(client, db_session)
+    coordinator, coordinator_headers = user(
+        client, db_session, Role.COORDINATOR, "assigned-cr@example.com", "Assigned Coordinator"
+    )
+    _assign(db_session, event_id, coordinator)
+    db_session.get(Event, event_id).status = status
+    db_session.commit()
+    return organiser, organiser_headers, coordinator, coordinator_headers, event_id
+
+
+def _two_arrangements(db_session, event_id, organiser, coordinator):
+    """An approved booking, and a reserved item fulfilling a requirement."""
+    event = db_session.get(Event, event_id)
+    venue = Venue(name="Main Hall", location="Building A", capacity=300)
+    equipment = Equipment(
+        name="Projector",
+        total_quantity=2,
+        operational_status=EquipmentOperationalStatus.available,
+    )
+    db_session.add_all([venue, equipment])
+    db_session.flush()
+    booking = VenueBooking(
+        event_id=event_id,
+        venue_id=venue.id,
+        requested_by=organiser.id,
+        start_time=event.proposed_start,
+        end_time=event.proposed_end,
+        status=BookingStatus.approved,
+    )
+    reservation = EquipmentRequest(
+        event_id=event_id,
+        equipment_id=equipment.id,
+        quantity_requested=1,
+        status=EquipmentStatus.reserved,
+    )
+    requirement = CoordinatorEquipmentRequirement(
+        event_id=event_id,
+        category="Projection",
+        quantity_needed=1,
+        status=EquipmentStatus.reserved,
+        created_by=coordinator.id,
+    )
+    db_session.add_all([booking, reservation, requirement])
+    db_session.commit()
+    return booking, reservation, requirement
+
+
+def _decision_entries(db_session, event_id):
+    return (
+        db_session.query(EventStatusHistory)
+        .filter(
+            EventStatusHistory.event_id == event_id,
+            EventStatusHistory.note.like("Change Request %"),
+        )
+        .count()
+    )
+
+
+# --- AC1 / AC5 --------------------------------------------------------------------
+
+
+def test_ac1_ac5_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assignee(
     client, db_session
 ):
     _, organiser_headers, event_id = _submitted(client, db_session)
@@ -102,6 +184,9 @@ def test_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assigne
     assert client.get(
         f"/events/change-requests/{request['id']}", headers=unrelated_headers
     ).status_code == 404
+    assert client.get(
+        f"/events/assigned/{event_id}", headers=unrelated_headers
+    ).status_code == 404
 
     refused = client.post(
         f"/events/change-requests/{request['id']}/approve",
@@ -112,6 +197,76 @@ def test_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assigne
     assert db_session.get(EventChangeRequest, request["id"]).status == ChangeRequestStatus.pending
 
 
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+@pytest.mark.parametrize("assigned", [True, False], ids=["someone-else's", "not-yet-assigned"])
+def test_ac1_a_coordinator_not_assigned_cannot_decide_and_it_stays_pending(
+    client, db_session, decision, assigned
+):
+    organiser, organiser_headers, event_id = _submitted(client, db_session)
+    if assigned:
+        owner, _ = user(client, db_session, Role.COORDINATOR, "owner-cr@example.com", "Owner")
+        _assign(db_session, event_id, owner)
+    _, outsider_headers = user(
+        client, db_session, Role.COORDINATOR, "outsider-cr@example.com", "Outsider"
+    )
+    request = _change_request(client, event_id, organiser_headers)
+    description_before = db_session.get(Event, event_id).description
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/{decision}",
+        headers=outsider_headers,
+        json={"review_notes": "Trying anyway."},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "Only the assigned Event Coordinator may review this change request."
+    )
+    db_session.expire_all()
+    assert db_session.get(EventChangeRequest, request["id"]).status == ChangeRequestStatus.pending
+    assert db_session.get(Event, event_id).description == description_before
+    assert _decision_entries(db_session, event_id) == 0
+    assert (
+        db_session.query(Notification)
+        .filter_by(user_id=organiser.id, event_id=event_id)
+        .filter(Notification.type.in_(["event_change_approved", "event_change_rejected"]))
+        .count()
+        == 0
+    )
+
+
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+@pytest.mark.parametrize("role", [Role.COORDINATOR_LEAD, Role.ORGANISER])
+def test_ac1_other_roles_cannot_decide_a_change_request(client, db_session, decision, role):
+    _, organiser_headers, _, _, event_id = _assigned(client, db_session)
+    request = _change_request(client, event_id, organiser_headers)
+    if role is Role.ORGANISER:
+        headers = organiser_headers
+    else:
+        _, headers = user(client, db_session, role, "lead-cr@example.com", "Lead")
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/{decision}", headers=headers, json={}
+    )
+
+    assert response.status_code == 403
+    assert db_session.get(EventChangeRequest, request["id"]).status == ChangeRequestStatus.pending
+
+
+def test_ac1_a_change_request_that_does_not_exist_is_not_found(client, db_session):
+    _, _, _, coordinator_headers, _ = _assigned(client, db_session)
+
+    response = client.post(
+        "/events/change-requests/999999/approve", headers=coordinator_headers, json={}
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Change request not found"}
+
+
+# --- AC3 / AC4 / AC7 ----------------------------------------------------------------
+
+
 @pytest.mark.parametrize(
     ("decision", "expected_status", "notification_type"),
     [
@@ -119,7 +274,7 @@ def test_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assigne
         ("reject", ChangeRequestStatus.rejected, "event_change_rejected"),
     ],
 )
-def test_decision_notifies_organiser_and_is_activity_logged_once(
+def test_ac3_ac4_ac7_decision_notifies_organiser_and_is_activity_logged_once(
     client, db_session, decision, expected_status, notification_type
 ):
     organiser, organiser_headers, event_id = _submitted(client, db_session)
@@ -160,12 +315,18 @@ def test_decision_notifies_organiser_and_is_activity_logged_once(
     assert decision_entry.created_at is not None
     assert decision_entry.changed_by_user.name == coordinator.name
 
+    activity = client.get(f"/events/{event_id}/activity", headers=coordinator_headers).json()
+    logged = next(e for e in activity if e["note"].startswith(f"Change Request {decision_label}:"))
+    assert logged["changed_by_name"] == "Decision Coordinator"
+    assert logged["created_at"]
+
     repeated = client.post(
         f"/events/change-requests/{request['id']}/{'reject' if decision == 'approve' else 'approve'}",
         headers=coordinator_headers,
         json={},
     )
     assert repeated.status_code == 409
+    assert repeated.json()["detail"] == "Change request is no longer pending."
     assert db_session.get(EventChangeRequest, request["id"]).status == expected_status
     assert (
         db_session.query(Notification)
@@ -175,7 +336,49 @@ def test_decision_notifies_organiser_and_is_activity_logged_once(
     )
 
 
-def test_major_change_preview_rechecks_each_venue_and_setup_turnaround_conflicts(
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+def test_ac7_the_same_decision_twice_is_refused_and_the_first_stands(
+    client, db_session, decision
+):
+    organiser, organiser_headers, _, coordinator_headers, event_id = _assigned(
+        client, db_session
+    )
+    request = _change_request(client, event_id, organiser_headers)
+    url = f"/events/change-requests/{request['id']}/{decision}"
+    first = client.post(url, headers=coordinator_headers, json={"review_notes": "First."})
+    assert first.status_code == 200
+
+    second = client.post(url, headers=coordinator_headers, json={"review_notes": "Second."})
+
+    assert second.status_code == 409
+    stored = db_session.get(EventChangeRequest, request["id"])
+    assert stored.review_notes == "First."
+    assert _decision_entries(db_session, event_id) == 1
+
+
+def test_ac3_the_organiser_of_another_event_is_not_notified(client, db_session):
+    _, organiser_headers, _, coordinator_headers, event_id = _assigned(client, db_session)
+    other, other_headers = user(
+        client, db_session, Role.ORGANISER, "other-owner@example.com", "Other Owner"
+    )
+    submitted_event(client, other_headers)
+    request = _change_request(client, event_id, organiser_headers)
+
+    client.post(
+        f"/events/change-requests/{request['id']}/reject",
+        headers=coordinator_headers,
+        json={"review_notes": "Not possible."},
+    )
+
+    assert db_session.query(Notification).filter_by(user_id=other.id).filter(
+        Notification.type.in_(["event_change_approved", "event_change_rejected"])
+    ).count() == 0
+
+
+# --- AC2 / AC6 / AC8 / AC9 ----------------------------------------------------------
+
+
+def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turnaround_conflicts(
     client, db_session
 ):
     organiser, organiser_headers, event_id = _submitted(client, db_session)
@@ -269,6 +472,7 @@ def test_major_change_preview_rechecks_each_venue_and_setup_turnaround_conflicts
     )
 
     assert request["important_change"] is True
+    assert request["safety_check_required"] is True
     assert len(request["venue_bookings_to_reconsider"]) == 1
     venue_impact = request["venue_bookings_to_reconsider"][0]
     assert venue_impact["id"] == own_booking.id
@@ -295,7 +499,27 @@ def test_major_change_preview_rechecks_each_venue_and_setup_turnaround_conflicts
     assert db_session.get(Event, event_id).status == EventStatus.planning_event
 
 
-def test_unaffected_venue_booking_stays_approved_for_equipment_only_change(
+def test_ac6_frozen_literal_a_booking_that_still_fits_is_suitable_with_no_conflicts(
+    client, db_session
+):
+    organiser, organiser_headers, coordinator, _, event_id = _assigned(
+        client, db_session, status=EventStatus.planning_event
+    )
+    booking, _, _ = _two_arrangements(db_session, event_id, organiser, coordinator)
+    # what the submitted Event asks of its venue (event_review_test_helpers.COMPLETE)
+    booking.venue.facilities = ["Main hall"]
+    booking.venue.accessibility_features = ["Step-free access"]
+    db_session.commit()
+
+    request = _change_request(client, event_id, organiser_headers, {"expected_attendance": 250})
+
+    impact = request["venue_bookings_to_reconsider"][0]
+    assert impact["suitable"] is True
+    assert impact["unmet_requirements"] == []
+    assert impact["conflicts"] == []
+
+
+def test_ac2_unaffected_venue_booking_stays_approved_for_equipment_only_change(
     client, db_session
 ):
     organiser, organiser_headers, event_id = _submitted(client, db_session)
@@ -307,39 +531,11 @@ def test_unaffected_venue_booking_stays_approved_for_equipment_only_change(
         "Equipment Coordinator",
     )
     _assign(db_session, event_id, coordinator)
-    event = db_session.get(Event, event_id)
-    event.status = EventStatus.planning_event
-    venue = Venue(name="Main Hall", location="Building A", capacity=300)
-    equipment = Equipment(
-        name="Projector",
-        total_quantity=2,
-        operational_status=EquipmentOperationalStatus.available,
-    )
-    db_session.add_all([venue, equipment])
-    db_session.flush()
-    booking = VenueBooking(
-        event_id=event_id,
-        venue_id=venue.id,
-        requested_by=organiser.id,
-        start_time=event.proposed_start,
-        end_time=event.proposed_end,
-        status=BookingStatus.approved,
-    )
-    reservation = EquipmentRequest(
-        event_id=event_id,
-        equipment_id=equipment.id,
-        quantity_requested=1,
-        status=EquipmentStatus.reserved,
-    )
-    requirement = CoordinatorEquipmentRequirement(
-        event_id=event_id,
-        category="Projection",
-        quantity_needed=1,
-        status=EquipmentStatus.reserved,
-        created_by=coordinator.id,
-    )
-    db_session.add_all([booking, reservation, requirement])
+    db_session.get(Event, event_id).status = EventStatus.planning_event
     db_session.commit()
+    booking, reservation, requirement = _two_arrangements(
+        db_session, event_id, organiser, coordinator
+    )
 
     request = _change_request(
         client,
@@ -365,7 +561,7 @@ def test_unaffected_venue_booking_stays_approved_for_equipment_only_change(
     assert reservation.status == EquipmentStatus.requested
 
 
-def test_attendance_change_reopens_venue_only_and_preserves_equipment_reservations(
+def test_ac2_attendance_change_reopens_venue_only_and_preserves_equipment_reservations(
     client, db_session
 ):
     organiser, organiser_headers, event_id = _submitted(client, db_session)
@@ -377,39 +573,11 @@ def test_attendance_change_reopens_venue_only_and_preserves_equipment_reservatio
         "Attendance Coordinator",
     )
     _assign(db_session, event_id, coordinator)
-    event = db_session.get(Event, event_id)
-    event.status = EventStatus.safety_check_passed
-    venue = Venue(name="Main Hall", location="Building A", capacity=300)
-    equipment = Equipment(
-        name="Projector",
-        total_quantity=2,
-        operational_status=EquipmentOperationalStatus.available,
-    )
-    db_session.add_all([venue, equipment])
-    db_session.flush()
-    booking = VenueBooking(
-        event_id=event_id,
-        venue_id=venue.id,
-        requested_by=organiser.id,
-        start_time=event.proposed_start,
-        end_time=event.proposed_end,
-        status=BookingStatus.approved,
-    )
-    reservation = EquipmentRequest(
-        event_id=event_id,
-        equipment_id=equipment.id,
-        quantity_requested=1,
-        status=EquipmentStatus.reserved,
-    )
-    requirement = CoordinatorEquipmentRequirement(
-        event_id=event_id,
-        category="Projection",
-        quantity_needed=1,
-        status=EquipmentStatus.reserved,
-        created_by=coordinator.id,
-    )
-    db_session.add_all([booking, reservation, requirement])
+    db_session.get(Event, event_id).status = EventStatus.safety_check_passed
     db_session.commit()
+    booking, reservation, requirement = _two_arrangements(
+        db_session, event_id, organiser, coordinator
+    )
 
     request = _change_request(
         client,
@@ -439,10 +607,167 @@ def test_attendance_change_reopens_venue_only_and_preserves_equipment_reservatio
     assert db_session.get(Event, event_id).status == EventStatus.planning_event
 
 
+# --- AC2: "unless I choose otherwise" ------------------------------------------------
+
+
+def test_ac2_a_pending_request_offers_the_unaffected_arrangements_as_choices(
+    client, db_session
+):
+    organiser, organiser_headers, coordinator, _, event_id = _assigned(
+        client, db_session, status=EventStatus.planning_event
+    )
+    booking, reservation, _ = _two_arrangements(db_session, event_id, organiser, coordinator)
+
+    request = _change_request(client, event_id, organiser_headers, {"expected_attendance": 180})
+
+    assert [b["id"] for b in request["venue_bookings_to_reconsider"]] == [booking.id]
+    assert request["other_venue_bookings"] == []
+    assert [r["id"] for r in request["other_equipment_reservations"]] == [reservation.id]
+    assert request["other_equipment_reservations"][0]["equipment_name"] == "Projector"
+
+
+def test_ac2_the_coordinator_can_choose_to_reopen_an_unaffected_arrangement(
+    client, db_session
+):
+    organiser, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=EventStatus.safety_check_passed
+    )
+    booking, reservation, _ = _two_arrangements(db_session, event_id, organiser, coordinator)
+    request = _change_request(client, event_id, organiser_headers, {"expected_attendance": 180})
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/approve",
+        headers=coordinator_headers,
+        json={"reopen_equipment_reservation_ids": [reservation.id]},
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.refresh(booking)
+    db_session.refresh(reservation)
+    assert booking.status == BookingStatus.pending
+    assert reservation.status == EquipmentStatus.requested
+    assert response.json()["other_equipment_reservations"] == []
+    entry = (
+        db_session.query(EventStatusHistory)
+        .filter(
+            EventStatusHistory.event_id == event_id,
+            EventStatusHistory.note.startswith("Also reopened for review"),
+        )
+        .one()
+    )
+    assert f"Equipment reservation #{reservation.id} (Projector)" in entry.note
+    assert entry.changed_by == coordinator.id
+
+
+def test_ac2_choosing_to_reopen_on_a_minor_change_returns_a_confirmed_event_to_planning(
+    client, db_session
+):
+    organiser, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=EventStatus.safety_check_passed
+    )
+    booking, reservation, _ = _two_arrangements(db_session, event_id, organiser, coordinator)
+    request = _change_request(client, event_id, organiser_headers, {"description": "Typo fixed"})
+    assert [b["id"] for b in request["other_venue_bookings"]] == [booking.id]
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/approve",
+        headers=coordinator_headers,
+        json={"reopen_venue_booking_ids": [booking.id]},
+    )
+
+    assert response.status_code == 200
+    db_session.refresh(booking)
+    db_session.refresh(reservation)
+    assert booking.status == BookingStatus.pending
+    assert reservation.status == EquipmentStatus.reserved
+    assert db_session.get(Event, event_id).status == EventStatus.planning_event
+
+
+def test_ac2_reopening_something_not_on_this_event_is_refused_and_nothing_changes(
+    client, db_session
+):
+    organiser, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=EventStatus.planning_event
+    )
+    booking, reservation, _ = _two_arrangements(db_session, event_id, organiser, coordinator)
+    request = _change_request(client, event_id, organiser_headers, {"expected_attendance": 180})
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/approve",
+        headers=coordinator_headers,
+        json={"reopen_venue_booking_ids": [999999], "reopen_equipment_reservation_ids": [888888]},
+    )
+
+    assert response.status_code == 422
+    messages = [item["msg"] for item in response.json()["detail"]]
+    assert messages == [
+        "Venue Booking #999999 is not an active booking on this Event, so it cannot be reopened for review.",
+        "Equipment reservation #888888 is not a Reserved item on this Event, so it cannot be reopened for review.",
+    ]
+    db_session.expire_all()
+    assert db_session.get(EventChangeRequest, request["id"]).status == ChangeRequestStatus.pending
+    assert db_session.get(VenueBooking, booking.id).status == BookingStatus.approved
+    assert db_session.get(EquipmentRequest, reservation.id).status == EquipmentStatus.reserved
+    assert db_session.get(Event, event_id).expected_attendance != 180
+
+
+def test_ac2_frozen_literal_a_decided_request_offers_no_choices(client, db_session):
+    organiser, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=EventStatus.planning_event
+    )
+    _two_arrangements(db_session, event_id, organiser, coordinator)
+    request = _change_request(client, event_id, organiser_headers, {"description": "Typo"})
+
+    rejected = client.post(
+        f"/events/change-requests/{request['id']}/reject", headers=coordinator_headers, json={}
+    ).json()
+
+    assert rejected["other_venue_bookings"] == []
+    assert rejected["other_equipment_reservations"] == []
+
+
+# --- AC9 / AC10 ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "confirmed_status", [EventStatus.awaiting_safety_check, EventStatus.safety_check_passed]
+)
+def test_ac9_a_major_approval_returns_the_event_to_planning_for_a_new_safety_check(
+    client, db_session, confirmed_status
+):
+    organiser, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=confirmed_status
+    )
+    _two_arrangements(db_session, event_id, organiser, coordinator)
+    request = _change_request(client, event_id, organiser_headers, {"expected_attendance": 200})
+    assert request["safety_check_required"] is True
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/approve", headers=coordinator_headers, json={}
+    )
+
+    assert response.status_code == 200
+    assert db_session.get(Event, event_id).status == EventStatus.planning_event
+    entry = (
+        db_session.query(EventStatusHistory)
+        .filter(
+            EventStatusHistory.event_id == event_id,
+            EventStatusHistory.from_status == confirmed_status,
+            EventStatusHistory.to_status == EventStatus.planning_event,
+        )
+        .one()
+    )
+    assert entry.changed_by == coordinator.id
+    assert "new safety check is required" in entry.note
+    submit = client.post(f"/events/{event_id}/confirm", headers=coordinator_headers)
+    assert submit.status_code == 409
+    assert "Main Hall" in submit.json()["detail"]
+
+
 @pytest.mark.parametrize(
     "terminal_status", [EventStatus.event_cancelled, EventStatus.event_completed]
 )
-def test_terminal_event_change_request_cannot_be_approved(
+def test_ac10_terminal_event_change_request_cannot_be_approved(
     client, db_session, terminal_status
 ):
     _, organiser_headers, event_id = _submitted(client, db_session)
@@ -467,5 +792,44 @@ def test_terminal_event_change_request_cannot_be_approved(
     )
 
     assert response.status_code == 409
+    assert response.json()["detail"] == "This event can no longer be changed."
     assert db_session.get(Event, event_id).description == original_description
+    assert db_session.get(Event, event_id).status == terminal_status
     assert db_session.get(EventChangeRequest, request["id"]).status == ChangeRequestStatus.pending
+
+
+# --- Readable errors instead of crashes ----------------------------------------------
+
+
+def test_a_stored_request_that_no_longer_validates_is_shown_and_refused_readably(
+    client, db_session
+):
+    organiser, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session
+    )
+    broken = EventChangeRequest(
+        event_id=event_id,
+        requested_by=organiser.id,
+        description="Saved before the rules tightened.",
+        proposed_changes={"expected_attendance": 0, "event_contact_email": "nope"},
+    )
+    db_session.add(broken)
+    db_session.commit()
+
+    listed = client.get(f"/events/assigned/{event_id}", headers=coordinator_headers)
+    assert listed.status_code == 200
+    assert listed.json()["change_requests"][0]["id"] == broken.id
+
+    response = client.post(
+        f"/events/change-requests/{broken.id}/approve", headers=coordinator_headers, json={}
+    )
+
+    assert response.status_code == 422
+    assert "no longer valid" in response.json()["detail"]
+    db_session.expire_all()
+    assert db_session.get(EventChangeRequest, broken.id).status == ChangeRequestStatus.pending
+
+    # it can still be rejected, so it does not block the Event
+    assert client.post(
+        f"/events/change-requests/{broken.id}/reject", headers=coordinator_headers, json={}
+    ).status_code == 200
