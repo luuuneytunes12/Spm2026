@@ -327,6 +327,7 @@ export function editPlanningEvent(
 ): Promise<PlanningEventEdit> {
   return apiFetch(`/events/assigned/${id}/planning`, {
     method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(changes),
   }) as Promise<PlanningEventEdit>
 }

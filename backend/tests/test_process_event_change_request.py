@@ -18,7 +18,7 @@ Each test is named after the acceptance criterion it proves:
   AC10  a request on a Cancelled or Completed Event cannot be approved
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -762,6 +762,132 @@ def test_ac9_a_major_approval_returns_the_event_to_planning_for_a_new_safety_che
     submit = client.post(f"/events/{event_id}/confirm", headers=coordinator_headers)
     assert submit.status_code == 409
     assert "Main Hall" in submit.json()["detail"]
+
+
+def _linked_requirement(db_session, event_id, coordinator):
+    """An approved booking, and a requirement Technical Support reserved an
+    item for -- linked the way the reserve endpoint links them, so its
+    Reserved status is the derived one everybody sees."""
+    booking, reservation, requirement = _two_arrangements(
+        db_session, event_id, coordinator, coordinator
+    )
+    reservation.equipment.category = requirement.category
+    db_session.add(
+        RequirementReservationLink(
+            requirement_id=requirement.id,
+            event_id=event_id,
+            equipment_id=reservation.equipment_id,
+        )
+    )
+    db_session.commit()
+    return booking, reservation, requirement
+
+
+def _requirement_status(client, event_id, requirement_id, headers):
+    response = client.get(f"/equipment-requirements/events/{event_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return next(item["status"] for item in response.json() if item["id"] == requirement_id)
+
+
+def _one_day_later(db_session, event_id):
+    event = db_session.get(Event, event_id)
+    return {
+        "proposed_start": (event.proposed_start + timedelta(days=1)).isoformat(),
+        "proposed_end": (event.proposed_end + timedelta(days=1)).isoformat(),
+    }
+
+
+@pytest.mark.parametrize(
+    "confirmed_status", [EventStatus.awaiting_safety_check, EventStatus.safety_check_passed]
+)
+@pytest.mark.parametrize("change", ["date_time", "equipment_requirement"])
+def test_ac9_a_date_time_or_equipment_change_stops_the_requirement_counting_as_reserved(
+    client, db_session, confirmed_status, change
+):
+    _, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=confirmed_status
+    )
+    _, reservation, requirement = _linked_requirement(db_session, event_id, coordinator)
+    assert _requirement_status(client, event_id, requirement.id, coordinator_headers) == "reserved"
+    changes = (
+        _one_day_later(db_session, event_id)
+        if change == "date_time"
+        else {"equipment_requirements": "Two projectors and a clicker"}
+    )
+    request = _change_request(client, event_id, organiser_headers, changes)
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/approve", headers=coordinator_headers, json={}
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(Event, event_id).status == EventStatus.planning_event
+    assert db_session.get(EquipmentRequest, reservation.id).status == EquipmentStatus.requested
+    assert (
+        _requirement_status(client, event_id, requirement.id, coordinator_headers) == "requested"
+    )
+    submit = client.post(f"/events/{event_id}/confirm", headers=coordinator_headers)
+    assert submit.status_code == 409
+    assert "Equipment requirement 'Projection' is not reserved" in submit.json()["detail"]
+
+
+def test_ac9_once_staff_confirm_again_for_the_new_window_the_event_can_be_submitted(
+    client, db_session
+):
+    _, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=EventStatus.safety_check_passed
+    )
+    booking, reservation, requirement = _linked_requirement(db_session, event_id, coordinator)
+    request = _change_request(
+        client, event_id, organiser_headers, _one_day_later(db_session, event_id)
+    )
+    assert client.post(
+        f"/events/change-requests/{request['id']}/approve", headers=coordinator_headers, json={}
+    ).status_code == 200
+    _, venue_headers = user(
+        client, db_session, Role.VENUE_STAFF, "recheck-venue@example.com", "Venue Staff"
+    )
+    _, support_headers = user(
+        client, db_session, Role.TECH_SUPPORT, "recheck-support@example.com", "Tech Support"
+    )
+
+    approved = client.post(f"/venue-bookings/{booking.id}/approve", headers=venue_headers)
+    reserved = client.post(
+        f"/equipment-requirements/{requirement.id}/reservations",
+        headers=support_headers,
+        json={"equipment_id": reservation.equipment_id},
+    )
+
+    assert approved.status_code == 200, approved.text
+    assert reserved.status_code == 200, reserved.text
+    assert (
+        _requirement_status(client, event_id, requirement.id, coordinator_headers) == "reserved"
+    )
+    submit = client.post(f"/events/{event_id}/confirm", headers=coordinator_headers)
+    assert submit.status_code == 200, submit.text
+    assert submit.json()["status"] == EventStatus.awaiting_safety_check
+
+
+def test_ac2_an_attendance_only_change_leaves_the_linked_requirement_reserved(
+    client, db_session
+):
+    _, organiser_headers, coordinator, coordinator_headers, event_id = _assigned(
+        client, db_session, status=EventStatus.safety_check_passed
+    )
+    _, reservation, requirement = _linked_requirement(db_session, event_id, coordinator)
+    request = _change_request(client, event_id, organiser_headers, {"expected_attendance": 180})
+
+    response = client.post(
+        f"/events/change-requests/{request['id']}/approve", headers=coordinator_headers, json={}
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(EquipmentRequest, reservation.id).status == EquipmentStatus.reserved
+    assert (
+        _requirement_status(client, event_id, requirement.id, coordinator_headers) == "reserved"
+    )
 
 
 @pytest.mark.parametrize(
