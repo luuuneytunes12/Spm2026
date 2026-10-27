@@ -1,9 +1,10 @@
 # backend/sql (frozen)
 
 The hand-run migrations from before the deploy pipeline existed, kept as
-history because comments across the codebase cite them by number. All of
-them are folded into `supabase/migrations/20261016000000_baseline.sql`, and
-the seed files among them into `supabase/seed.sql`.
+history because comments across the codebase cite them by number. 001-028
+are folded into `supabase/migrations/20261016000000_baseline.sql`, 029-033
+are copied into `supabase/migrations/` one for one, and the seed files are in
+`supabase/seed.sql`.
 
 **Do not add new files here.** For a schema change:
 
