@@ -15,6 +15,8 @@ export const BookingStatus = {
   HOLD_EXPIRED: 'hold_expired',
   /** Superseded by an approved replacement (SCRUM-95); kept as history. */
   REPLACED: 'replaced',
+  /** Freed because the Event was cancelled or completed; kept as history. */
+  RELEASED: 'released',
 } as const
 export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus]
 
@@ -26,6 +28,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   cancelled: 'Cancelled',
   hold_expired: 'Hold Expired',
   replaced: 'Replaced',
+  released: 'Released',
 }
 
 /** Event statuses from which a venue can be requested. Mirrors

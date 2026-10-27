@@ -216,7 +216,7 @@ def _event_activity(db: Session, event_id: int) -> list[ActivityEntry]:
             note=entry.note,
             changed_by_name=entry.changed_by_user.name
             if entry.changed_by_user
-            else None,
+            else "System",
             created_at=entry.created_at,
         )
         for entry in history
@@ -1095,26 +1095,8 @@ def cancel_event(
             line.status = EquipmentStatus.cancelled
             line.notes = f"{line.notes}\n{release_note}" if line.notes else release_note
 
-    live_bookings = (
-        db.query(VenueBooking)
-        .filter(
-            VenueBooking.event_id == event.id,
-            VenueBooking.status.in_(
-                (
-                    BookingStatus.pending,
-                    BookingStatus.tentative_hold,
-                    BookingStatus.approved,
-                )
-            ),
-        )
-        .with_for_update()
-        .all()
-    )
-    for booking in live_bookings:
-        booking.status = BookingStatus.cancelled
-        booking.expires_at = None
-        booking.decision_notes = f"Released because the event was cancelled: {body.reason}"
-
+    # Venue Bookings and Tentative Holds are released on commit by
+    # app/services/venue_release.py.
     db.add(
         EventStatusHistory(
             event_id=event.id,
