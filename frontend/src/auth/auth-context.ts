@@ -13,6 +13,8 @@ export interface AuthUser {
   phone_country_code: string | null
   phone_number: string | null
   communication_preference: string | null
+  department: string | null
+  responsibilities: string | null
   created_at: string
 }
 

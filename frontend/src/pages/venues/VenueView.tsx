@@ -643,6 +643,12 @@ export function VenueView() {
         )}
       </header>
 
+      {canEdit && (
+        <p>
+          <Link to={`/venue-staff/venues/${venue.id}/edit`}>Edit venue details</Link>
+        </p>
+      )}
+
       <section className="card">
         <h2>Overview</h2>
         <dl className="detail-list">

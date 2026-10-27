@@ -78,6 +78,10 @@ class BookingStatus(enum.StrEnum):
     # A tentative hold whose expiry passed before it was approved: the venue
     # is free again for that window (sql/027). Never counts as a booking.
     hold_expired = "hold_expired"
+    # Superseded by an approved replacement booking (sql/029). Kept as history.
+    replaced = "replaced"
+    # Freed because its Event was cancelled or completed (sql/033). Kept as history.
+    released = "released"
 
 
 class EquipmentStatus(enum.StrEnum):
@@ -128,6 +132,10 @@ class NotificationType(enum.StrEnum):
     venue_hold_expired = "venue_hold_expired"
     venue_booking_changed = "venue_booking_changed"
     venue_booking_cancelled = "venue_booking_cancelled"
+    event_returned_to_planning = "event_returned_to_planning"
+    clarification_requested = "clarification_requested"
+    clarification_replied = "clarification_replied"
+    venue_booking_released = "venue_booking_released"
 
 
 class ChangeRequestStatus(enum.StrEnum):

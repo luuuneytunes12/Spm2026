@@ -409,6 +409,8 @@ def test_nothing_is_changed_outside_the_window(world, status):
     booking = _booking(world, "Marina Hall", BookingStatus.approved)
     world.event.status = status
     world.db.commit()
+    # Cancelled / completed already released it (venue_release.py).
+    before = world.db.get(VenueBooking, booking.id).status
 
     for call in (
         lambda s: s.change(booking.id, world.coordinator, venue_id=world.venues["Sky Room"].id),
@@ -418,7 +420,7 @@ def test_nothing_is_changed_outside_the_window(world, status):
     ):
         with pytest.raises(Conflict):
             call(_service(world))
-    assert world.db.get(VenueBooking, booking.id).status is BookingStatus.approved
+    assert world.db.get(VenueBooking, booking.id).status is before
 
 
 def test_cancelling_cancels_that_booking_and_leaves_the_rest(world):

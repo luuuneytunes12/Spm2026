@@ -286,6 +286,44 @@ class SafetyCheckReturn(BaseModel):
     items_to_review: list[str]
 
 
+class VenueBookingProgress(BaseModel):
+    """One Venue Booking as the Event's own Organiser sees it: where it
+    stands, nothing of Venue Staff's internal notes or other events."""
+
+    id: int
+    venue_name: str
+    status: str  # a BookingStatus value
+    start_time: datetime
+    end_time: datetime
+    # True when the venue fell through (rejected, hold lapsed) and the
+    # Coordinator must find another one.
+    needs_replacement: bool
+    # Set on a booking that was requested to replace an unavailable one.
+    replaces_venue_name: str | None = None
+
+
+class EquipmentProgress(BaseModel):
+    id: int
+    equipment_name: str
+    quantity_requested: int
+    status: EquipmentStatus
+
+
+class SafetyCheckProgress(BaseModel):
+    # "Not requested", "Awaiting Safety Officer", "Passed" or "Sent back".
+    stage: str
+    sent_back: SafetyCheckReturn | None = None
+
+
+class EventProgress(BaseModel):
+    """What the Organiser sees of an Event's planning (SCRUM-30 AC5)."""
+
+    status: EventStatus
+    venue_bookings: list[VenueBookingProgress]
+    equipment: list[EquipmentProgress]
+    safety_check: SafetyCheckProgress
+
+
 class AssignedEventDetail(EventOut):
     """Everything a Coordinator needs to plan an event assigned to them.
 

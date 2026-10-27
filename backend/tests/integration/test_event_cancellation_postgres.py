@@ -115,9 +115,9 @@ def test_cancel_event_persists_status_reason_releases_arrangements_and_frees_sto
     assert reason in reserved_line.notes
     for booking in bookings:
         db.refresh(booking)
-        assert booking.status is BookingStatus.cancelled
+        assert booking.status is BookingStatus.released
 
-    [history] = db.query(EventStatusHistory).filter_by(event_id=event.id).all()
+    [history] = db.query(EventStatusHistory).filter_by(event_id=event.id, changed_by=coordinator.id).all()
     assert history.from_status == EventStatus.planning_event.value
     assert history.to_status == EventStatus.event_cancelled.value
     assert history.note == reason
@@ -132,7 +132,7 @@ def test_cancel_event_persists_status_reason_releases_arrangements_and_frees_sto
     activity = client.get(f"/events/{event.id}/activity", headers=organiser_headers)
     assert activity.status_code == 200
     cancellation = next(
-        row for row in activity.json() if row["to_status"] == EventStatus.event_cancelled.value
+        row for row in activity.json() if row["from_status"] == EventStatus.planning_event.value
     )
     assert cancellation["note"] == reason
     assert cancellation["changed_by_name"] == coordinator.name
@@ -405,4 +405,4 @@ def test_cancellation_racing_venue_approval_cannot_leave_a_live_booking(
     assert approval.status_code in (200, 409), approval.text
     db.expire_all()
     assert db.get(Event, event_id).status is EventStatus.event_cancelled
-    assert db.get(VenueBooking, booking_id).status is BookingStatus.cancelled
+    assert db.get(VenueBooking, booking_id).status is BookingStatus.released

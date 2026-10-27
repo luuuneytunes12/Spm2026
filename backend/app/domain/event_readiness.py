@@ -47,8 +47,8 @@ def outstanding_arrangements(db: Session, event: Event) -> list[str]:
         .options(joinedload(VenueBooking.venue))
         .filter(
             VenueBooking.event_id == event.id,
-            # Withdrawn or lapsed: neither is a booking, nor outstanding.
-            VenueBooking.status.not_in((BookingStatus.cancelled, BookingStatus.hold_expired)),
+            # Withdrawn, lapsed or replaced (SCRUM-95): none is a booking, nor outstanding.
+            VenueBooking.status.not_in((BookingStatus.cancelled, BookingStatus.hold_expired, BookingStatus.replaced, BookingStatus.released)),
             or_(
                 VenueBooking.status != BookingStatus.tentative_hold,
                 and_(

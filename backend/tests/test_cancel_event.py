@@ -173,11 +173,11 @@ def test_cancellation_records_reason_actor_and_time_and_releases_event_reservati
     assert progress.reserved == 0
     for booking in bookings:
         db_session.refresh(booking)
-        assert booking.status is BookingStatus.cancelled
+        assert booking.status is BookingStatus.released
 
     history = (
         db_session.query(EventStatusHistory)
-        .filter_by(event_id=event_id, to_status=EventStatus.event_cancelled.value)
+        .filter_by(event_id=event_id, to_status=EventStatus.event_cancelled.value, changed_by=coordinator.id)
         .one()
     )
     assert history.from_status == EventStatus.planning_event.value
@@ -187,7 +187,7 @@ def test_cancellation_records_reason_actor_and_time_and_releases_event_reservati
     activity = client.get(f"/events/{event_id}/activity", headers=organiser_headers)
     assert activity.status_code == 200
     cancellation = next(
-        entry for entry in activity.json() if entry["to_status"] == EventStatus.event_cancelled.value
+        entry for entry in activity.json() if entry["from_status"] == EventStatus.planning_event.value
     )
     assert cancellation["note"] == reason
     assert cancellation["changed_by_name"] == coordinator.name

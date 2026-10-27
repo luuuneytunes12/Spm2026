@@ -89,8 +89,9 @@ class EventStatusHistory(Base):
     event_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("events.id", ondelete="CASCADE")
     )
+    # Null when the System made the change (sql/033), e.g. an automatic release.
     changed_by: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+        BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
     )
     from_status: Mapped[str | None] = mapped_column(Text)
     to_status: Mapped[str] = mapped_column(Text)

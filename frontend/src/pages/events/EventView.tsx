@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttendeeListSection } from '../../components/AttendeeListSection'
+import { ClarificationReplyPanel } from '../../components/ClarificationReplyPanel'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EventActivityLog } from '../../components/EventActivityLog'
+import { EventStatusTracker } from '../../components/EventStatusTracker'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { ApiError } from '../../lib/api'
 import {
@@ -163,6 +165,22 @@ export function EventView() {
           <h2 id="status-heading">Status</h2>
           <StatusTimeline status={event.status} activity={activity} />
         </section>
+      )}
+
+      <EventStatusTracker eventId={event.id} status={event.status} />
+
+      {event.status !== EventStatus.DRAFT && (
+        <ClarificationReplyPanel
+          event={event}
+          onChanged={() => {
+            void Promise.all([getEvent(event.id), getOwnEventActivity(event.id)]).then(
+              ([e, entries]) => {
+                setEvent(e)
+                setActivity(entries)
+              },
+            )
+          }}
+        />
       )}
 
       {event.status !== EventStatus.DRAFT && (

@@ -19,8 +19,9 @@ def event_activity(db: Session, event_id: int) -> list[ActivityEntry]:
             from_status=entry.from_status,
             to_status=entry.to_status,
             note=entry.note,
+            # No user means the System acted (sql/033), e.g. an automatic release.
             changed_by_name=entry.actor_name
-            or (entry.changed_by_user.name if entry.changed_by_user else None),
+            or (entry.changed_by_user.name if entry.changed_by_user else "System"),
             created_at=entry.created_at,
         )
         for entry in history

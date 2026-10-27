@@ -40,14 +40,18 @@ from app.schemas.event import (
     EventChangeRequestIn,
     EventChangeRequestOut,
     EquipmentLineIn,
+    EquipmentProgress,
     EventIn,
     EventOut,
     EquipmentRequirementImpact,
     PlanningEventEditOut,
+    EventProgress,
     EventSummary,
     OrganiserContact,
     RegistrationSettingsIn,
+    SafetyCheckProgress,
     SafetyCheckReturn,
+    VenueBookingProgress,
 )
 from app.services.event_activity import event_activity
 from app.services.notifications import notify
@@ -304,6 +308,28 @@ def _missing_mandatory(event: Event) -> list[tuple[str, str]]:
         if value is None or (isinstance(value, str) and not value.strip()):
             missing.append((field, label))
     return missing
+
+
+def _event_activity(db: Session, event_id: int) -> list[ActivityEntry]:
+    history = (
+        db.query(EventStatusHistory)
+        .options(joinedload(EventStatusHistory.changed_by_user))
+        .filter(EventStatusHistory.event_id == event_id)
+        .order_by(EventStatusHistory.created_at.desc(), EventStatusHistory.id.desc())
+        .all()
+    )
+    return [
+        ActivityEntry(
+            from_status=entry.from_status,
+            to_status=entry.to_status,
+            note=entry.note,
+            changed_by_name=entry.changed_by_user.name
+            if entry.changed_by_user
+            else "System",
+            created_at=entry.created_at,
+        )
+        for entry in history
+    ]
 
 
 # Activity-log note prefixes for a Safety Officer send-back
@@ -1475,26 +1501,8 @@ def cancel_event(
             line.status = EquipmentStatus.cancelled
             line.notes = f"{line.notes}\n{release_note}" if line.notes else release_note
 
-    live_bookings = (
-        db.query(VenueBooking)
-        .filter(
-            VenueBooking.event_id == event.id,
-            VenueBooking.status.in_(
-                (
-                    BookingStatus.pending,
-                    BookingStatus.tentative_hold,
-                    BookingStatus.approved,
-                )
-            ),
-        )
-        .with_for_update()
-        .all()
-    )
-    for booking in live_bookings:
-        booking.status = BookingStatus.cancelled
-        booking.expires_at = None
-        booking.decision_notes = f"Released because the event was cancelled: {body.reason}"
-
+    # Venue Bookings and Tentative Holds are released on commit by
+    # app/services/venue_release.py.
     db.add(
         EventStatusHistory(
             event_id=event.id,
@@ -1555,6 +1563,59 @@ def get_event(
 ) -> EventOut:
     """Reopen one request, with every previously entered value intact."""
     return EventOut.model_validate(_get_own_event(event_id, user, db))
+
+
+@router.get("/{event_id}/progress", response_model=EventProgress)
+def get_own_event_progress(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(Permission.EVENT_READ)),
+) -> EventProgress:
+    """How the signed-in Organiser's own event is coming along: each Venue
+    Booking, each equipment line, and the Safety Check -- including why it
+    was sent back. Another Organiser's event is a 404, like the event itself."""
+    event = _get_own_event(event_id, user, db)
+    bookings = (
+        db.query(VenueBooking)
+        .options(joinedload(VenueBooking.venue), joinedload(VenueBooking.replaces))
+        .filter(VenueBooking.event_id == event.id)
+        .order_by(VenueBooking.id)
+        .all()
+    )
+    sent_back = _safety_check_return(db, event)
+    if sent_back is not None:
+        stage = "Sent back"
+    elif event.status in (EventStatus.safety_check_passed, EventStatus.event_completed):
+        stage = "Passed"
+    elif event.status == EventStatus.awaiting_safety_check:
+        stage = "Awaiting Safety Officer"
+    else:
+        stage = "Not requested"
+    return EventProgress(
+        status=event.status,
+        venue_bookings=[
+            VenueBookingProgress(
+                id=b.id,
+                venue_name=b.venue.name,
+                status=b.status.value,
+                start_time=b.start_time,
+                end_time=b.end_time,
+                needs_replacement=b.status in (BookingStatus.rejected, BookingStatus.hold_expired),
+                replaces_venue_name=b.replaces.venue.name if b.replaces is not None else None,
+            )
+            for b in bookings
+        ],
+        equipment=[
+            EquipmentProgress(
+                id=line.id,
+                equipment_name=line.equipment.name,
+                quantity_requested=line.quantity_requested,
+                status=line.status,
+            )
+            for line in event.equipment_items
+        ],
+        safety_check=SafetyCheckProgress(stage=stage, sent_back=sent_back),
+    )
 
 
 @router.get("/{event_id}/activity", response_model=list[ActivityEntry])

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AttendeeListSection } from '../../components/AttendeeListSection'
+import { ClarificationRequestPanel } from '../../components/ClarificationRequestPanel'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
 import { EventActivityLog } from '../../components/EventActivityLog'
@@ -344,8 +345,8 @@ export function AssignedEventView() {
 
   const details: [string, string | null][] = [
     ['Event type', event.event_type],
-    ['Event contact name', event.event_contact_name],
-    ['Event contact email', event.event_contact_email],
+    ['Event contact name', event.event_contact_name ?? null],
+    ['Event contact email', event.event_contact_email ?? null],
     ['Purpose', event.purpose],
     ['Description', event.description],
     ['Date and time', formatRange(event.proposed_start, event.proposed_end)],
@@ -548,6 +549,12 @@ export function AssignedEventView() {
           </div>
         )}
       </section>
+
+      <ClarificationRequestPanel
+        eventId={event.id}
+        status={event.status}
+        onChanged={() => void refreshEvent()}
+      />
 
       {BOOKABLE_EVENT_STATUSES.includes(event.status) && (
         <>

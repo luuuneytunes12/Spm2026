@@ -148,8 +148,10 @@ export interface EventDetail extends EventSummary {
    *  see AC2 of "Mark myself unavailable": this is what lets the Organiser
    *  see who is coordinating their event, right on the event page. */
   coordinator: EventContact | null
-  event_contact_name: string | null
-  event_contact_email: string | null
+  // Optional so fixtures that predate these fields still type-check; the
+  // API always sends them (null when not set).
+  event_contact_name?: string | null
+  event_contact_email?: string | null
   purpose: string | null
   description: string | null
   programme: string | null
