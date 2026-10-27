@@ -155,11 +155,14 @@ def test_us3_ac7_approve_and_reject_fired_together_decide_the_request_once(
     )
     db.add(request)
     db.commit()
+    # Read once here: a commit expires `request`, and reading it from the
+    # racing threads would reload it through this one shared session at once.
+    request_id = request.id
 
     results = _race(
         make_client,
         lambda i, c: c.post(
-            f"/events/change-requests/{request.id}/{'approve' if i % 2 else 'reject'}",
+            f"/events/change-requests/{request_id}/{'approve' if i % 2 else 'reject'}",
             headers=coordinator_headers,
             json={},
         ),
@@ -168,7 +171,7 @@ def test_us3_ac7_approve_and_reject_fired_together_decide_the_request_once(
     codes = sorted(r.status_code for r in results)
     assert codes == [200] + [409] * (THREADS - 1), codes
     db.expire_all()
-    assert db.get(EventChangeRequest, request.id).status != ChangeRequestStatus.pending
+    assert db.get(EventChangeRequest, request_id).status != ChangeRequestStatus.pending
     assert db.query(EventStatusHistory).filter(
         EventStatusHistory.event_id == event_id,
         EventStatusHistory.note.like("Change Request %"),
