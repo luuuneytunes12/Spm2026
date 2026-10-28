@@ -276,7 +276,7 @@ describe('SCRUM-41 AC1 + AC5 - Venue Staff are warned of overlapping bookings', 
   it('AC5: shows this request\'s occupied time, from start minus setup to end plus turnaround', async () => {
     const local = (h: number, m = 0) => new Date(2026, 10, 2, h, m).toISOString()
     const clock = (iso: string) =>
-      new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
     // Event 09:00-17:00, 30 min setup, 45 min turnaround
     mockQueue.mockResolvedValue([
       {

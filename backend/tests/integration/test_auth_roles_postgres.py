@@ -189,12 +189,17 @@ def test_scrum70_ac1_the_lead_has_coordinator_grants_plus_assignment(client, mak
     assert {Permission.ASSIGNMENT_MANAGE.value, Permission.ASSIGNMENT_VIEW_ALL.value} <= perms
 
 
-@pytest.mark.parametrize("role", [Role.COORDINATOR_LEAD, Role.SAFETY_OFFICER])
-def test_scrum70_ac2_scrum91_ac2_new_roles_log_in_out_and_edit_their_profile(client, make_user, db, role):
+@pytest.mark.parametrize("role, department", [
+    (Role.COORDINATOR_LEAD, "events_coordination"),
+    (Role.SAFETY_OFFICER, "safety_compliance"),
+])
+def test_scrum70_ac2_scrum91_ac2_new_roles_log_in_out_and_edit_their_profile(client, make_user, db, role, department):
     user, _ = make_user(role, f"{role.value}@connectsphere.test", "New Role")
     headers = _bearer(_login(client, f"{role.value}@connectsphere.test"))
 
-    assert client.patch("/users/me", json={"organisation": "ConnectSphere"}, headers=headers).status_code == 200
+    # Internal staff must have a department to save their profile (SCRUM-19 AC5).
+    body = {"organisation": "ConnectSphere", "department": department}
+    assert client.patch("/users/me", json=body, headers=headers).status_code == 200
     assert client.post("/auth/logout").status_code == 204
     assert client.post("/auth/refresh").status_code == 401
     db.expire_all()
@@ -227,7 +232,8 @@ def test_scrum18_ac1_ac4_every_field_saves_and_survives_logout_and_login(client,
     user, _ = make_user(Role.VENUE_STAFF, "vic@connectsphere.test", "Vic Venue")
     headers = _bearer(_login(client, "vic@connectsphere.test"))
     changes = {"name": "Victoria Venue", "organisation": "Facilities", "email": "victoria@connectsphere.test",
-               "phone_country_code": "+65", "phone_number": "91234567", "communication_preference": "sms"}
+               "phone_country_code": "+65", "phone_number": "91234567", "communication_preference": "sms",
+               "department": "venue_operations"}  # staff must have one (SCRUM-19 AC5)
 
     res = client.patch("/users/me", json=changes, headers=headers)
 
