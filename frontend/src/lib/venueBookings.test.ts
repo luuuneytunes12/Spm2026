@@ -7,7 +7,7 @@ import { apiFetch } from './api'
 import {
   cancelFlaggedBooking,
   keepFlaggedBooking,
-  listFlaggedBookings, describeConflict, formatBookingPeriods, formatPeriod } from './venueBookings'
+  listFlaggedBookings, requestReplacementVenue, describeConflict, formatBookingPeriods, formatPeriod } from './venueBookings'
 
 vi.mock('./api', () => ({ apiFetch: vi.fn() }))
 const mockFetch = vi.mocked(apiFetch)
@@ -165,6 +165,18 @@ describe('Tentative hold - the form check and the request', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    })
+  })
+})
+
+describe('SCRUM-95 requestReplacementVenue', () => {
+  it('posts JSON (Content-Type set) to the booking being replaced', async () => {
+    mockFetch.mockResolvedValue({})
+    await requestReplacementVenue(5, { venue_id: 9, expected_attendance: 40 })
+    expect(mockFetch).toHaveBeenCalledWith('/venue-bookings/5/replacement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ venue_id: 9, expected_attendance: 40 }),
     })
   })
 })

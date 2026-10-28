@@ -121,7 +121,13 @@ def test_ac2_profile_edit_saves_and_persists_across_login(client, db_session, ro
     email, auth = _account(client, db_session, role)
     res = client.patch(
         "/users/me",
-        json={"name": "Renamed Lead", "organisation": "Acme", "phone_country_code": "+65", "phone_number": "91234567"},
+        json={
+            "name": "Renamed Lead",
+            "organisation": "Acme",
+            "phone_country_code": "+65",
+            "phone_number": "91234567",
+            "department": "events_coordination",  # staff must have one (SCRUM-19 AC5)
+        },
         headers=auth,
     )
     assert res.status_code == 200

@@ -273,6 +273,32 @@ describe('SCRUM-41 AC1 + AC5 - Venue Staff are warned of overlapping bookings', 
     expect(screen.getByText('Effective occupied time')).toBeInTheDocument()
   })
 
+  it('AC5: shows this request\'s occupied time, from start minus setup to end plus turnaround', async () => {
+    const local = (h: number, m = 0) => new Date(2026, 10, 2, h, m).toISOString()
+    const clock = (iso: string) =>
+      new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    // Event 09:00-17:00, 30 min setup, 45 min turnaround
+    mockQueue.mockResolvedValue([
+      {
+        ...BOOKING,
+        start_time: local(9),
+        end_time: local(17),
+        occupied_start: local(8, 30),
+        occupied_end: local(17, 45),
+        conflicts: [CONFLICT],
+      },
+    ])
+    render(<VenueBookingQueue />)
+    const card = within(await screen.findByRole('region', { name: /Regional Partner Conference/ }))
+    const row = card.getByText('Effective occupied time').closest('.detail-row') as HTMLElement
+    expect(row).toHaveTextContent(clock(local(8, 30)))
+    expect(row).toHaveTextContent(clock(local(17, 45)))
+    expect(row).not.toHaveTextContent(clock(local(9)))
+    const breakdown = card.getByText('Time breakdown').closest('.detail-row') as HTMLElement
+    expect(breakdown).toHaveTextContent('Setup 08:30-09:00')
+    expect(breakdown).toHaveTextContent('Turnaround 17:00-17:45')
+  })
+
   it('AC5: lists every conflict', async () => {
     mockQueue.mockResolvedValue([
       { ...BOOKING, conflicts: [CONFLICT, { ...CONFLICT, booking_id: 10, event_name: 'Careers Fair' }] },
@@ -307,6 +333,31 @@ describe('SCRUM-41 AC1 + AC5 - Venue Staff are warned of overlapping bookings', 
     expect(await card.findByText('Conflicts with Alumni Gala (2 Nov 2026).')).toBeInTheDocument()
     expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
+
+describe('SCRUM-41 AC6 - approval of an overlapping request is refused', () => {
+  it('shows the refusal naming the conflicting event, keeps the request pending and queued', async () => {
+    mockQueue.mockResolvedValue([BOOKING])
+    mockApprove.mockRejectedValue(
+      new ApiError(409, 'Marina Hall is already booked for Alumni Gala from 2 Nov 2026 15:00 to 17:00.'),
+    )
+    render(<VenueBookingQueue />)
+    const card = within(await screen.findByRole('region', { name: /Regional Partner Conference/ }))
+    await userEvent.click(card.getByRole('button', { name: 'Approve' }))
+    expect(await card.findByText(/already booked for Alumni Gala/)).toBeInTheDocument()
+    expect(card.getByRole('button', { name: 'Approve' })).toBeEnabled()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Regional Partner Conference' })).toBeInTheDocument()
+  })
+
+  it('does not offer approval at all while the screen already knows of the conflict, and names the event', async () => {
+    mockQueue.mockResolvedValue([{ ...BOOKING, conflicts: [CONFLICT] }])
+    render(<VenueBookingQueue />)
+    const card = within(await screen.findByRole('region', { name: /Regional Partner Conference/ }))
+    await userEvent.click(card.getByRole('button', { name: 'Approve' }))
+    expect(mockApprove).not.toHaveBeenCalled()
+    expect(card.getByRole('alert')).toHaveTextContent('Alumni Gala')
   })
 })
 

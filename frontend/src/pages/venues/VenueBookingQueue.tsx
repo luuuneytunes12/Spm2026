@@ -751,6 +751,12 @@ function BookingCard({
           <span className="badge">Safety re-review</span> {b.safety_recheck_reason}
         </p>
       )}
+      {b.replaces && (
+        <p className="notice" role="note">
+          <span className="badge">Replacement request</span> Replaces the booking at{' '}
+          {b.replaces.venue.name} (booking #{b.replaces.id}), which became unavailable.
+        </p>
+      )}
       <ConflictBanners booking={b} />
       <BookingDetails booking={b} />
 

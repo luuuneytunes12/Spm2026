@@ -105,3 +105,18 @@ const EVENT_DETAIL_PATH: Partial<Record<Role, (eventId: number) => string>> = {
 export function eventDetailPath(role: Role, eventId: number): string | null {
   return EVENT_DETAIL_PATH[role]?.(eventId) ?? null
 }
+
+/** Staff who work for the organisation (everyone but Organisers and
+ *  Attendees). They record a department and responsibilities on their
+ *  profile and appear in the staff directory (SCRUM-19). */
+export const INTERNAL_STAFF_ROLES: readonly Role[] = [
+  Role.COORDINATOR,
+  Role.COORDINATOR_LEAD,
+  Role.VENUE_STAFF,
+  Role.TECH_SUPPORT,
+  Role.SAFETY_OFFICER,
+]
+
+export function isInternalStaff(role: Role | string): boolean {
+  return (INTERNAL_STAFF_ROLES as readonly string[]).includes(role)
+}
