@@ -48,8 +48,14 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'safety_check_requested' }, 'safety_officer')).toBe('/safety-checks/7')
   })
 
+  it("sends an Attendee's change and registration notices to the event's page", () => {
+    expect(notificationLink({ ...n, type: 'event_details_changed' }, 'attendee')).toBe('/attendee/events/7')
+    expect(notificationLink({ ...n, type: 'registration_status_changed' }, 'attendee')).toBe('/attendee/events/7')
+  })
+
   it('has no link without an event, or for roles with no event page', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
-    expect(notificationLink(n, 'attendee')).toBeNull()
+    expect(notificationLink({ ...n, event_id: null }, 'attendee')).toBeNull()
+    expect(notificationLink(n, 'venue_staff')).toBeNull()
   })
 })
