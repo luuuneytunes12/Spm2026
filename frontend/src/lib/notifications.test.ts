@@ -57,6 +57,12 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'safety_check_withdrawn' }, 'safety_officer')).toBe('/safety-checks')
   })
 
+  it("sends Technical Support's equipment notices to the Event's equipment record", () => {
+    for (const type of ['equipment_required', 'equipment_requirement_changed', 'equipment_requirement_removed', 'equipment_event_rescheduled']) {
+      expect(notificationLink({ ...n, type }, 'tech_support')).toBe('/equipment-requirements/7')
+    }
+  })
+
   it('has no link without an event, or for roles with no event page', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
     expect(notificationLink({ ...n, event_id: null }, 'attendee')).toBeNull()
