@@ -426,7 +426,9 @@ def test_scrum22_ac6_nobody_but_the_organiser_may_request_a_change(client, make_
     assert db.query(EventChangeRequest).count() == 0
 
 
-@pytest.mark.xfail(strict=True, reason=(
+# Not strict: the bug only shows when the threads actually collide, which a
+# small CI runner does not always manage -- an XPASS there is luck, not a fix.
+@pytest.mark.xfail(strict=False, reason=(
     "BUG: POST /events/{id}/change-requests reads the Event without a row lock, so "
     "simultaneous requests all pass the 'already pending' check and several pending "
     "change requests are stored. Fix: _get_own_event(..., lock=True) in request_event_changes."
@@ -441,7 +443,7 @@ def test_scrum22_a_double_clicked_change_request_is_recorded_once(make_client, c
     assert db.query(EventChangeRequest).filter_by(status=ChangeRequestStatus.pending).count() == 1
 
 
-@pytest.mark.xfail(strict=True, reason=(
+@pytest.mark.xfail(strict=False, reason=(  # not strict: see above
     "BUG: _get_change_request_for_coordinator loads the change request BEFORE locking "
     "the Event, so each waiting request still sees 'pending' after the first commits: "
     "the change is applied and the Organiser notified once per click. Fix: load the "

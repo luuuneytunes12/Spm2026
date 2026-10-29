@@ -118,9 +118,10 @@ built.
 
 Either reopen these in Jira or record why they are out of scope.
 
-**Bugs found by the new race tests** (marked `xfail(strict=True)`, so CI
-stays green until they are fixed and goes red if the fix lands without
-removing the marker):
+**Bugs found by the new race tests** (marked `xfail`, so CI stays green
+until they are fixed; remove the marker with the fix). Not `strict`: the bug
+only shows when the threads actually collide, and on a small CI runner they
+sometimes do not, which strict mode turned into a random red build:
 
 1. *Double-clicked "request a change" (SCRUM-22)*: `POST
    /events/{id}/change-requests` reads the event without a row lock, so 6
