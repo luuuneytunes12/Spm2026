@@ -1936,6 +1936,19 @@ def edit_planning_event(
             detail="Expected attendance must be at least 1.",
         )
 
+    # Registered Attendees hear about a new date or time on a confirmed
+    # event: one notice for the whole save. Worked out before the edit, as
+    # an important change moves the event out of 'confirmed' below.
+    attendee_notice = (
+        EventChangedNotice(
+            EventChangedNotice.schedule_changes(
+                event.proposed_start, event.proposed_end, proposed_start, proposed_end
+            )
+        )
+        if event.status == CONFIRMED
+        else EventChangedNotice([])
+    )
+
     changed_fields: set[str] = set()
     for field, value in proposed.items():
         current = getattr(event, field)
@@ -2008,6 +2021,7 @@ def edit_planning_event(
                 ),
             )
         )
+        attendee_notice.send(db, event)
         db.commit()
         db.refresh(event)
 
