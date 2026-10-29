@@ -53,6 +53,10 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'registration_status_changed' }, 'attendee')).toBe('/attendee/events/7')
   })
 
+  it("sends the Safety Officer's 'left your queue' notice to the queue, not the event's check", () => {
+    expect(notificationLink({ ...n, type: 'safety_check_withdrawn' }, 'safety_officer')).toBe('/safety-checks')
+  })
+
   it('has no link without an event, or for roles with no event page', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
     expect(notificationLink({ ...n, event_id: null }, 'attendee')).toBeNull()
