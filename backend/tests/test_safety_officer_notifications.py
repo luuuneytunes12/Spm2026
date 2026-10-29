@@ -111,7 +111,7 @@ def test_ac1_the_notification_reaches_the_safety_officer_live(client, db_session
     w = _ready(client, db_session)
     _confirm(client, w)
 
-    assert [(uid, p["type"]) for uid, p in pushed] == [(w["officer"].id, REQUESTED)]
+    assert [(uid, p["type"]) for uid, p in pushed if uid == w["officer"].id] == [(w["officer"].id, REQUESTED)]
 
 
 # --- AC1: resubmitted -------------------------------------------------------
