@@ -157,7 +157,11 @@ test('DT accessibility: the date and time fields have no serious axe violations 
   const { violations } = await new AxeBuilder({ page: sam })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
-  expect(violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([])
+  // Include affected elements and axe's explanation so a CI failure can be fixed, not hidden.
+  expect(violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => ({
+    id: v.id,
+    nodes: v.nodes.map((node) => ({ target: node.target, failureSummary: node.failureSummary })),
+  }))).toEqual([])
 
   // Labelled, and reachable in order with Tab. A date input holds several
   // focus stops (day, month, year), so tab until the next field is reached.
