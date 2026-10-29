@@ -307,10 +307,11 @@ def test_scrum71_organiser_counts_drafts_submitted_and_unread(client, make_user,
 
     assert len(client.get("/events?status=draft", headers=org_h).json()) == 2
     assert len([e for e in client.get("/events", headers=org_h).json() if e["status"] != "draft"]) == 1
-    assert _unread(client, org_h) == 3
+    # 3 seeded + the "now Submitted" status notice for her one submitted request.
+    assert _unread(client, org_h) == 4
     first = client.get("/notifications", headers=org_h).json()[0]["id"]
     client.post("/notifications/read", json={"ids": [first]}, headers=org_h)
-    assert _unread(client, org_h) == 2
+    assert _unread(client, org_h) == 3
 
 
 def test_scrum72_coordinator_counts_only_their_assigned_events(client, make_user, db):

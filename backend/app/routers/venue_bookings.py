@@ -238,11 +238,20 @@ def _pending_for_decision(booking_id: int, db: Session) -> VenueBooking:
     """
     # Sweep expired holds first: the sweep commits, which would drop a lock.
     expire_tentative_holds(db)
-    # Venue first, then the booking: the same order as the setup/turnaround
-    # re-check and keep-conflict, so none of them can deadlock on each other.
-    venue_id = db.scalar(select(VenueBooking.venue_id).where(VenueBooking.id == booking_id))
-    if venue_id is None:
+    # Event, then venue, then the booking: the order cancel and change use,
+    # so none of them can deadlock on each other. The Event comes first
+    # because the decision notifies its Organiser, and a notification row
+    # takes a key lock on its Event. FOR NO KEY UPDATE, not FOR UPDATE: it
+    # still queues behind cancel and change (FOR UPDATE), but not behind
+    # paths that lock a venue first and then notify (venue unavailability),
+    # whose key lock it does not block.
+    found = db.execute(
+        select(VenueBooking.event_id, VenueBooking.venue_id).where(VenueBooking.id == booking_id)
+    ).one_or_none()
+    if found is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking request not found")
+    event_id, venue_id = found
+    db.get(Event, event_id, with_for_update={"key_share": True})
     db.get(Venue, venue_id, with_for_update=True)
     booking = db.get(VenueBooking, booking_id, with_for_update=True)
     if booking is None:
