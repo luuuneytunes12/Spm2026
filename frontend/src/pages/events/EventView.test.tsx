@@ -37,6 +37,8 @@ const BASE: EventDetail = {
   organiser_id: 1,
   coordinator_id: null,
   coordinator: null,
+  event_contact_name: null,
+  event_contact_email: null,
   name: 'Robotics Summit',
   event_type: 'conference',
   purpose: 'Annual partner briefing',
@@ -144,8 +146,10 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
       created_at: '2026-09-11T09:00:00Z',
       reviewed_at: '2026-09-12T09:00:00Z',
       important_change: true,
+      safety_check_required: false,
       venue_bookings_to_reconsider: [],
       equipment_reservations_to_reconsider: [],
+      equipment_requirements_to_reconsider: [],
     }
     mockChangeRequests.mockResolvedValue([changeRequest])
 
@@ -169,8 +173,10 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
         created_at: '2026-09-11T09:00:00Z',
         reviewed_at: null,
         important_change: true,
+        safety_check_required: false,
         venue_bookings_to_reconsider: [],
         equipment_reservations_to_reconsider: [],
+        equipment_requirements_to_reconsider: [],
       },
     ])
 

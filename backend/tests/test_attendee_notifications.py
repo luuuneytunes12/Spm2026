@@ -213,6 +213,107 @@ def test_ac1_the_change_is_still_applied(client, db_session):
     assert db_session.get(Event, w["event_id"]).proposed_start.hour == 10
 
 
+# --- AC1: the Coordinator editing the confirmed Event directly -------------
+
+
+def _edit(client, w, **body):
+    """The assigned Coordinator edits the Event's details in one save."""
+    edited = client.patch(f"/events/assigned/{w['event_id']}/planning", json=body, headers=w["coord_h"])
+    assert edited.status_code == 200, edited.text
+    return edited.json()
+
+
+def test_ac1_a_coordinator_edit_of_date_and_time_gives_one_notice_with_both(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    _register(client, w, amy_h)
+
+    _edit(client, w, proposed_start=NEW_START, proposed_end=NEW_END)
+
+    assert _inbox(client, amy_h, CHANGED) == [
+        "'Regional Partner Conference', which you are registered for, has changed: "
+        "it now starts 3 Nov 2026, 10:00 UTC; it now ends 3 Nov 2026, 18:00 UTC."
+    ]
+
+
+def test_ac1_a_coordinator_edit_of_the_end_only_names_just_that(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    _register(client, w, amy_h)
+
+    _edit(client, w, proposed_end="2026-11-02T19:00:00Z")
+
+    [message] = _inbox(client, amy_h, CHANGED)
+    assert message.endswith("has changed: it now ends 2 Nov 2026, 19:00 UTC.")
+
+
+def test_ac1_a_coordinator_edit_not_touching_date_or_time_sends_nothing(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    _register(client, w, amy_h)
+
+    _edit(client, w, description="A longer description.")
+
+    assert _inbox(client, amy_h, CHANGED) == []
+
+
+def test_ac1_a_coordinator_edit_to_the_same_date_and_time_sends_nothing(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    _register(client, w, amy_h)
+
+    _edit(client, w, proposed_start="2026-11-02T09:00:00Z", proposed_end="2026-11-02T17:00:00Z")
+
+    assert _inbox(client, amy_h, CHANGED) == []
+
+
+def test_ac1_a_coordinator_edit_of_an_unconfirmed_event_sends_nothing(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    _register(client, w, amy_h)
+    db_session.get(Event, w["event_id"]).status = EventStatus.planning_event
+    db_session.commit()
+
+    _edit(client, w, proposed_start=NEW_START, proposed_end=NEW_END)
+
+    assert _notes(db_session, amy.id, CHANGED) == []
+
+
+def test_ac1_a_refused_coordinator_edit_sends_nothing(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    _register(client, w, amy_h)
+
+    refused = client.patch(
+        f"/events/assigned/{w['event_id']}/planning",
+        json={"proposed_start": NEW_END, "proposed_end": NEW_START},  # ends before it starts
+        headers=w["coord_h"],
+    )
+
+    assert refused.status_code == 422
+    assert _inbox(client, amy_h, CHANGED) == []
+
+
+def test_ac1_a_coordinator_edit_still_reopens_the_event(client, db_session):
+    """Frozen: a new date still sends the confirmed Event back to planning."""
+    w = _confirmed_event(client, db_session)
+    assert _edit(client, w, proposed_start=NEW_START, proposed_end=NEW_END)["status"] == "planning_event"
+
+
+def test_ac2_a_withdrawn_attendee_is_not_told_about_a_coordinator_edit(client, db_session):
+    w = _confirmed_event(client, db_session)
+    amy, amy_h = _attendee(client, db_session, "amy")
+    ben, ben_h = _attendee(client, db_session, "ben")
+    _register(client, w, amy_h)
+    _register(client, w, ben_h)
+    _withdraw(client, w, ben_h)
+
+    _edit(client, w, proposed_start=NEW_START, proposed_end=NEW_END)
+
+    assert len(_notes(db_session, amy.id, CHANGED)) == 1
+    assert _notes(db_session, ben.id, CHANGED) == []
+
+
 # --- AC2 / AC4: withdrawn or unregistered -> nothing -----------------------
 
 

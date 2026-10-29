@@ -244,7 +244,10 @@ def test_ac4_the_expiry_stays_in_the_events_history(client, db_session):
     assert any(n == "Tentative hold on 'Marina Hall' expired." for n in notes)
     # ...and the Coordinator reads it in the Event's activity log.
     activity = client.get(f"/events/assigned/{s['event_id']}", headers=s["coord_h"]).json()["activity"]
-    assert any("Tentative hold on 'Marina Hall' expired." in (a.get("note") or "") for a in activity)
+    expiry_entry = next(
+        a for a in activity if a["note"] == "Tentative hold on 'Marina Hall' expired."
+    )
+    assert expiry_entry["changed_by_name"] == "System"
     # The booking row itself is kept, with its outcome, not deleted.
     assert db_session.get(VenueBooking, s["booking_id"]).decision_notes == "Tentative hold expired."
 

@@ -11,6 +11,7 @@ from app.schemas.clarification import ClarificationOut
 from app.schemas.event import EventIn
 from app.services.equipment_lines import replace_equipment_lines
 from app.services.notifications import notify
+from app.services.tech_support_notices import notify_if_rescheduled
 
 
 def to_out(row: EventClarification) -> ClarificationOut:
@@ -81,7 +82,9 @@ def reply_to_clarification(
 ) -> EventClarification:
     note = message
     if updates is not None:
+        old_start, old_end = event.proposed_start, event.proposed_end
         summary = _apply_updates(db, event, updates)
+        notify_if_rescheduled(db, event, old_start, old_end)
         if summary:
             note = f"{message}\nChanged: " + "; ".join(summary)
     row = _record(db, event, organiser, "reply", message, EventStatus.under_review, note)

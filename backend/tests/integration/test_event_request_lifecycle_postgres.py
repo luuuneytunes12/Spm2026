@@ -443,12 +443,6 @@ def test_scrum22_a_double_clicked_change_request_is_recorded_once(make_client, c
     assert db.query(EventChangeRequest).filter_by(status=ChangeRequestStatus.pending).count() == 1
 
 
-@pytest.mark.xfail(strict=False, reason=(  # not strict: see above
-    "BUG: _get_change_request_for_coordinator loads the change request BEFORE locking "
-    "the Event, so each waiting request still sees 'pending' after the first commits: "
-    "the change is applied and the Organiser notified once per click. Fix: load the "
-    "change request with_for_update=True (or db.refresh it after the Event lock)."
-))
 def test_scrum22_a_double_clicked_approval_applies_and_notifies_once(make_client, client, make_user, db):
     _o, org_h, _l, _lh, _c, coord_h, event_id = _world(client, make_user)
     cr = _request_change(client, org_h, event_id, {"name": "Renamed"}).json()
