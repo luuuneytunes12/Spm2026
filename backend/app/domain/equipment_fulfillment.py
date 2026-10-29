@@ -53,6 +53,7 @@ from app.models.enums import EquipmentStatus
 from app.models.equipment import CoordinatorEquipmentRequirement, Equipment
 from app.models.events import Event
 from app.models.user import User
+from app.services.organiser_notices import EquipmentOutcomeNotice
 
 __all__ = [
     "TECH_SUPPORT_STATUSES",
@@ -181,6 +182,7 @@ class EquipmentRequirementFulfillmentService:
             after.status,
             by=user.name,
         )
+        self._tell_organiser(requirement, progress.status, after.status)
         return requirement, after
 
     def update(
@@ -217,7 +219,20 @@ class EquipmentRequirementFulfillmentService:
                 by=actor.name,
                 reason=after.unavailable_reason,
             )
+        self._tell_organiser(requirement, progress.status, after.status, after.unavailable_reason)
         return requirement, after
+
+    def _tell_organiser(
+        self,
+        requirement: CoordinatorEquipmentRequirement,
+        before: RequirementStatus,
+        after: RequirementStatus,
+        reason: str | None = None,
+    ) -> None:
+        """Confirmed or Unavailable is news to the Event's Organiser."""
+        notice = EquipmentOutcomeNotice.for_change(requirement, before, after, reason)
+        if notice is not None:
+            notice.send(self._db, self._event_of(requirement))
 
     # --- rules --------------------------------------------------------------
 

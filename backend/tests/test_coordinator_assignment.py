@@ -224,7 +224,11 @@ def test_assignment_is_pushed_live_to_the_assigned_coordinator(client, db_sessio
     # Role-specific: the Coordinator hears they were assigned, the Organiser
     # hears who their Coordinator is -- each with their own notification.
     pushed = _pushed(publish)
-    assert {(user_id, payload["type"]) for user_id, payload in pushed} == {
+    assert {
+        (user_id, payload["type"])
+        for user_id, payload in pushed
+        if payload["type"] != "event_status_changed"  # the status notice is the Organiser story's
+    } == {
         (coordinator.id, "event_assigned"),
         (organiser.id, "event_coordinator_assigned"),
     }

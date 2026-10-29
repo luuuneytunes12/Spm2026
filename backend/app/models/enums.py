@@ -166,6 +166,11 @@ class NotificationType(enum.StrEnum):
     equipment_requirement_changed = "equipment_requirement_changed"
     equipment_requirement_removed = "equipment_requirement_removed"
     equipment_event_rescheduled = "equipment_event_rescheduled"
+    # Event Organiser: their Event's status, a Venue Booking decision, an
+    # equipment outcome.
+    event_status_changed = "event_status_changed"
+    venue_booking_decided = "venue_booking_decided"
+    equipment_outcome = "equipment_outcome"
 
 
 class ChangeRequestStatus(enum.StrEnum):

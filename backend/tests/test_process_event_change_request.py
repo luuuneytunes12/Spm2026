@@ -299,6 +299,7 @@ def test_ac3_ac4_ac7_decision_notifies_organiser_and_is_activity_logged_once(
     notification = (
         db_session.query(Notification)
         .filter_by(user_id=organiser.id, event_id=event_id)
+        .filter(Notification.type != "event_status_changed")  # the status notice is the Organiser story's
         .one()
     )
     assert notification.type == notification_type
@@ -331,6 +332,7 @@ def test_ac3_ac4_ac7_decision_notifies_organiser_and_is_activity_logged_once(
     assert (
         db_session.query(Notification)
         .filter_by(user_id=organiser.id, event_id=event_id)
+        .filter(Notification.type != "event_status_changed")  # the status notice is the Organiser story's
         .count()
         == 1
     )

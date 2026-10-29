@@ -89,7 +89,8 @@ test('TC-OL-3e: drafts, submitted requests and unread notifications are counted'
   const page = await openAs(browser, ORG)
   await expect(tile(page, /Drafted Requests/).locator('.tile-count')).toHaveText('2')
   await expect(tile(page, /Submitted Requests/).locator('.tile-count')).toHaveText('3')
-  await expect(tile(page, /Notifications/).locator('.tile-count')).toHaveText('5')
+  // 5 seeded + one "now Submitted" status notice per submitted request.
+  await expect(tile(page, /Notifications/).locator('.tile-count')).toHaveText('8')
 })
 
 test('TC-OL-2e: New Event Request, Drafted Requests and Submitted Requests open their features', async ({ browser, request }) => {
@@ -147,7 +148,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     addNotifications(ORG.email, 2)
     const page = await openAs(browser, ORG, { colorScheme })
     await expect(tile(page, /Drafted Requests/).locator('.tile-count')).toHaveText('1')
-    await expect(tile(page, /Notifications/).locator('.tile-count')).toHaveText('2')
+    // 2 seeded + the submitted request's status notice.
+    await expect(tile(page, /Notifications/).locator('.tile-count')).toHaveText('3')
     await expectNoSeriousViolations(page, `landing ${colorScheme}`)
   })
 }
