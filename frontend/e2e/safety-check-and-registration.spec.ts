@@ -50,9 +50,15 @@ const EMAILS = USERS.map((u) => u.email)
 const ATTENDEE = user('attendee', 'Amy Attendee', 'organiser') // registered through the API, so a real Attendee
 const VENUE = { name: 'SCR Auditorium', location: 'Block B', capacity: 400 }
 const ITEM = { name: 'SCR Projector', category: 'Projection', total_quantity: 10 }
+// Keep the event in the future and the registration window around the run,
+// so CI does not stop working when a hard-coded calendar date passes.
+const FUTURE_YEAR = new Date().getFullYear() + 2
+const localDate = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 16)
 
 let equipmentId = 0
 
+// These scenarios prepare several real role hand-offs before opening the UI.
+test.setTimeout(90_000)
 test.beforeAll(() => {
   seedUsers(USERS)
   seedVenue(VENUE)
@@ -84,8 +90,8 @@ async function approvedEvent(request: APIRequestContext, h: Record<string, Heade
       purpose: 'Annual partner briefing',
       event_type: 'conference',
       description: 'A full-day briefing.',
-      proposed_start: '2026-11-02T09:00:00Z',
-      proposed_end: '2026-11-02T17:00:00Z',
+      proposed_start: `${FUTURE_YEAR}-11-02T09:00:00Z`,
+      proposed_end: `${FUTURE_YEAR}-11-02T17:00:00Z`,
       expected_attendance: 120,
       venue_requirements: 'Main hall',
       accessibility_needs: 'Step-free access',
@@ -212,14 +218,16 @@ test('TC-RG-AC1/5: dates are saved and shown, and an Attendee can then register'
 
   await sam.goto(`/coordinator/events/${eventId}`)
   await sam.getByLabel('Enable registration').check()
-  await sam.getByLabel('Registration opens').fill('2026-10-01T09:00')
-  await sam.getByLabel('Registration closes').fill('2026-11-01T09:00')
+  const opens = localDate(-3)
+  const closes = localDate(3)
+  await sam.getByLabel('Registration opens').fill(opens)
+  await sam.getByLabel('Registration closes').fill(closes)
   await sam.getByRole('button', { name: 'Save registration settings' }).click()
   await expect(sam.getByText('Registration settings saved.')).toBeVisible()
   await sam.reload() // saved, not just on screen
   await expect(sam.getByLabel('Enable registration')).toBeChecked()
-  await expect(sam.getByLabel('Registration opens')).toHaveValue('2026-10-01T09:00')
-  await expect(sam.getByLabel('Registration closes')).toHaveValue('2026-11-01T09:00')
+  await expect(sam.getByLabel('Registration opens')).toHaveValue(opens)
+  await expect(sam.getByLabel('Registration closes')).toHaveValue(closes)
 
   await call(request, 'post', '/auth/register', {}, { name: ATTENDEE.name, email: ATTENDEE.email, password: PASSWORD }, 201)
   const amy = await openAs(browser, { ...ATTENDEE, role: 'organiser' })
@@ -241,8 +249,8 @@ test('TC-RG-AC4: a close date after the event starts is flagged and nothing is s
 
   await sam.goto(`/coordinator/events/${eventId}`)
   await sam.getByLabel('Enable registration').check()
-  await sam.getByLabel('Registration opens').fill('2026-10-01T09:00')
-  await sam.getByLabel('Registration closes').fill('2026-11-30T09:00') // the event starts on 2 Nov
+  await sam.getByLabel('Registration opens').fill(localDate(-3))
+  await sam.getByLabel('Registration closes').fill(`${FUTURE_YEAR}-11-30T09:00`) // after the event starts
   await sam.getByRole('button', { name: 'Save registration settings' }).click()
 
   await expect(sam.getByRole('alert')).toContainText('cannot close after the event starts')
@@ -262,8 +270,8 @@ test('TC-RG-AC3: a venue that is no longer approved blocks registration, and the
 
   await sam.goto(`/coordinator/events/${eventId}`)
   await sam.getByLabel('Enable registration').check()
-  await sam.getByLabel('Registration opens').fill('2026-10-01T09:00')
-  await sam.getByLabel('Registration closes').fill('2026-11-01T09:00')
+  await sam.getByLabel('Registration opens').fill(localDate(-3))
+  await sam.getByLabel('Registration closes').fill(localDate(3))
   await sam.getByRole('button', { name: 'Save registration settings' }).click()
 
   const alert = sam.getByRole('alert')

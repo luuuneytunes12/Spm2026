@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -79,7 +80,7 @@ test('TC-UQ-3e: each row shows the review fields, oldest first', async ({ browse
   await expect(rows.nth(0)).toContainText('120 attendees')
   await expect(rows.nth(0)).toContainText('Organiser: Olivia Organiser')
   await expect(rows.nth(0)).toContainText(/Submitted [A-Z][a-z]{2} \d/)
-  await expect(rows.nth(0)).toContainText(/(2 Nov|Nov 2),? 2026/)
+  await expect(rows.nth(0)).toContainText(new RegExp(`(2 Nov|Nov 2),? ${E2E_TEST_YEAR}`))
 })
 
 test('TC-UQ-4e: opening a request shows what the Organiser entered, read-only', async ({ browser, request }) => {

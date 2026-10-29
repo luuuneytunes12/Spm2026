@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
@@ -50,8 +51,8 @@ async function flaggedBooking(request: APIRequestContext) {
       purpose: 'E2E',
       event_type: 'conference',
       description: 'E2E replacement test',
-      proposed_start: '2026-11-02T09:00:00Z',
-      proposed_end: '2026-11-02T12:00:00Z',
+      proposed_start: `${E2E_TEST_YEAR}-11-02T09:00:00Z`,
+      proposed_end: `${E2E_TEST_YEAR}-11-02T12:00:00Z`,
       expected_attendance: 50,
       venue_requirements: 'Hall',
       accessibility_needs: 'None',
@@ -77,7 +78,7 @@ async function flaggedBooking(request: APIRequestContext) {
   expect((await request.post(`${API}/venue-bookings/${bookingId}/approve`, { headers: staff })).ok()).toBe(true)
   const closed = await request.post(`${API}/venues/${oldId}/unavailability`, {
     headers: staff,
-    data: { start_time: '2026-11-02T00:00:00Z', end_time: '2026-11-03T00:00:00Z', reason_category: 'Renovation' },
+    data: { start_time: `${E2E_TEST_YEAR}-11-02T00:00:00Z`, end_time: `${E2E_TEST_YEAR}-11-03T00:00:00Z`, reason_category: 'Renovation' },
   })
   expect(closed.ok(), await closed.text()).toBe(true)
   return { eventId, bookingId }
@@ -108,8 +109,9 @@ test('TC-VR-1e: Find replacement opens Venue Search with the booking date, time 
       .filter({ has: coord.getByRole('button', { name: `Remove ${label} filter` }) })
       .locator('.filter-chip')
   await chip('Date & time').click()
-  await expect(coord.getByLabel('Available from')).toHaveValue('2026-11-02T09:00')
-  await expect(coord.getByLabel('Available until')).toHaveValue('2026-11-02T12:00')
+  await expect(coord.getByLabel('Date', { exact: true })).toHaveValue(`${E2E_TEST_YEAR}-11-02`)
+  await expect(coord.getByLabel('Start time')).toHaveValue('09:00')
+  await expect(coord.getByLabel('End time')).toHaveValue('12:00')
   await chip('Attendance').click()
   await expect(coord.getByLabel('Expected attendance')).toHaveValue('50')
 })

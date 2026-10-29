@@ -33,7 +33,11 @@ const AMY = user('amy', 'Amy Attendee', 'attendee')
 const BEN = user('ben', 'Ben Attendee', 'attendee')
 const EMAILS = [...USERS, AMY, BEN].map((u) => u.email)
 const VENUE = { name: 'AL Auditorium', location: 'Block C', capacity: 400 }
+// Keep the attendee-registration setup valid regardless of the current year.
+const FUTURE_YEAR = new Date().getFullYear() + 2
 
+// Preparing a confirmed event and two attendees requires several role hand-offs.
+test.setTimeout(90_000)
 test.beforeAll(() => {
   seedUsers(USERS)
   seedVenue(VENUE)
@@ -63,8 +67,8 @@ async function confirmedEvent(request: APIRequestContext, h: Record<string, Head
       purpose: 'Annual partner briefing',
       event_type: 'conference',
       description: 'A full-day briefing.',
-      proposed_start: '2026-11-02T09:00:00Z',
-      proposed_end: '2026-11-02T17:00:00Z',
+      proposed_start: `${FUTURE_YEAR}-11-02T09:00:00Z`,
+      proposed_end: `${FUTURE_YEAR}-11-02T17:00:00Z`,
       expected_attendance: 120,
       venue_requirements: 'Main hall',
       accessibility_needs: 'Step-free access',
@@ -85,8 +89,8 @@ async function confirmedEvent(request: APIRequestContext, h: Record<string, Head
   if (registration) {
     await call(request, 'put', `/events/assigned/${id}/registration`, h[COORD.email], {
       registration_enabled: true,
-      registration_opens_at: '2026-10-01T09:00:00Z',
-      registration_closes_at: '2026-11-01T09:00:00Z',
+      registration_opens_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+      registration_closes_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
     })
   }
   return id

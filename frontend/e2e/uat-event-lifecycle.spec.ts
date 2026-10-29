@@ -82,13 +82,15 @@ async function tokens(request: APIRequestContext) {
   return Object.fromEntries(entries) as Record<string, Headers>
 }
 
+// Keep the lifecycle test valid after the original 2026 event date has passed.
+const FUTURE_YEAR = new Date().getFullYear() + 2
 const REQUEST = {
   name: 'UAT Partner Conference',
   purpose: 'Annual partner briefing',
   event_type: 'conference',
   description: 'A full-day briefing.',
-  proposed_start: '2026-11-02T09:00:00Z',
-  proposed_end: '2026-11-02T17:00:00Z',
+  proposed_start: `${FUTURE_YEAR}-11-02T09:00:00Z`,
+  proposed_end: `${FUTURE_YEAR}-11-02T17:00:00Z`,
   expected_attendance: 120,
   venue_requirements: 'Main hall',
   accessibility_needs: 'Step-free access',
@@ -207,8 +209,8 @@ test('UAT-1: an event goes from request to a registered Attendee, and each perso
   await test.step('Coordinator: opens registration, an Attendee registers', async () => {
     await send(request, 'put', `/events/assigned/${eventId}/registration`, h[COORD.email], {
       registration_enabled: true,
-      registration_opens_at: '2026-10-01T00:00:00Z',
-      registration_closes_at: '2026-11-01T00:00:00Z',
+      registration_opens_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+      registration_closes_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
     })
     await send(request, 'post', '/auth/register', {}, { name: 'Amy Attendee', email: ATTENDEE_EMAIL, password: PASSWORD }, 201)
     const attendee = await login(request, ATTENDEE_EMAIL, PASSWORD)

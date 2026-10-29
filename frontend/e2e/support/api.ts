@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './dates'
 import { expect } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
 import { E2E_API_PORT } from '../../playwright.config'
@@ -15,8 +16,8 @@ const COMPLETE = {
   purpose: 'Annual partner briefing',
   event_type: 'conference',
   description: 'A full-day briefing for our regional partners.',
-  proposed_start: '2026-11-02T09:00:00Z',
-  proposed_end: '2026-11-02T17:00:00Z',
+  proposed_start: `${E2E_TEST_YEAR}-11-02T09:00:00Z`,
+  proposed_end: `${E2E_TEST_YEAR}-11-02T17:00:00Z`,
   expected_attendance: 120,
   venue_requirements: 'Main hall, stage, podium',
   accessibility_needs: 'Step-free access, hearing loop',
@@ -24,6 +25,7 @@ const COMPLETE = {
   registration_enabled: true,
 }
 
+/** Obtain a test user token for API-only setup; browser journeys log in through the UI. */
 export async function login(
   request: APIRequestContext,
   email: string,

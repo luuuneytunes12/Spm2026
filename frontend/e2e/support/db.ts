@@ -12,10 +12,12 @@ import { E2E_DATABASE_URL, E2E_JWT_SECRET } from '../../playwright.config'
  * here needs a database driver of its own in Node.
  *
  * Every script runs against E2E_DATABASE_URL -- which playwright.config.ts
- * refuses to accept unless it is a local, disposable database.
+ * restricts to localhost and the test database name. A local tunnel could still
+ * forward to a remote database; the operator must ensure it is disposable.
  */
 const BACKEND = fileURLToPath(new URL('../../../backend', import.meta.url))
 
+/** Run a fixture operation with the backend models against the guarded test database. */
 function python(script: string, payload: unknown): string {
   return execFileSync('uv', ['run', 'python', '-c', script, JSON.stringify(payload)], {
     cwd: BACKEND,
@@ -27,7 +29,7 @@ function python(script: string, payload: unknown): string {
 export interface SeedUser {
   email: string
   name: string
-  role: 'organiser' | 'coordinator' | 'venue_staff' | 'tech_support' | 'safety_officer' | 'event_coordinator_lead'
+  role: 'organiser' | 'coordinator' | 'venue_staff' | 'tech_support' | 'safety_officer' | 'event_coordinator_lead' | 'attendee'
   password: string
 }
 

@@ -94,16 +94,8 @@ jobs:
 
   e2e:
     name: End-to-end (Playwright)
-    # Was switched off while the specs failed. The cause was a stale selector
-    # (the request form's equipment field was renamed "Other equipment notes"
-    # when the equipment picker landed); with that fixed the whole suite,
-    # including the coordinator-story and axe accessibility specs, passes
-    # against exactly this setup: postgres:16, backend/db/schema.sql, and the
-    # seeded organiser below.
-    #
-    # Switched off again while everyone is still building their own features
-    # in parallel. Remove the `if: false` below to turn it back on.
-    if: false
+    # Run the real browser journeys on pushes and pull requests. Failures are
+    # visible in CI and the report below is retained for investigation.
     runs-on: ubuntu-latest
 
     # A disposable database, started and destroyed by GitHub on this runner.

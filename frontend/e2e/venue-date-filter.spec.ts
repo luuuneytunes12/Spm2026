@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Browser, Page } from '@playwright/test'
@@ -12,14 +13,14 @@ import type { ScheduledVenue } from './support/db'
  *
  * Seven venues share the "E2E DT" prefix -- searched for by keyword so no
  * other venue in the database can change what is listed -- each with one
- * thing on 20 Nov 2026 that should, or should not, take it out of a search
+ * thing on 20 November in the shared future test year that should, or should not, take it out of a search
  * for 09:00-17:00. The browser runs in UTC so the times typed are the
  * times seeded, and in en-GB so the date chip reads "20 Nov, ..."
  */
 const USERS = [OLIVIA, SAM]
 const EMAILS = USERS.map((u) => u.email)
 
-const DAY = '2026-11-20'
+const DAY = `${E2E_TEST_YEAR}-11-20`
 const at = (time: string) => `${DAY}T${time}:00+00:00`
 
 const VENUES: ScheduledVenue[] = [
@@ -95,7 +96,7 @@ test('DT AC1 + AC2: only venues free for the whole window, setup and turnaround 
   }
 
   // The next day nothing is booked, so every venue is back.
-  await setWindow(sam, '09:00', '17:00', '2026-11-21')
+  await setWindow(sam, '09:00', '17:00', `${E2E_TEST_YEAR}-11-21`)
   await expect(sam.getByText('7 venues')).toBeVisible()
 })
 

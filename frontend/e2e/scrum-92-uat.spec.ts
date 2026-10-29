@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { API, login } from './support/api'
@@ -31,7 +32,7 @@ test.afterAll(() => {
 
 async function booking(request: APIRequestContext, name: string, venueName: string, s: number, e: number) {
   const olivia = await login(request, OLIVIA.email, OLIVIA.password)
-  const at = (h: number) => `2026-11-02T${String(h).padStart(2, '0')}:00:00Z`
+  const at = (h: number) => `${E2E_TEST_YEAR}-11-02T${String(h).padStart(2, '0')}:00:00Z`
   const created = await request.post(`${API}/events`, {
     headers: olivia,
     data: {

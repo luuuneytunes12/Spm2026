@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
@@ -41,10 +42,10 @@ test.afterAll(() => {
   removeVenue(VENUE)
 })
 
-/** An approved booking for an event at the given hours (UTC) on 2 Nov 2026. */
+/** An approved booking for an event at the given hours (UTC) on 2 November in the shared future test year. */
 async function approvedBooking(request: APIRequestContext, name: string, startHour: number, endHour: number) {
   const olivia = await login(request, OLIVIA.email, OLIVIA.password)
-  const hour = (h: number) => `2026-11-02T${String(h).padStart(2, '0')}:00:00Z`
+  const hour = (h: number) => `${E2E_TEST_YEAR}-11-02T${String(h).padStart(2, '0')}:00:00Z`
   const created = await request.post(`${API}/events`, {
     headers: olivia,
     data: {
@@ -95,6 +96,12 @@ async function saveTurnaround(page: Page, venueId: number, setup: string, turnar
   await page.getByRole('button', { name: 'Save setup and turnaround' }).click()
 }
 
+/** Open one flagged booking from the current calendar sidebar. */
+async function selectFlagged(page: Page, eventName: string) {
+  await page.locator('details.bq-section', { hasText: 'Flagged' }).getByRole('button', { name: new RegExp(eventName) }).click()
+  return page.getByRole('region', { name: new RegExp(`Flagged booking for ${eventName}`) })
+}
+
 async function expectNoSeriousViolations(page: Page, label: string) {
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))))
   const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
@@ -109,12 +116,14 @@ test('TC-BF-1e: saving a turnaround that makes bookings overlap flags them and l
   await saveTurnaround(staff, venueId, '0', '30')
   await expect(staff.getByText(/2 existing bookings flagged for conflict/)).toBeVisible()
   await staff.getByRole('link', { name: 'View flagged bookings' }).click()
-  await expect(staff.getByRole('heading', { level: 1, name: 'Flagged bookings' })).toBeVisible()
-  const card = staff.getByRole('region', { name: new RegExp(SECOND) })
+  await expect(staff.getByRole('heading', { level: 1, name: 'Booking requests' })).toBeVisible()
+  const sidebar = staff.locator('details.bq-section', { hasText: 'Flagged' })
+  await expect(sidebar.getByRole('button', { name: new RegExp(FIRST) })).toBeVisible()
+  const card = await selectFlagged(staff, SECOND)
   await expect(card).toContainText('Conflict flagged - not counted as approved until resolved')
   await expect(card).toContainText(FIRST)
-  await expect(card).toContainText('Overlap:')
-  await expect(staff.getByRole('region', { name: new RegExp(FIRST) })).toBeVisible()
+  await expect(card).toContainText(/overlap/i)
+  await expect(await selectFlagged(staff, FIRST)).toBeVisible()
 })
 
 test('TC-BF-2e: a setup and turnaround that cause no overlap flag nothing', async ({ browser, request }) => {
@@ -124,7 +133,7 @@ test('TC-BF-2e: a setup and turnaround that cause no overlap flag nothing', asyn
   await expect(staff.getByText('No existing bookings conflict.')).toBeVisible()
   await expect(staff.getByRole('link', { name: 'View flagged bookings' })).toHaveCount(0)
   await staff.goto('/venue-staff/bookings?view=flagged')
-  await expect(staff.getByText('No flagged bookings.')).toBeVisible()
+  await expect(staff.locator('details.bq-section', { hasText: 'Flagged' }).locator('.bq-bubble')).toHaveText('0')
 })
 
 test('TC-BF-3e: the Coordinator sees the flag and the booking is not cancelled', async ({ browser, request }) => {
@@ -148,15 +157,15 @@ test('TC-BF-4e: Keep anyway needs a reason, then the booking leaves the flagged 
   await saveTurnaround(staff, venueId, '0', '30')
   await expect(staff.getByText(/flagged for conflict/)).toBeVisible()
   await staff.goto('/venue-staff/bookings?view=flagged')
-  const card = staff.getByRole('region', { name: new RegExp(SECOND) })
+  const card = await selectFlagged(staff, SECOND)
   await card.getByRole('button', { name: 'Keep anyway' }).click()
-  await expect(card.getByRole('alert')).toContainText('Enter a reason')
+  await expect(card.getByRole('alert').filter({ hasText: 'Enter a reason' })).toBeVisible()
   await expect(card.getByLabel(/Reason for keeping/)).toHaveAttribute('aria-invalid', 'true')
   await card.getByLabel(/Reason for keeping/).fill('Both organisers agreed to a shared changeover')
   await card.getByRole('button', { name: 'Keep anyway' }).click()
   await expect(staff.getByText(/The flag is cleared/)).toBeVisible()
   await staff.reload()
-  await expect(staff.getByRole('region', { name: new RegExp(SECOND) })).toHaveCount(0)
+  await expect(staff.locator('details.bq-section', { hasText: 'Flagged' }).getByRole('button', { name: new RegExp(SECOND) })).toHaveCount(0)
 })
 
 test('TC-BF-6e: cancelling a flagged booking needs a reason, clears the flag and leaves the Event alone', async ({ browser, request }) => {
@@ -165,14 +174,14 @@ test('TC-BF-6e: cancelling a flagged booking needs a reason, clears the flag and
   await saveTurnaround(staff, venueId, '0', '30')
   await expect(staff.getByText(/flagged for conflict/)).toBeVisible()
   await staff.goto('/venue-staff/bookings?view=flagged')
-  const card = staff.getByRole('region', { name: new RegExp(SECOND) })
+  const card = await selectFlagged(staff, SECOND)
   await card.getByRole('button', { name: 'Cancel booking' }).click()
-  await expect(card.getByRole('alert')).toContainText('Enter a reason for cancelling')
+  await expect(card.getByRole('alert').filter({ hasText: 'Enter a reason for cancelling' })).toBeVisible()
   await card.getByLabel(/Reason for keeping or cancelling/).fill('The venue is needed for the earlier event')
   await card.getByRole('button', { name: 'Cancel booking' }).click()
   await expect(staff.getByText(/The Event is not cancelled/)).toBeVisible()
   await staff.reload()
-  await expect(staff.getByText('No flagged bookings.')).toBeVisible()
+  await expect(staff.locator('details.bq-section', { hasText: 'Flagged' }).locator('.bq-bubble')).toHaveText('0')
   const headers = await login(request, STAFF.email, STAFF.password)
   const flagged: { id: number }[] = await (await request.get(`${API}/venue-bookings/flagged`, { headers })).json()
   expect(flagged.find((b) => b.id === secondId)).toBeUndefined()
@@ -186,10 +195,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(staff.getByText(/flagged for conflict/)).toBeVisible()
     await expectNoSeriousViolations(staff, `venue ${colorScheme}`)
     await staff.goto('/venue-staff/bookings?view=flagged')
-    await expect(staff.getByRole('region', { name: new RegExp(SECOND) })).toBeVisible()
+    const card = await selectFlagged(staff, SECOND)
+    await expect(card).toBeVisible()
     await expectNoSeriousViolations(staff, `flagged list ${colorScheme}`)
-    await staff.getByRole('button', { name: 'Keep anyway' }).first().click()
-    await expect(staff.getByRole('alert').first()).toBeVisible()
+    await card.getByRole('button', { name: 'Keep anyway' }).click()
+    await expect(card.getByRole('alert').filter({ hasText: 'Enter a reason' })).toBeVisible()
     await expectNoSeriousViolations(staff, `flagged list error ${colorScheme}`)
   })
 }
@@ -200,7 +210,7 @@ test('TC-BF-A2: the reason field and Keep anyway are keyboard-reachable with vis
   await saveTurnaround(staff, venueId, '0', '30')
   await expect(staff.getByText(/flagged for conflict/)).toBeVisible()
   await staff.goto('/venue-staff/bookings?view=flagged')
-  await expect(staff.getByRole('region', { name: new RegExp(SECOND) })).toBeVisible()
+  await expect(await selectFlagged(staff, SECOND)).toBeVisible()
   const focused = new Set<string>()
   for (let i = 0; i < 40; i++) {
     await staff.keyboard.press('Tab')

@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
@@ -54,7 +55,7 @@ test('AC1 + AC4: Venue Staff hold a venue with an expiry and an action; calendar
   await vera.goto('/venue-staff/bookings')
   const card = vera.getByRole('region', { name: /Hold me/ })
   await card.getByRole('button', { name: 'Place tentative hold' }).click()
-  await card.getByLabel('Hold expires').fill('2030-01-02T10:00')
+  await card.getByLabel('Hold expires').fill(`${E2E_TEST_YEAR - 1}-01-02T10:00`)
   await card.getByLabel('Required action').fill(ACTION)
   await card.getByRole('button', { name: 'Confirm hold' }).click()
   await expect(vera.getByRole('status')).toContainText(`Tentative hold placed for ${VENUE}`)
@@ -67,17 +68,17 @@ test('AC1 + AC4: Venue Staff hold a venue with an expiry and an action; calendar
 
   // AC4: on the availability calendar (Venue Staff see the action).
   await vera.goto(`/venues/${venueId}/availability`)
-  await vera.getByLabel('From').fill('2026-11-02T00:00')
-  await vera.getByLabel('Until').fill('2026-11-03T00:00')
+  await vera.getByLabel('From').fill(`${E2E_TEST_YEAR}-11-02T00:00`)
+  await vera.getByLabel('Until').fill(`${E2E_TEST_YEAR}-11-03T00:00`)
   await vera.getByRole('button', { name: 'Check availability' }).click()
-  const day = vera.getByRole('region', { name: /Availability on 2026-11-02/ })
-  await expect(day).toContainText('Tentative hold')
+  const day = vera.getByRole('region', { name: `Availability on ${E2E_TEST_YEAR}-11-02` })
+  await expect(day).toContainText(/Tentative hold/i)
   await expect(day).toContainText(`Required action: ${ACTION}`)
 
   // AC4: on the Event, for its Coordinator.
   await sam.goto(`/coordinator/events/${eventId}`)
   const bookings = sam.getByRole('region', { name: 'Venue bookings' })
-  await expect(bookings).toContainText('Tentative hold')
+  await expect(bookings).toContainText(/Tentative hold/i)
   await expect(bookings).toContainText(`Required action: ${ACTION}`)
 })
 
@@ -115,7 +116,7 @@ test('AC5: an approved hold becomes an approved Venue Booking', async ({ browser
   const { eventId, bookingId } = await pendingRequest(request, 'Hold then approve')
   const headers = await login(request, VERA.email, VERA.password)
   const held = await request.post(`${API}/venue-bookings/${bookingId}/hold`, {
-    data: { expires_at: '2030-01-02T10:00:00Z', required_action: ACTION },
+    data: { expires_at: `${E2E_TEST_YEAR - 1}-01-02T10:00:00Z`, required_action: ACTION },
     headers,
   })
   expect(held.ok()).toBe(true)
