@@ -48,6 +48,7 @@ from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.notifications import notify
 from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
 from app.services.submission_notice import SubmissionNotice
+from app.services.tech_support_notices import notify_if_rescheduled
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -723,8 +724,10 @@ def approve_change_request(
     # Stored as JSON, so dates come back as strings: read them through the
     # same schema that accepted the request before applying them.
     typed = EventIn.model_validate(changes)
+    old_start, old_end = event.proposed_start, event.proposed_end
     for field in changes:
         setattr(event, field, getattr(typed, field))
+    notify_if_rescheduled(db, event, old_start, old_end)
 
     attendance_changed_after_approval = (
         "expected_attendance" in (change_request.proposed_changes or {})

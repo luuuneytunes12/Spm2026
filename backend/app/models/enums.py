@@ -138,6 +138,11 @@ class NotificationType(enum.StrEnum):
     event_details_changed = "event_details_changed"
     registration_status_changed = "registration_status_changed"
     venue_booking_released = "venue_booking_released"
+    # Technical Support: equipment to review or reserve, and Events that moved.
+    equipment_required = "equipment_required"
+    equipment_requirement_changed = "equipment_requirement_changed"
+    equipment_requirement_removed = "equipment_requirement_removed"
+    equipment_event_rescheduled = "equipment_event_rescheduled"
 
 
 class ChangeRequestStatus(enum.StrEnum):
