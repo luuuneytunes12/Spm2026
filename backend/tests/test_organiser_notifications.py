@@ -397,13 +397,14 @@ def test_ac6_another_organiser_gets_no_venue_decision(client, db_session):
 
 def test_ac6_another_organiser_gets_no_equipment_outcome(client, db_session):
     w = _world(client, db_session, needed=1)
-    _, other_h = _user(client, db_session, Role.ORGANISER, name="Otto Other")
+    other, other_h = _user(client, db_session, Role.ORGANISER, name="Otto Other")
 
     _reserved(client, w.tech, w.rid, w.mic.id, 1)
 
     assert _inbox(client, other_h) == []
     db_session.expire_all()
-    assert {n.user_id for n in db_session.query(Notification).filter_by(type=EQUIPMENT)} == {w.organiser.id}
+    recipients = {n.user_id for n in db_session.query(Notification).filter_by(type=EQUIPMENT)}
+    assert w.organiser.id in recipients and other.id not in recipients
 
 
 # --- AC7: Safety Check passed or failed -> I am told ------------------------

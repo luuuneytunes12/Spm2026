@@ -56,6 +56,7 @@ from app.schemas.event import (
     VenueBookingProgress,
 )
 from app.services.attendee_notices import CONFIRMED, EventChangedNotice
+from app.services.coordinator_notices import ChangeRequestSubmittedNotice
 from app.services.event_activity import event_activity
 from app.services.notifications import notify
 from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
@@ -1062,6 +1063,7 @@ def request_event_changes(
         )
     )
     db.flush()
+    ChangeRequestSubmittedNotice(change_request).send(db, event)
     db.commit()
     db.refresh(change_request)
     return _change_request_out(db, change_request)

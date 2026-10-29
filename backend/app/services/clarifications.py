@@ -93,7 +93,9 @@ def reply_to_clarification(
             db,
             user_id=event.coordinator_id,
             type=NotificationType.clarification_replied,
-            message=f"{organiser.name} replied to your clarification request on '{event.name or 'the event'}'.",
+            # The Event's Organiser, loaded: the signed-in user a route is
+            # given is built from the token and has no name.
+            message=f"{event.organiser.name} replied to your clarification request on '{event.name or 'the event'}'.",
             event_id=event.id,
         )
     return row
