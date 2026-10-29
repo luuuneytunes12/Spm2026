@@ -370,6 +370,18 @@ describe('Tentative hold - the Coordinator sees it on the Event', () => {
   })
 })
 
+describe('Auto-release - a released booking stays in the history', () => {
+  it('AC3: a booking released with its Event is listed as Released, never Approved', async () => {
+    mockList.mockResolvedValue([
+      { ...BOOKING, status: 'released', decision_notes: 'Released because the event was cancelled.' },
+    ])
+    render(<VenueBookingSection eventId={7} expectedAttendance={120} />)
+    const [item] = within(await screen.findByRole('list', { name: /venue bookings/i })).getAllByRole('listitem')
+    expect(within(item).getByText('Released')).toBeInTheDocument()
+    expect(item).not.toHaveTextContent('Approved')
+  })
+})
+
 describe('Tentative hold expiry - the Event shows it as expired, never as confirmed', () => {
   const EXPIRED: VenueBooking = {
     ...BOOKING,

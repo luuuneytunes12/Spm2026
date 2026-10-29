@@ -18,7 +18,7 @@ create type event_status as enum (
 );
 
 create type booking_status as enum (
-    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired', 'replaced'
+    'pending', 'tentative_hold', 'approved', 'rejected', 'cancelled', 'hold_expired', 'replaced', 'released'
 );
 
 -- Lifecycle of an equipment REQUEST (on equipment_requests).
@@ -122,7 +122,8 @@ create table events (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     check (proposed_end > proposed_start),
-    check (registration_closes_at >= registration_opens_at)
+    constraint events_registration_window_check
+        check (registration_closes_at >= registration_opens_at)
 );
 
 create index idx_events_organiser on events (organiser_id);
@@ -132,7 +133,8 @@ create index idx_events_status on events (status);
 create table event_status_history (
     id bigint generated always as identity primary key,
     event_id bigint not null references events (id) on delete cascade,
-    changed_by bigint not null references users (id) on delete restrict,
+    -- Null when the System made the change (sql/033).
+    changed_by bigint references users (id) on delete restrict,
     from_status text,
     to_status text not null,
     note text,
@@ -235,7 +237,8 @@ create table venue_bookings (
     created_at timestamptz not null default now(),
     reviewed_at timestamptz,
     check (end_time > start_time),
-    check (status <> 'tentative_hold' or expires_at is not null),
+    constraint ck_venue_booking_hold_requires_expiry
+        check (status <> 'tentative_hold' or expires_at is not null),
     constraint ck_venue_booking_expected_attendance_positive
         check (expected_attendance is null or expected_attendance > 0)
 );

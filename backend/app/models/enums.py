@@ -80,6 +80,8 @@ class BookingStatus(enum.StrEnum):
     hold_expired = "hold_expired"
     # Superseded by an approved replacement booking (sql/029). Kept as history.
     replaced = "replaced"
+    # Freed because its Event was cancelled or completed (sql/033). Kept as history.
+    released = "released"
 
 
 class EquipmentStatus(enum.StrEnum):
@@ -135,6 +137,7 @@ class NotificationType(enum.StrEnum):
     clarification_replied = "clarification_replied"
     event_details_changed = "event_details_changed"
     registration_status_changed = "registration_status_changed"
+    venue_booking_released = "venue_booking_released"
 
 
 class ChangeRequestStatus(enum.StrEnum):

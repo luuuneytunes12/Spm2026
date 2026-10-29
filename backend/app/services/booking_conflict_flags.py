@@ -31,6 +31,7 @@ INACTIVE_STATUSES = (
     BookingStatus.cancelled,
     BookingStatus.hold_expired,
     BookingStatus.replaced,
+    BookingStatus.released,
 )
 
 # What a flagged booking is compared against: other APPROVED bookings only

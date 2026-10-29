@@ -87,7 +87,8 @@ class EventStatusHistory(Base):
     event_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("events.id", ondelete="CASCADE")
     )
-    changed_by: Mapped[int] = mapped_column(
+    # Null when the System made the change (sql/033), e.g. an automatic release.
+    changed_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="RESTRICT")
     )
     from_status: Mapped[str | None] = mapped_column(Text)
@@ -96,7 +97,7 @@ class EventStatusHistory(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     event: Mapped[Event] = relationship()
-    changed_by_user: Mapped[User] = relationship(foreign_keys=[changed_by])
+    changed_by_user: Mapped[User | None] = relationship(foreign_keys=[changed_by])
 
 
 class EventChangeRequest(Base):
