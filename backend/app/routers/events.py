@@ -1,13 +1,17 @@
+from collections.abc import Set as AbstractSet
 from datetime import datetime, timezone
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
 from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
+from app.domain.requirement_progress import RequirementReservationLinks
+from app.domain.venue_occupancy import occupied_window, overlap_of
 from app.models.enums import (
     ACTIVE_ASSIGNMENT_STATUSES,
     CHANGE_REQUEST_ALLOWED_STATUSES,
@@ -18,17 +22,22 @@ from app.models.enums import (
     NotificationType,
     PLANNING_STATUSES,
 )
-from app.models.equipment import Equipment, EquipmentRequest
+from app.models.equipment import (
+    CoordinatorEquipmentRequirement,
+    Equipment,
+    EquipmentRequest,
+)
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.user import User
-from app.models.venues import VenueBooking
+from app.models.venues import VenueBooking, VenueUnavailability
 from app.domain.event_readiness import can_enter_preparation, outstanding_arrangements
 from app.services.equipment_lines import replace_equipment_lines
 from app.schemas.event import (
     MANDATORY_FIELDS,
     ActivityEntry,
     AssignedEventDetail,
+    EventChangeApprovalIn,
     EventChangeDecisionIn,
     EventChangeRequestIn,
     EventChangeRequestOut,
@@ -36,6 +45,8 @@ from app.schemas.event import (
     EquipmentProgress,
     EventIn,
     EventOut,
+    EquipmentRequirementImpact,
+    PlanningEventEditOut,
     EventProgress,
     EventSummary,
     OrganiserContact,
@@ -45,6 +56,7 @@ from app.schemas.event import (
     VenueBookingProgress,
 )
 from app.services.attendee_notices import CONFIRMED, EventChangedNotice
+from app.services.event_activity import event_activity
 from app.services.notifications import notify
 from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
 from app.services.submission_notice import SubmissionNotice
@@ -187,6 +199,129 @@ class CancellationRequest(BaseModel):
         return value.strip()
 
 
+def _planning_event_for_coordinator(
+    event_id: int, user: User, db: Session
+) -> Event:
+    event = db.get(Event, event_id, with_for_update=True)
+    if event is None or event.coordinator_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.status not in PLANNING_EDIT_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Event details cannot be edited while the Event is "
+                f"'{EventStatus(event.status).label}'."
+            ),
+        )
+    return event
+
+
+# An Event a Coordinator may edit directly: approved and not yet finished.
+PLANNING_EDIT_STATUSES = (
+    EventStatus.event_approved,
+    EventStatus.planning_event,
+    EventStatus.awaiting_safety_check,
+    EventStatus.safety_check_passed,
+)
+
+# Which changed fields put a Venue Booking, or an Equipment reservation,
+# back in front of staff for review.
+VENUE_REVIEW_FIELDS = {
+    "proposed_start",
+    "proposed_end",
+    "expected_attendance",
+    "venue_requirements",
+    "room_layout_preference",
+    "accessibility_needs",
+}
+EQUIPMENT_REVIEW_FIELDS = {
+    "proposed_start",
+    "proposed_end",
+    "equipment_requirements",
+    "equipment_items",
+}
+REOPENABLE_BOOKING_STATUSES = (
+    BookingStatus.pending,
+    BookingStatus.tentative_hold,
+    BookingStatus.approved,
+)
+
+
+def _reopen_booking(booking: VenueBooking, event: Event, changed_fields: set[str]) -> None:
+    """Send one Venue Booking back to Venue Staff."""
+    booking.status = BookingStatus.pending
+    booking.expires_at = None
+    booking.hold_action = None
+    booking.reviewed_by = None
+    booking.reviewed_at = None
+    booking.safety_recheck_reason = None
+    booking.conflict_flagged_at = None
+    booking.decision_notes = "Event arrangements changed; Venue Staff review is required."
+    if "expected_attendance" in changed_fields:
+        booking.expected_attendance = None
+    if changed_fields.intersection({"proposed_start", "proposed_end"}):
+        booking.start_time = event.proposed_start
+        booking.end_time = event.proposed_end
+
+
+def _reopen_reservation(line: EquipmentRequest) -> None:
+    """Send one reserved item back to Technical Support Staff."""
+    line.status = EquipmentStatus.requested
+    line.reviewed_by = None
+    line.reviewed_at = None
+    line.safety_recheck_reason = None
+
+
+def _reset_arrangements_for_review(
+    db: Session, event: Event, changed_fields: set[str]
+) -> tuple[list[str], list[str]]:
+    """Return affected arrangements to their staff-review queues."""
+    affected_venues: list[str] = []
+    if changed_fields.intersection(VENUE_REVIEW_FIELDS):
+        bookings = (
+            db.query(VenueBooking)
+            .options(joinedload(VenueBooking.venue))
+            .filter(
+                VenueBooking.event_id == event.id,
+                VenueBooking.status.in_(REOPENABLE_BOOKING_STATUSES),
+            )
+            .order_by(VenueBooking.id)
+            .all()
+        )
+        for booking in bookings:
+            _reopen_booking(booking, event, changed_fields)
+            affected_venues.append(booking.venue.name)
+
+    affected_equipment: list[str] = []
+    if changed_fields.intersection(EQUIPMENT_REVIEW_FIELDS):
+        equipment_lines = (
+            db.query(EquipmentRequest)
+            .options(joinedload(EquipmentRequest.equipment))
+            .filter(
+                EquipmentRequest.event_id == event.id,
+                EquipmentRequest.status == EquipmentStatus.reserved,
+            )
+            .order_by(EquipmentRequest.id)
+            .all()
+        )
+        affected_equipment = [line.equipment.name for line in equipment_lines]
+        for line in equipment_lines:
+            _reopen_reservation(line)
+
+        requirements = (
+            db.query(CoordinatorEquipmentRequirement)
+            .filter(CoordinatorEquipmentRequirement.event_id == event.id)
+            .order_by(CoordinatorEquipmentRequirement.id)
+            .all()
+        )
+        affected_equipment.extend(
+            f"{requirement.category} requirement"
+            for requirement in requirements
+            if f"{requirement.category} requirement" not in affected_equipment
+        )
+    return affected_venues, affected_equipment
+
+
 def _missing_mandatory(event: Event) -> list[tuple[str, str]]:
     """Return the (field, label) pairs still empty on `event`.
 
@@ -274,8 +409,12 @@ def _safety_check_return(db: Session, event: Event) -> SafetyCheckReturn | None:
 def _change_request_out(
     db: Session, request: EventChangeRequest
 ) -> EventChangeRequestOut:
-    changes = dict(request.proposed_changes or {})
-    proposed_equipment = changes.get("equipment_items")
+    event = request.event
+    raw_changes = dict(request.proposed_changes or {})
+    # A stored request that no longer validates is still shown, with nothing
+    # worked out from it; approving it is refused with a message instead.
+    changes = _validated_changes(raw_changes) or {}
+    proposed_equipment = raw_changes.get("equipment_items")
     if proposed_equipment:
         equipment_ids = {line["equipment_id"] for line in proposed_equipment}
         equipment_names = dict(
@@ -283,7 +422,7 @@ def _change_request_out(
             .filter(Equipment.id.in_(equipment_ids))
             .all()
         )
-        changes["equipment_items"] = [
+        raw_changes["equipment_items"] = [
             {
                 **line,
                 "equipment_name": equipment_names.get(
@@ -292,10 +431,13 @@ def _change_request_out(
             }
             for line in proposed_equipment
         ]
-    important = bool(IMPORTANT_CHANGE_FIELDS.intersection(changes))
+    important = bool(IMPORTANT_CHANGE_FIELDS.intersection(raw_changes))
+    venue_affected = bool(VENUE_REVIEW_FIELDS.intersection(changes))
+    equipment_affected = bool(EQUIPMENT_REVIEW_FIELDS.intersection(changes))
     bookings = []
     reserved_equipment = []
-    if important:
+    requirements = []
+    if venue_affected:
         bookings = (
             db.query(VenueBooking)
             .options(joinedload(VenueBooking.venue))
@@ -314,8 +456,10 @@ def _change_request_out(
             .order_by(VenueBooking.id)
             .all()
         )
+    if equipment_affected:
         reserved_equipment = (
             db.query(EquipmentRequest)
+            .options(joinedload(EquipmentRequest.equipment))
             .filter(
                 EquipmentRequest.event_id == request.event_id,
                 EquipmentRequest.status == EquipmentStatus.reserved,
@@ -323,19 +467,166 @@ def _change_request_out(
             .order_by(EquipmentRequest.id)
             .all()
         )
+        requirements = (
+            db.query(CoordinatorEquipmentRequirement)
+            .filter(CoordinatorEquipmentRequirement.event_id == request.event_id)
+            .order_by(CoordinatorEquipmentRequirement.id)
+            .all()
+        )
+    requirement_progress = RequirementReservationLinks(db).progress_of(requirements)
+
+    now = datetime.now(timezone.utc)
+    time_changed = bool({"proposed_start", "proposed_end"}.intersection(changes))
+    proposed_start = changes.get("proposed_start", event.proposed_start)
+    proposed_end = changes.get("proposed_end", event.proposed_end)
+
+    def pieces(value: str | None) -> list[str]:
+        return [item.strip() for item in re.split(r"[,;\n]", value or "") if item.strip()]
+
+    venue_impacts = []
+    for booking in bookings:
+        venue = booking.venue
+        attendance = (
+            changes.get("expected_attendance", event.expected_attendance)
+            if "expected_attendance" in changes
+            else booking.expected_attendance
+            if booking.expected_attendance is not None
+            else event.expected_attendance
+        )
+        layout = booking.room_layout_preference or changes.get(
+            "room_layout_preference", event.room_layout_preference
+        )
+        accessibility = booking.accessibility_needs or changes.get(
+            "accessibility_needs", event.accessibility_needs
+        )
+        facilities = booking.facilities_needs or changes.get(
+            "venue_requirements", event.venue_requirements
+        )
+        unmet: list[str] = []
+        if attendance is None:
+            unmet.append("Expected attendance is not recorded.")
+        elif venue.capacity < attendance:
+            unmet.append(
+                f"Insufficient capacity: Venue capacity is {venue.capacity}; "
+                f"the Event requires {attendance}."
+            )
+        if layout and layout.casefold() not in {
+            item.casefold() for item in venue.supported_layouts or []
+        }:
+            unmet.append(f"Unsupported room layout: {layout}.")
+        for item in pieces(accessibility):
+            if item.casefold() not in {
+                value.casefold() for value in venue.accessibility_features or []
+            }:
+                unmet.append(f"Missing accessibility feature: {item}.")
+        for item in pieces(facilities):
+            if item.casefold() not in {value.casefold() for value in venue.facilities or []}:
+                unmet.append(f"Missing venue facility: {item}.")
+
+        conflicts: list[str] = []
+        if time_changed and proposed_start is not None and proposed_end is not None:
+            candidate = occupied_window(
+                proposed_start,
+                proposed_end,
+                venue.setup_minutes,
+                venue.turnaround_minutes,
+            )
+            other_bookings = (
+                db.query(VenueBooking)
+                .filter(
+                    VenueBooking.venue_id == venue.id,
+                    VenueBooking.event_id != event.id,
+                    VenueBooking.status.in_(
+                        (BookingStatus.approved, BookingStatus.tentative_hold)
+                    ),
+                    or_(
+                        VenueBooking.status == BookingStatus.approved,
+                        VenueBooking.expires_at > now,
+                    ),
+                )
+                .order_by(VenueBooking.start_time, VenueBooking.id)
+                .all()
+            )
+            for other in other_bookings:
+                other_window = occupied_window(
+                    other.start_time,
+                    other.end_time,
+                    venue.setup_minutes,
+                    venue.turnaround_minutes,
+                )
+                overlap = overlap_of(candidate, other_window)
+                if overlap is not None:
+                    conflicts.append(
+                        "Conflicts with another venue booking during "
+                        f"{overlap.start:%Y-%m-%d %H:%M}–{overlap.end:%Y-%m-%d %H:%M} UTC "
+                        "(setup and turnaround included)."
+                    )
+            closures = (
+                db.query(VenueUnavailability)
+                .filter(VenueUnavailability.venue_id == venue.id)
+                .order_by(VenueUnavailability.start_time, VenueUnavailability.id)
+                .all()
+            )
+            for closure in closures:
+                closure_window = occupied_window(
+                    closure.start_time, closure.end_time, 0, 0
+                )
+                overlap = overlap_of(candidate, closure_window)
+                if overlap is not None:
+                    conflicts.append(
+                        "Conflicts with a venue unavailability period during "
+                        f"{overlap.start:%Y-%m-%d %H:%M}–{overlap.end:%Y-%m-%d %H:%M} UTC "
+                        "(setup and turnaround included)."
+                    )
+
+        venue_impacts.append(
+            {
+                "id": booking.id,
+                "venue_name": venue.name,
+                "start_time": proposed_start if time_changed else booking.start_time,
+                "end_time": proposed_end if time_changed else booking.end_time,
+                "status": booking.status,
+                "suitable": not unmet,
+                "unmet_requirements": unmet,
+                "conflicts": conflicts,
+            }
+        )
+
+    requirement_impacts = [
+        {
+            "id": requirement.id,
+            "category": requirement.category,
+            "status": requirement_progress[requirement.id].status.value,
+            "quantity_needed": requirement.quantity_needed,
+            "reserved_items": [
+                f"{item.equipment_name} × {item.quantity}"
+                for item in requirement_progress[requirement.id].reservations
+            ],
+        }
+        for requirement in requirements
+    ]
+    other_bookings: list[VenueBooking] = []
+    other_reservations: list[EquipmentRequest] = []
+    if request.status == ChangeRequestStatus.pending:
+        other_bookings, other_reservations = _reopenable_arrangements(
+            db,
+            request.event_id,
+            exclude_booking_ids={booking.id for booking in bookings},
+            exclude_reservation_ids={line.id for line in reserved_equipment},
+        )
     return EventChangeRequestOut(
         id=request.id,
         event_id=request.event_id,
         requested_by=request.requested_by,
         description=request.description,
-        proposed_changes=changes,
+        proposed_changes=raw_changes,
         status=request.status,
         review_notes=request.review_notes,
         created_at=request.created_at,
         reviewed_at=request.reviewed_at,
         important_change=important,
         safety_check_required=(
-            "expected_attendance" in changes
+            bool(IMPORTANT_CHANGE_FIELDS.intersection(changes))
             and request.event.status
             in (
                 EventStatus.event_approved,
@@ -344,16 +635,7 @@ def _change_request_out(
                 EventStatus.safety_check_passed,
             )
         ),
-        venue_bookings_to_reconsider=[
-            {
-                "id": booking.id,
-                "venue_name": booking.venue.name,
-                "start_time": booking.start_time,
-                "end_time": booking.end_time,
-                "status": booking.status,
-            }
-            for booking in bookings
-        ],
+        venue_bookings_to_reconsider=venue_impacts,
         equipment_reservations_to_reconsider=[
             {
                 "id": line.id,
@@ -363,13 +645,116 @@ def _change_request_out(
             }
             for line in reserved_equipment
         ],
+        equipment_requirements_to_reconsider=requirement_impacts,
+        other_venue_bookings=[
+            {
+                "id": booking.id,
+                "venue_name": booking.venue.name,
+                "start_time": booking.start_time,
+                "end_time": booking.end_time,
+                "status": booking.status,
+            }
+            for booking in other_bookings
+        ],
+        other_equipment_reservations=[
+            {
+                "id": line.id,
+                "equipment_name": line.equipment.name,
+                "quantity_requested": line.quantity_requested,
+                "status": line.status,
+            }
+            for line in other_reservations
+        ],
+    )
+
+
+def _validated_changes(raw_changes: dict) -> dict | None:
+    """The stored proposed changes, parsed; None if they no longer validate."""
+    try:
+        return EventIn.model_validate(raw_changes).model_dump(exclude_unset=True)
+    except ValidationError:
+        return None
+
+
+def _reopenable_arrangements(
+    db: Session,
+    event_id: int,
+    *,
+    exclude_booking_ids: AbstractSet[int] = frozenset(),
+    exclude_reservation_ids: AbstractSet[int] = frozenset(),
+) -> tuple[list[VenueBooking], list[EquipmentRequest]]:
+    """The Event's active Venue Bookings and reserved items, less the excluded."""
+    bookings = (
+        db.query(VenueBooking)
+        .options(joinedload(VenueBooking.venue))
+        .filter(
+            VenueBooking.event_id == event_id,
+            VenueBooking.status.in_(REOPENABLE_BOOKING_STATUSES),
+        )
+        .order_by(VenueBooking.id)
+        .all()
+    )
+    reservations = (
+        db.query(EquipmentRequest)
+        .options(joinedload(EquipmentRequest.equipment))
+        .filter(
+            EquipmentRequest.event_id == event_id,
+            EquipmentRequest.status == EquipmentStatus.reserved,
+        )
+        .order_by(EquipmentRequest.id)
+        .all()
+    )
+    return (
+        [booking for booking in bookings if booking.id not in exclude_booking_ids],
+        [line for line in reservations if line.id not in exclude_reservation_ids],
+    )
+
+
+def _chosen_arrangements(
+    db: Session, event: Event, body: EventChangeApprovalIn
+) -> tuple[list[VenueBooking], list[EquipmentRequest]]:
+    """The arrangements the Coordinator chose to reopen, each checked to be
+    an active one on this Event before anything is changed."""
+    bookings, reservations = _reopenable_arrangements(db, event.id)
+    bookings_by_id = {booking.id: booking for booking in bookings}
+    reservations_by_id = {line.id: line for line in reservations}
+    errors = [
+        {
+            "loc": ["body", "reopen_venue_booking_ids"],
+            "msg": (
+                f"Venue Booking #{booking_id} is not an active booking on this "
+                "Event, so it cannot be reopened for review."
+            ),
+        }
+        for booking_id in dict.fromkeys(body.reopen_venue_booking_ids)
+        if booking_id not in bookings_by_id
+    ] + [
+        {
+            "loc": ["body", "reopen_equipment_reservation_ids"],
+            "msg": (
+                f"Equipment reservation #{line_id} is not a Reserved item on this "
+                "Event, so it cannot be reopened for review."
+            ),
+        }
+        for line_id in dict.fromkeys(body.reopen_equipment_reservation_ids)
+        if line_id not in reservations_by_id
+    ]
+    if errors:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+    return (
+        [bookings_by_id[i] for i in dict.fromkeys(body.reopen_venue_booking_ids)],
+        [reservations_by_id[i] for i in dict.fromkeys(body.reopen_equipment_reservation_ids)],
     )
 
 
 def _get_change_request_for_coordinator(
     request_id: int, user: User, db: Session
 ) -> tuple[EventChangeRequest, Event]:
-    change_request = db.get(EventChangeRequest, request_id)
+    change_request = db.scalar(
+        select(EventChangeRequest)
+        .where(EventChangeRequest.id == request_id)
+        .with_for_update()
+    )
     if change_request is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found"
@@ -576,7 +961,7 @@ def get_assigned_event(
     return AssignedEventDetail(
         **EventOut.model_validate(event).model_dump(),
         organiser=OrganiserContact.model_validate(event.organiser),
-        activity=_event_activity(db, event.id),
+        activity=event_activity(db, event.id),
         confirmation_outstanding=(
             outstanding_arrangements(db, event)
             if event.status in PLANNING_STATUSES
@@ -666,6 +1051,15 @@ def request_event_changes(
         ),
     )
     db.add(change_request)
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=event.status,
+            to_status=event.status,
+            note=f"Clarification message: {body.description.strip()}",
+        )
+    )
     db.flush()
     db.commit()
     db.refresh(change_request)
@@ -688,17 +1082,96 @@ def list_own_change_requests(
     return [_change_request_out(db, request) for request in requests]
 
 
+@router.get(
+    "/change-requests/{request_id}", response_model=EventChangeRequestOut
+)
+def get_change_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> EventChangeRequestOut:
+    """Read a request only as its assigned Coordinator or the Lead."""
+    change_request = db.get(EventChangeRequest, request_id)
+    if change_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found"
+        )
+    event = db.get(Event, change_request.event_id)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found"
+        )
+    if user.role == Role.COORDINATOR_LEAD.value:
+        return _change_request_out(db, change_request)
+    if (
+        user.role != Role.COORDINATOR.value
+        or event.coordinator_id != user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Change request not found"
+        )
+    return _change_request_out(db, change_request)
+
+
 @router.post(
     "/change-requests/{request_id}/approve", response_model=EventChangeRequestOut
 )
 def approve_change_request(
     request_id: int,
-    body: EventChangeDecisionIn,
+    body: EventChangeApprovalIn,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.COORDINATOR)),
 ) -> EventChangeRequestOut:
     change_request, event = _get_change_request_for_coordinator(request_id, user, db)
-    changes = dict(change_request.proposed_changes or {})
+    changes = _validated_changes(change_request.proposed_changes or {})
+    if changes is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "This change request contains values that are no longer valid, so it "
+                "cannot be approved. Reject it and ask the Event Organiser to submit "
+                "a new one."
+            ),
+        )
+    chosen_bookings, chosen_reservations = _chosen_arrangements(db, event, body)
+    prospective_name = changes.get("name", event.name)
+    prospective_start = changes.get("proposed_start", event.proposed_start)
+    prospective_end = changes.get("proposed_end", event.proposed_end)
+    if "name" in changes and (
+        prospective_name is None or not prospective_name.strip()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Event name cannot be empty.",
+        )
+    start_for_comparison = (
+        prospective_start.replace(tzinfo=timezone.utc)
+        if prospective_start is not None and prospective_start.tzinfo is None
+        else prospective_start
+    )
+    end_for_comparison = (
+        prospective_end.replace(tzinfo=timezone.utc)
+        if prospective_end is not None and prospective_end.tzinfo is None
+        else prospective_end
+    )
+    if ({"proposed_start", "proposed_end"} & changes.keys()) and (
+        start_for_comparison is None
+        or end_for_comparison is None
+        or end_for_comparison <= start_for_comparison
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The event must have an end time after its start time.",
+        )
+    expected_attendance = changes.get("expected_attendance", event.expected_attendance)
+    if "expected_attendance" in changes and (
+        expected_attendance is None or expected_attendance < 1
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Expected attendance must be at least 1.",
+        )
+    changed_fields = set(changes)
     # Registered Attendees hear about a new date or time on a confirmed
     # event: one notice for the whole save, however many fields moved.
     attendee_notice = (
@@ -726,8 +1199,8 @@ def approve_change_request(
     for field in changes:
         setattr(event, field, getattr(typed, field))
 
-    attendance_changed_after_approval = (
-        "expected_attendance" in (change_request.proposed_changes or {})
+    major_change_after_approval = (
+        bool(changed_fields.intersection(IMPORTANT_CHANGE_FIELDS))
         and event.status
         in (
             EventStatus.event_approved,
@@ -736,16 +1209,78 @@ def approve_change_request(
             EventStatus.safety_check_passed,
         )
     )
-    if attendance_changed_after_approval:
+    # A major change already reopens every active booking (or reserved item)
+    # when it touches venue (or equipment) fields; a choice adds only to a
+    # kind of arrangement the change itself leaves alone.
+    if major_change_after_approval and changed_fields.intersection(VENUE_REVIEW_FIELDS):
+        chosen_bookings = []
+    if major_change_after_approval and changed_fields.intersection(EQUIPMENT_REVIEW_FIELDS):
+        chosen_reservations = []
+
+    affected_venues: list[str] = []
+    affected_equipment: list[str] = []
+    if major_change_after_approval:
         previous_status = event.status
         event.status = EventStatus.planning_event
+        affected_venues, affected_equipment = _reset_arrangements_for_review(
+            db, event, changed_fields
+        )
         db.add(
             EventStatusHistory(
                 event_id=event.id,
                 changed_by=user.id,
                 from_status=previous_status,
                 to_status=event.status,
-                note="Attendance changed; a new safety check is required.",
+                note=(
+                    "Major change request approved; a new safety check is required. "
+                    "Arrangements require review: "
+                    + ", ".join(sorted(changed_fields))
+                    + "."
+                ),
+            )
+        )
+    else:
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=event.status,
+                to_status=event.status,
+                note=(
+                    "Event change request approved: "
+                    + ", ".join(sorted(changed_fields))
+                    + "."
+                ),
+            )
+        )
+
+    if chosen_bookings or chosen_reservations:
+        for booking in chosen_bookings:
+            _reopen_booking(booking, event, set())
+        for line in chosen_reservations:
+            _reopen_reservation(line)
+        previous_status = event.status
+        # A confirmed (or checking) Event cannot keep that status with an
+        # arrangement back under review.
+        if event.status in (EventStatus.awaiting_safety_check, EventStatus.safety_check_passed):
+            event.status = EventStatus.planning_event
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=previous_status,
+                to_status=event.status,
+                note=(
+                    "Also reopened for review by the Event Coordinator: "
+                    + ", ".join(
+                        [f"Venue Booking #{b.id} ({b.venue.name})" for b in chosen_bookings]
+                        + [
+                            f"Equipment reservation #{r.id} ({r.equipment.name})"
+                            for r in chosen_reservations
+                        ]
+                    )
+                    + "."
+                ),
             )
         )
 
@@ -756,6 +1291,25 @@ def approve_change_request(
         body.review_notes.strip() if body.review_notes else None
     )
     db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=event.status,
+            to_status=event.status,
+            note=f"Change Request approved: {change_request.description}",
+        )
+    )
+    if change_request.review_notes:
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=event.status,
+                to_status=event.status,
+                note=f"Event Coordinator note: {change_request.review_notes}",
+            )
+        )
+    db.add(
         Notification(
             user_id=event.organiser_id,
             event_id=event.id,
@@ -764,14 +1318,14 @@ def approve_change_request(
         )
     )
     attendee_notice.send(db, event)
-    if attendance_changed_after_approval:
+    if major_change_after_approval:
         notify(
             db,
             user_id=user.id,
             type=NotificationType.safety_changes_requested,
             message=(
-                f"Attendance for '{event.name or 'Event'}' changed. "
-                "Review venue capacity and submit it for a new safety check."
+                f"Arrangements for '{event.name or 'Event'}' changed. "
+                "Re-approve the affected bookings and reservations before the next safety check."
             ),
             event_id=event.id,
         )
@@ -796,6 +1350,25 @@ def reject_change_request(
     change_request.review_notes = (
         body.review_notes.strip() if body.review_notes else None
     )
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=event.status,
+            to_status=event.status,
+            note=f"Change Request rejected: {change_request.description}",
+        )
+    )
+    if change_request.review_notes:
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=event.status,
+                to_status=event.status,
+                note=f"Event Coordinator note: {change_request.review_notes}",
+            )
+        )
     db.add(
         Notification(
             user_id=event.organiser_id,
@@ -1130,6 +1703,44 @@ def cancel_event(
     return EventOut.model_validate(event)
 
 
+@router.post("/{event_id}/complete", response_model=EventOut)
+def complete_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> EventOut:
+    """Mark an assigned, confirmed event completed after its scheduled end."""
+    event = _get_assigned_event(event_id, user, db, lock=True)
+    if event.status != EventStatus.safety_check_passed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Only an event with status 'Safety Check Passed (Event Confirmed)' "
+                f"can be marked completed; this event is '{EventStatus(event.status).label}'."
+            ),
+        )
+    if event.proposed_end is None or _utc(event.proposed_end) >= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An event cannot be marked completed before its scheduled end time has passed.",
+        )
+
+    previous_status = event.status
+    event.status = EventStatus.event_completed
+    db.add(
+        EventStatusHistory(
+            event_id=event.id,
+            changed_by=user.id,
+            from_status=previous_status,
+            to_status=event.status,
+            note="Event marked completed by the assigned Event Coordinator.",
+        )
+    )
+    db.commit()
+    db.refresh(event)
+    return EventOut.model_validate(event)
+
+
 @router.get("/{event_id}", response_model=EventOut)
 def get_event(
     event_id: int,
@@ -1194,14 +1805,162 @@ def get_own_event_progress(
 
 
 @router.get("/{event_id}/activity", response_model=list[ActivityEntry])
-def get_own_event_activity(
+def get_event_activity(
     event_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(Permission.EVENT_READ)),
 ) -> list[ActivityEntry]:
-    """The signed-in Organiser's own event history, newest first."""
-    event = _get_own_event(event_id, user, db)
-    return _event_activity(db, event.id)
+    """Read the shared Activity Log only for an involved user or the Lead."""
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+        )
+    if (
+        event.organiser_id != user.id
+        and event.coordinator_id != user.id
+        and user.role != Role.COORDINATOR_LEAD.value
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+        )
+    return event_activity(db, event.id)
+
+
+@router.patch(
+    "/assigned/{event_id}/planning", response_model=PlanningEventEditOut
+)
+def edit_planning_event(
+    event_id: int,
+    body: EventIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.COORDINATOR)),
+) -> PlanningEventEditOut:
+    """Edit an assigned event and return any arrangements that need review."""
+    event = _planning_event_for_coordinator(event_id, user, db)
+    changes = body.model_dump(exclude_unset=True)
+    proposed = {
+        field: value
+        for field, value in changes.items()
+        if field != "equipment_items"
+        and not (field == "registration_enabled" and value is None)
+    }
+    final_name = proposed.get("name", event.name)
+    if final_name is None or not final_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Event name cannot be empty.",
+        )
+
+    proposed_start = proposed.get("proposed_start", event.proposed_start)
+    proposed_end = proposed.get("proposed_end", event.proposed_end)
+    start_for_comparison = (
+        proposed_start.replace(tzinfo=timezone.utc)
+        if proposed_start is not None and proposed_start.tzinfo is None
+        else proposed_start
+    )
+    end_for_comparison = (
+        proposed_end.replace(tzinfo=timezone.utc)
+        if proposed_end is not None and proposed_end.tzinfo is None
+        else proposed_end
+    )
+    if (
+        start_for_comparison is None
+        or end_for_comparison is None
+        or end_for_comparison <= start_for_comparison
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The event must have an end time after its start time.",
+        )
+    expected_attendance = proposed.get(
+        "expected_attendance", event.expected_attendance
+    )
+    if expected_attendance is None or expected_attendance < 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Expected attendance must be at least 1.",
+        )
+
+    changed_fields: set[str] = set()
+    for field, value in proposed.items():
+        current = getattr(event, field)
+        if isinstance(value, datetime) and isinstance(current, datetime):
+            value_comparison = (
+                value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+            )
+            current_comparison = (
+                current.replace(tzinfo=timezone.utc)
+                if current.tzinfo is None
+                else current
+            )
+            is_changed = value_comparison != current_comparison
+        else:
+            is_changed = value != current
+        if is_changed:
+            setattr(event, field, value)
+            changed_fields.add(field)
+
+    if "equipment_items" in changes:
+        requested_lines = body.equipment_items or []
+        current_lines = [
+            (
+                line.equipment_id,
+                line.quantity_requested,
+                line.technical_requirements,
+            )
+            for line in event.equipment_items
+        ]
+        requested_line_values = [
+            (
+                line.equipment_id,
+                line.quantity_requested,
+                line.technical_requirements,
+            )
+            for line in requested_lines
+        ]
+        if requested_line_values != current_lines:
+            replace_equipment_lines(db, event, requested_lines)
+            changed_fields.add("equipment_items")
+
+    affected_venues: list[str] = []
+    affected_equipment: list[str] = []
+    if changed_fields:
+        if changed_fields.intersection(IMPORTANT_CHANGE_FIELDS):
+            if event.status in (
+                EventStatus.awaiting_safety_check,
+                EventStatus.safety_check_passed,
+            ):
+                previous_status = event.status
+                event.status = EventStatus.planning_event
+            else:
+                previous_status = event.status
+            affected_venues, affected_equipment = _reset_arrangements_for_review(
+                db, event, changed_fields
+            )
+        else:
+            previous_status = event.status
+
+        db.add(
+            EventStatusHistory(
+                event_id=event.id,
+                changed_by=user.id,
+                from_status=previous_status,
+                to_status=event.status,
+                note=(
+                    "Event details updated: "
+                    + ", ".join(sorted(changed_fields))
+                    + "."
+                ),
+            )
+        )
+        db.commit()
+        db.refresh(event)
+
+    response = PlanningEventEditOut.model_validate(event)
+    response.affected_venue_bookings = affected_venues
+    response.affected_equipment_requirements = affected_equipment
+    return response
 
 
 @router.patch("/{event_id}", response_model=EventOut)

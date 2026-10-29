@@ -24,7 +24,8 @@ from app.models.equipment import EquipmentRequest
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
 from app.models.venues import VenueBooking
-from app.routers.events import SAFETY_RESULT_NOTES, _event_activity
+from app.routers.events import SAFETY_RESULT_NOTES
+from app.services.event_activity import event_activity
 from app.schemas.event import EventOut, OrganiserContact
 from app.schemas.safety_check import (
     PastSafetyCheck,
@@ -186,7 +187,7 @@ def get_safety_check(
             for line in event.equipment_items
             if line.status is not EquipmentStatus.cancelled
         ],
-        activity=_event_activity(db, event.id),
+        activity=event_activity(db, event.id),
         decisions=EventSafetyDecisions(db, event.id).decisions(),
     )
 

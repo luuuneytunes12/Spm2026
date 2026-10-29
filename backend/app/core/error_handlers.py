@@ -11,8 +11,14 @@ frontend's existing error handling works unchanged:
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 
-from app.domain.errors import DomainError
+from app.domain.errors import DomainError, ImmutableRecord
+from app.models.events import ACTIVITY_LOG_IMMUTABLE_MESSAGE
+
+# Raised by the event_status_history trigger
+# (supabase/migrations/20261027150209_event_workflow_stories.sql).
+_ACTIVITY_LOG_TRIGGER_MESSAGE = "Event activity log entries are immutable"
 
 
 async def _domain_error_response(request: Request, exc: DomainError) -> JSONResponse:
@@ -24,5 +30,16 @@ async def _domain_error_response(request: Request, exc: DomainError) -> JSONResp
     return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 
+async def _database_error_response(request: Request, exc: DBAPIError) -> JSONResponse:
+    """The database's own refusal to edit the Activity Log, worded like the
+    ORM's. Any other database error is not ours to explain and stays a 500."""
+    if _ACTIVITY_LOG_TRIGGER_MESSAGE not in str(exc.orig):
+        raise exc
+    return await _domain_error_response(
+        request, ImmutableRecord(ACTIVITY_LOG_IMMUTABLE_MESSAGE)
+    )
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(DomainError, _domain_error_response)
+    app.add_exception_handler(DBAPIError, _database_error_response)

@@ -97,6 +97,8 @@ const SAVED: EventDetail = {
   organiser_id: 5,
   coordinator_id: null,
   coordinator: null,
+  event_contact_name: null,
+  event_contact_email: null,
   name: 'Regional Partner Conference',
   purpose: 'Annual partner briefing',
   event_type: 'conference',
@@ -133,8 +135,10 @@ beforeEach(() => {
     created_at: '2026-09-10T00:00:00Z',
     reviewed_at: null,
     important_change: false,
+    safety_check_required: false,
     venue_bookings_to_reconsider: [],
     equipment_reservations_to_reconsider: [],
+    equipment_requirements_to_reconsider: [],
   })
   mockSubmit.mockResolvedValue({ ...SAVED, status: 'submitted_awaiting_coordinator' })
   mockGet.mockResolvedValue({ ...SAVED })

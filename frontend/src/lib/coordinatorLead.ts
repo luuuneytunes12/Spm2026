@@ -2,7 +2,7 @@
 // schemas/event.py -- keep field names byte-identical. Lead-only endpoints.
 
 import { apiFetch } from './api'
-import type { EventContact, EventDetail, EventSummary } from './events'
+import type { ActivityEntry, EventContact, EventDetail, EventSummary } from './events'
 
 export interface LeadEvent extends EventSummary {
   organiser: EventContact
@@ -19,6 +19,16 @@ export function listUnassignedRequests(): Promise<LeadEvent[]> {
 /** A queued request in full, for the Lead to review. Read-only. */
 export interface LeadEventDetail extends EventDetail {
   organiser: EventContact
+  activity: ActivityEntry[]
+  change_requests: LeadChangeRequest[]
+}
+
+export interface LeadChangeRequest {
+  id: number
+  description: string
+  proposed_changes: Record<string, unknown>
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
 }
 
 /** The Unassigned Queue: submitted requests awaiting a Coordinator, oldest

@@ -19,6 +19,26 @@ class EventStatus(enum.StrEnum):
     event_rejected = "event_rejected"
     event_cancelled = "event_cancelled"
 
+    @property
+    def label(self) -> str:
+        """The dod.md name, for messages a person reads."""
+        return _EVENT_STATUS_LABELS[self]
+
+
+_EVENT_STATUS_LABELS = {
+    EventStatus.draft: "Draft",
+    EventStatus.submitted_awaiting_coordinator: "Submitted – Awaiting Coordinator",
+    EventStatus.under_review: "Under Review",
+    EventStatus.awaiting_organiser_reply: "Awaiting Organiser Reply",
+    EventStatus.event_approved: "Event Approved",
+    EventStatus.planning_event: "Planning Event",
+    EventStatus.awaiting_safety_check: "Awaiting Safety Check",
+    EventStatus.safety_check_passed: "Safety Check Passed (Event Confirmed)",
+    EventStatus.event_completed: "Event Completed",
+    EventStatus.event_rejected: "Event Rejected",
+    EventStatus.event_cancelled: "Event Cancelled",
+}
+
 
 # Shared status groups keep workflow decisions aligned across routers and
 # services. Individual Event rows still store exactly one EventStatus value.
