@@ -34,6 +34,7 @@ from app.schemas.venue_booking import (
 from app.routers.venues import expire_tentative_holds
 from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.notifications import notify
+from app.services.coordinator_notices import CoordinatorVenueDecisionNotice
 from app.services.organiser_notices import VenueBookingDecisionNotice
 from app.services.safety_reopen import SafetyCheckReopen
 from app.services.venue_holds import active_hold_filter, reminder_lead
@@ -323,13 +324,16 @@ def _decide(booking: VenueBooking, decision: BookingStatus, staff: User, db: Ses
     booking.reviewed_by = staff.id
     booking.reviewed_at = datetime.now(timezone.utc)
     if decision in (BookingStatus.approved, BookingStatus.rejected):
-        # Only this booking's decision changed, so only this Venue is named.
-        VenueBookingDecisionNotice(
-            booking.venue.name,
-            decision,
-            reason=booking.decision_notes if decision == BookingStatus.rejected else None,
-            alternative=booking.suggested_alternative if decision == BookingStatus.rejected else None,
-        ).send(db, booking.event)
+        # Only this booking's decision changed, so only this Venue is named,
+        # to the Event's Organiser and to its Coordinator.
+        rejected = decision == BookingStatus.rejected
+        for notice in (VenueBookingDecisionNotice, CoordinatorVenueDecisionNotice):
+            notice(
+                booking.venue.name,
+                decision,
+                reason=booking.decision_notes if rejected else None,
+                alternative=booking.suggested_alternative if rejected else None,
+            ).send(db, booking.event)
     if decision == BookingStatus.approved and booking.replaces_booking_id is not None:
         _retire_replaced(booking, staff, db)
     if was_approved and decision != BookingStatus.approved:
