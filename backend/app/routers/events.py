@@ -58,7 +58,11 @@ from app.schemas.event import (
 from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.event_activity import event_activity
 from app.services.notifications import notify
-from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
+from app.services.safety_notices import (
+    SafetyCheckRequestedNotice,
+    SafetyCheckWithdrawnNotice,
+    was_sent_back_before,
+)
 from app.services.submission_notice import SubmissionNotice
 from app.services.tech_support_notices import notify_if_rescheduled
 
@@ -763,6 +767,10 @@ def _get_change_request_for_coordinator(
     event = db.get(Event, change_request.event_id, with_for_update=True)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    # Read the request again now the event is locked: it was loaded before the
+    # lock, so a decision committed while we waited (a double-click) would
+    # otherwise be missed and the change applied -- and notified -- twice.
+    db.refresh(change_request)
     if event.coordinator_id != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1114,6 +1122,39 @@ def get_change_request(
     return _change_request_out(db, change_request)
 
 
+# How a changed field reads in the Safety Officer's "left your queue" notice.
+_FIELD_LABELS = {
+    "proposed_start": "date and time",
+    "proposed_end": "date and time",
+    "venue_requirements": "venue requirements",
+    "room_layout_preference": "room layout",
+    "accessibility_needs": "accessibility needs",
+    "equipment_requirements": "equipment requirements",
+    "equipment_items": "equipment",
+}
+
+
+def _left_queue_reason(changed_fields, attendance_before, attendance_after, bookings, reservations) -> str:
+    """Why an approved change request took the event out of the Safety
+    Officer's queue: what changed, and anything reopened for review."""
+    parts: list[str] = []
+    if "expected_attendance" in changed_fields:
+        parts.append(f"its expected attendance changed from {attendance_before} to {attendance_after}")
+    labels = sorted(
+        {_FIELD_LABELS[f] for f in changed_fields & IMPORTANT_CHANGE_FIELDS if f in _FIELD_LABELS}
+    )
+    if labels:
+        parts.append(f"its {', '.join(labels)} changed")
+    reopened = [f"the {b.venue.name} booking" for b in bookings] + [
+        f"the {r.equipment.name} reservation" for r in reservations
+    ]
+    if reopened:
+        parts.append(f"the Event Coordinator reopened {', '.join(reopened)} for review")
+    return "; ".join(parts or ["its arrangements changed"]) + (
+        ", so its venue and safety arrangements must be reviewed again."
+    )
+
+
 @router.post(
     "/change-requests/{request_id}/approve", response_model=EventChangeRequestOut
 )
@@ -1124,6 +1165,9 @@ def approve_change_request(
     user: User = Depends(require_role(Role.COORDINATOR)),
 ) -> EventChangeRequestOut:
     change_request, event = _get_change_request_for_coordinator(request_id, user, db)
+    # What the Safety Officer is told if this sends the event out of their queue.
+    status_before = event.status
+    attendance_before = event.expected_attendance
     changes = _validated_changes(change_request.proposed_changes or {})
     if changes is None:
         raise HTTPException(
@@ -1321,6 +1365,13 @@ def approve_change_request(
         )
     )
     attendee_notice.send(db, event)
+    if status_before == EventStatus.awaiting_safety_check and event.status == EventStatus.planning_event:
+        # It leaves the Safety Officer's queue without their decision.
+        SafetyCheckWithdrawnNotice(
+            reason=_left_queue_reason(
+                changed_fields, attendance_before, event.expected_attendance, chosen_bookings, chosen_reservations
+            )
+        ).send(db, event)
     if major_change_after_approval:
         notify(
             db,

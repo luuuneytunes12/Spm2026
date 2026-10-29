@@ -147,6 +147,9 @@ class NotificationType(enum.StrEnum):
     safety_check_rejected = "safety_check_rejected"
     venue_booking_conflict = "venue_booking_conflict"
     safety_check_requested = "safety_check_requested"
+    # The event left the Safety Officer's queue: back to planning because its
+    # arrangements changed, so a check of it now would be of outdated plans.
+    safety_check_withdrawn = "safety_check_withdrawn"
     venue_unavailability_recorded = "venue_unavailability_recorded"
     venue_hold_expiring = "venue_hold_expiring"
     venue_hold_expired = "venue_hold_expired"

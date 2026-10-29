@@ -119,7 +119,10 @@ export function notificationLink(n: Notification, role: Role): string | null {
   if (role === Role.COORDINATOR_LEAD) return `/coordinator-lead/queue/${n.event_id}`
   // Technical Support review the Event's equipment on its record page.
   if (role === Role.TECH_SUPPORT) return `/equipment-requirements/${n.event_id}`
-  if (role === Role.SAFETY_OFFICER) return `/safety-checks/${n.event_id}`
+  if (role === Role.SAFETY_OFFICER) {
+    // An event that left the queue has nothing to check: open the queue.
+    return n.type === 'safety_check_withdrawn' ? '/safety-checks' : `/safety-checks/${n.event_id}`
+  }
   if (role === Role.ATTENDEE) return `/attendee/events/${n.event_id}`
   return null
 }

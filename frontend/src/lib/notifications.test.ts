@@ -53,6 +53,10 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'registration_status_changed' }, 'attendee')).toBe('/attendee/events/7')
   })
 
+  it("sends the Safety Officer's 'left your queue' notice to the queue, not the event's check", () => {
+    expect(notificationLink({ ...n, type: 'safety_check_withdrawn' }, 'safety_officer')).toBe('/safety-checks')
+  })
+
   it("sends Technical Support's equipment notices to the Event's equipment record", () => {
     for (const type of ['equipment_required', 'equipment_requirement_changed', 'equipment_requirement_removed', 'equipment_event_rescheduled']) {
       expect(notificationLink({ ...n, type }, 'tech_support')).toBe('/equipment-requirements/7')

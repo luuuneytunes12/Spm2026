@@ -1,12 +1,16 @@
-"""Tell the Safety Officer an event has joined their queue.
+"""Tell the Safety Officer an event has joined, or left, their queue.
 
 An event enters the queue ('Awaiting Safety Check') only when its Coordinator
 submits it -- the first time, or again after a Safety Officer sent it back.
-Checks are not assigned to one officer, so every Safety Officer is told, in
-the submit transaction: if the submit rolls back nobody is notified.
+It leaves without a Safety Officer's decision when its arrangements change
+and it returns to 'Planning Event': a check of it then would be of outdated
+plans. Checks are not assigned to one officer, so every Safety Officer is
+told, in the transaction that moves the event: if it rolls back nobody is
+notified.
 
     SafetyOfficerNotice          base: every Safety Officer, event + date + Coordinator
       SafetyCheckRequestedNotice   submitted, or resubmitted after being sent back
+      SafetyCheckWithdrawnNotice   back to planning because its arrangements changed
 """
 
 from sqlalchemy import exists, select
@@ -54,6 +58,22 @@ class SafetyCheckRequestedNotice(SafetyOfficerNotice):
     def message(self, event: Event) -> str:
         verb = "resubmitted" if self.resubmitted else "submitted"
         return f"{describe(event)} was {verb} for a Safety Check."
+
+
+class SafetyCheckWithdrawnNotice(SafetyOfficerNotice):
+    """The event has left the queue: it went back to 'Planning Event' because
+    its arrangements changed, so it no longer needs checking as it stood."""
+
+    type = NotificationType.safety_check_withdrawn
+
+    def __init__(self, *, reason: str) -> None:
+        self.reason = reason
+
+    def message(self, event: Event) -> str:
+        return (
+            f"{describe(event)} has left your Safety Check queue and is back in planning: "
+            f"{self.reason} Do not review it until it is submitted again."
+        )
 
 
 def was_sent_back_before(db: Session, event: Event) -> bool:
