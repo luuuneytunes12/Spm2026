@@ -44,6 +44,7 @@ from app.schemas.event import (
     SafetyCheckReturn,
     VenueBookingProgress,
 )
+from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.notifications import notify
 from app.services.safety_notices import SafetyCheckRequestedNotice, was_sent_back_before
 from app.services.submission_notice import SubmissionNotice
@@ -698,6 +699,20 @@ def approve_change_request(
 ) -> EventChangeRequestOut:
     change_request, event = _get_change_request_for_coordinator(request_id, user, db)
     changes = dict(change_request.proposed_changes or {})
+    # Registered Attendees hear about a new date or time on a confirmed
+    # event: one notice for the whole save, however many fields moved.
+    attendee_notice = (
+        EventChangedNotice(
+            EventChangedNotice.schedule_changes(
+                event.proposed_start,
+                event.proposed_end,
+                changes.get("proposed_start", event.proposed_start),
+                changes.get("proposed_end", event.proposed_end),
+            )
+        )
+        if event.status == CONFIRMED
+        else EventChangedNotice([])
+    )
     equipment_items = changes.pop("equipment_items", None)
     if equipment_items is not None:
         replace_equipment_lines(
@@ -705,8 +720,11 @@ def approve_change_request(
             event,
             [EquipmentLineIn.model_validate(line) for line in equipment_items],
         )
-    for field, value in changes.items():
-        setattr(event, field, value)
+    # Stored as JSON, so dates come back as strings: read them through the
+    # same schema that accepted the request before applying them.
+    typed = EventIn.model_validate(changes)
+    for field in changes:
+        setattr(event, field, getattr(typed, field))
 
     attendance_changed_after_approval = (
         "expected_attendance" in (change_request.proposed_changes or {})
@@ -745,6 +763,7 @@ def approve_change_request(
             message=f"Your requested changes for '{event.name or 'your event'}' were approved.",
         )
     )
+    attendee_notice.send(db, event)
     if attendance_changed_after_approval:
         notify(
             db,

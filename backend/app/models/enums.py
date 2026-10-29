@@ -135,6 +135,8 @@ class NotificationType(enum.StrEnum):
     event_returned_to_planning = "event_returned_to_planning"
     clarification_requested = "clarification_requested"
     clarification_replied = "clarification_replied"
+    event_details_changed = "event_details_changed"
+    registration_status_changed = "registration_status_changed"
     venue_booking_released = "venue_booking_released"
 
 
