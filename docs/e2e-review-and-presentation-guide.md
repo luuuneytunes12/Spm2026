@@ -61,7 +61,7 @@ current implementation (lecture pages 6 and 18–20).
 | E17 EQUIPMENT, E18 STOCK, E19 OVERLAP | Same file: reservation, competing event and unavailable outcome. |
 | E20 SAFETY APPROVAL, E21 REGISTRATION, E22 WITHDRAWAL, E23 RE-REGISTRATION, E24 TIME WINDOW | `safety-attendee-journey.spec.ts`: safety gate and attendee journeys. Exact boundary instants and all safety outcomes are not claimed. |
 | E25 REGISTRATION CAPACITY | Coverage map: not established; product requirements need confirmation. |
-| E26 CHANGE REQUEST, E27 AFTER BOOKING | `change-cancellation-journeys.spec.ts` and coverage map: approve/reject covered; changes after bookings are a known UI gap. |
+| E26 CHANGE REQUEST, E27 AFTER BOOKING | `change-cancellation-journeys.spec.ts` and coverage map: approve/reject covered; organiser-requested changes after bookings remain a UI gap; coordinators now have separate planning-edit controls. |
 | E29 CANCELLATION, RESOURCE RELEASE | Same file: cancellation reason and venue/equipment release; some resource assertions use the real API. |
 | E30 NOTIFICATIONS, E31 PERSISTENCE, ACCESSIBILITY | Coverage map and existing story specs: representative checks, not a complete audit. |
 | TEST ISOLATION, BROWSER CONTEXT ISOLATION | Hooks in the four new journey files and `support/db.ts`; browser sessions and database state are separate concerns. |
@@ -109,8 +109,8 @@ It does not establish frontend/backend deployment or staging smoke tests.
 
 Use an actual Playwright/Actions report to say what passed and when; discovering
 tests is not a successful run. On 29 October 2026, all 11 new journeys passed together locally against a
-disposable PostgreSQL container. The full 223-test suite has not yet been
-verified green.
+disposable PostgreSQL container. The earlier 223-test suite subsequently passed CI. After merging the newer
+main changes, the expanded 279-test suite requires a fresh full CI run.
 See the coverage map for unresolved requirements and missing paths; in
 particular E25, E27, some safety rejection/recovery paths, role combinations,
 exact time boundaries and complete notification/accessibility coverage.

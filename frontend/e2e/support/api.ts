@@ -63,7 +63,7 @@ export async function submitEvent(
  *  test. */
 export async function call(
   request: APIRequestContext,
-  method: 'get' | 'post' | 'put',
+  method: 'get' | 'post' | 'put' | 'patch',
   path: string,
   headers: Record<string, string>,
   data?: unknown,

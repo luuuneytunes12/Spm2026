@@ -14,7 +14,7 @@ validation also need the existing integration and unit tests.
 | Equipment | E17–E19 | `venue-equipment-journeys.spec.ts`: full reservation, zero stock in an overlapping event, unavailable with reason, and increasing the requirement above reserved stock. Other stock boundaries and races remain in backend integration tests. |
 | Safety and registration | E20–E24 | `safety-attendee-journey.spec.ts`: submission, safety approval, registration, withdrawal, re-registration and before/after the registration window; `safety-check-and-registration.spec.ts` covers blocked arrangements and registration settings. Not every safety rejection/recovery path is covered in the browser. |
 | Registration capacity | E25 | Not established in this E2E suite. The backlog marks waiting-list behaviour as uncertain; confirm the applicable release criteria and current implementation. |
-| Event change and cancellation | E26–E29 | `change-cancellation-journeys.spec.ts` tests approve/reject of a proposed change, pending-request guard, and cancellation/resource release. The UI offers organiser changes only before review is decided, so changing an event after bookings are made (E27) remains a gap; the backend's allowed statuses are broader. Event cancellation returns its venue booking as **Released** even though `dod.md` lists **Cancelled** for venue bookings; the team should reconcile the terminology. Concurrent cancellation/resource races belong in PostgreSQL integration tests. |
+| Event change and cancellation | E26–E29 | `change-cancellation-journeys.spec.ts` tests approve/reject of a proposed change, pending-request guard, and cancellation/resource release. The organiser UI offers change requests only before review is decided, so organiser-requested changes after bookings (E27) remain a browser coverage gap. Coordinators now have a separate planning-edit UI; its newly added behaviour also needs E2E coverage. Event cancellation returns its venue booking as **Released** even though `dod.md` lists **Cancelled** for venue bookings; the team should reconcile the terminology. Concurrent cancellation/resource races belong in PostgreSQL integration tests. |
 | Notifications, persistence and accessibility | E30–E31 | New journeys check representative notification and reload outcomes; existing axe and keyboard Playwright specs cover selected pages. This is not a complete notification-recipient or accessibility audit. |
 
 ## Running in CI and handling credentials
@@ -44,6 +44,6 @@ only the actual GitHub Actions run can establish whether that run is green.
 The registration and lifecycle fixtures that require an open registration
 window use relative dates. Shared event and venue fixtures use a common future
 year from `frontend/e2e/support/dates.ts`; date-sensitive queue, venue search,
-replacement, calendar and hold scenarios were checked locally. A complete
-223-test run was started but not completed, so a green full suite is not yet
-verified. Review CI failures rather than assuming all existing tests pass.
+replacement, calendar and hold scenarios were checked locally. The earlier 223-test suite passed CI before the latest main changes. The merged
+suite now discovers 279 tests, including new notification tests; its complete
+CI result must be verified after the merge update is pushed.

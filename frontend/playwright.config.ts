@@ -57,8 +57,7 @@ export const E2E_JWT_SECRET = 'e2e-not-a-real-secret-just-for-local-and-ci-tests
 // project. Separate ports plus reuseExistingServer:false means Playwright
 // always starts servers it configured itself, and a stray dev server causes
 // an obvious port clash rather than a silent switch to the wrong database.
-// Overrides allow two isolated local runs to use different ports. CI keeps
-// the defaults, and servers are never reused from a developer's session.
+// Both ports can be overridden so independent local test runs stay isolated.
 export const E2E_API_PORT = Number(process.env.E2E_API_PORT ?? 8001)
 const E2E_WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 5174)
 

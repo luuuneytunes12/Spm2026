@@ -1,6 +1,6 @@
 # Test Cases — Coordinator Assigned Events
 
-Covers one product backlog item:
+Covers Coordinator assigned-Event viewing, planning-edit, and completion stories:
 
 - **Story 3 — View Assigned Event Details.** *As an Event Coordinator, I want
   to view the full details of an event assigned to me, so that I can
@@ -16,11 +16,25 @@ which covers the two Organiser stories this one reads the output of.
 
 | Layer | Command | Needs |
 |---|---|---|
-| Backend (pytest) | `cd backend && uv run pytest -q tests/test_assigned_events.py` | nothing — in-memory SQLite |
+| Backend (pytest) | `cd backend && uv run pytest -q tests/test_assigned_events.py tests/test_planning_event_edit.py` | nothing — in-memory SQLite |
 | Components (Vitest) | `cd frontend && npm test` | nothing — jsdom, API mocked |
 | All of the above | push to any branch | GitHub Actions runs them |
 
 There is no Playwright layer for this story yet.
+
+## Mark Event as Completed
+
+The assigned Event Coordinator can mark an Event completed only after it has
+passed its Safety Check and its scheduled end time has passed. The transition
+uses the existing `event_completed` DoD status and records the Coordinator
+and timestamp in the immutable Activity Log; it requires no schema migration.
+
+| Test case | Type | Where |
+|---|---|---|
+| Ended, Safety Check Passed Event can be marked completed and activity records its actor/time | pytest | `test_complete_event.py` › *test_assigned_coordinator_completes_ended_confirmed_event_and_logs_activity* |
+| Future end time and non-confirmed/terminal statuses refuse completion without mutation | pytest | `test_complete_event.py` › *test_completion_is_refused_before_end_or_from_an_invalid_status* |
+| Another Coordinator cannot mark the Event completed | pytest | `test_complete_event.py` › *test_only_the_assigned_coordinator_can_complete_an_event* |
+| Assigned Coordinator can mark an ended confirmed Event complete; refreshed Activity Log is shown | Vitest | `AssignedEventView.test.tsx` › *marks an ended confirmed Event complete and reloads its Activity Log* |
 
 Submission places the Event in the Lead's unassigned queue with status
 `submitted_awaiting_coordinator`. When the Lead assigns a Coordinator, the
@@ -85,10 +99,13 @@ that schema.
 
 > *I can see the event's activity log.*
 
-The log is `event_status_history` — every recorded status change, with who
-made it and when. Today the only writer is the submit endpoint, so a freshly
-submitted event has exactly one entry; each later story that moves an event
-adds its own.
+The shared log is `event_status_history` — status transitions and recorded
+event actions, each with its actor and database timestamp. Organisers see
+their own Events, Coordinators see Events assigned to them, and the
+Coordinator Lead sees Events through the Lead review pages. Each view also
+states the Event's current status. Entries are append-only; the API and
+database refuse updates and deletes. Automated actions (such as a hold
+expiring) are attributed to **System**.
 
 | ID | Test case | Type | Where |
 |---|---|---|---|
@@ -97,6 +114,48 @@ adds its own.
 | TC-S3-4c | Newest first, on both sides | pytest + Vitest | *test_activity_log_is_newest_first* / *lists the most recent change first* |
 | TC-S3-4d | An event that never changed status has an **empty** log, not a missing one | pytest + Vitest | *test_activity_log_is_empty_rather_than_absent…* / *shows an empty state rather than an empty box…* |
 | TC-S3-4e | An entry whose actor cannot be named still renders | Vitest | `AssignedEventView.test.tsx` › *renders a log entry whose actor can no longer be named* |
+| TC-S3-4f | Saved clarification messages and Coordinator review notes include author and timestamp | pytest | `test_event_activity_log.py` › *test_ac2_saved_clarification_and_coordinator_note_are_activity_entries* |
+| TC-S3-4g | An assigned Coordinator and the Lead can read the shared log; an unrelated Coordinator is refused | pytest | `test_event_activity_log.py` › *test_ac1_ac4_activity_log_is_shared_with_assigned_coordinator_and_lead* |
+| TC-S3-4h | Activity entries cannot be updated or deleted | pytest + PostgreSQL | `test_event_activity_log.py` / `integration/test_event_activity_log_postgres.py` |
+
+## Editing details during planning
+
+An assigned Coordinator can update event-specific contact name/email and
+planning details while the Event is in Planning Event, Awaiting Safety Check,
+or Safety Check Passed. Changes return only affected arrangements to staff
+review: venue-impacting changes return active Venue Bookings to Venue Staff,
+while date/time or equipment changes return affected reserved equipment to
+Technical Support. Changing attendance also clears per-booking attendance
+overrides so venue capacity is checked against the updated Event attendance.
+The contact fields are event-specific and require
+`backend/sql/030_planning_event_contact_fields.sql`.
+
+| Test case | Type | Where |
+|---|---|---|
+| Assigned Coordinator edits event and contact details; edit is activity-logged | pytest | `test_planning_event_edit.py` › *test_assigned_coordinator_can_edit_planning_details_and_activity_is_recorded* |
+| Invalid edits, terminal Events, and another Coordinator's Event are refused without mutation | pytest | `test_planning_event_edit.py` |
+| Major changes reopen venue/equipment arrangements and expose capacity shortfalls | pytest | `test_planning_event_edit.py` › *test_major_change_reopens_arrangements_and_flags_capacity_shortfall* |
+| Approving a major Change Request returns a confirmed Event to planning and releases reservations | pytest | `test_planning_event_edit.py` › *test_major_change_request_approval_returns_confirmed_event_to_planning* |
+| Coordinator can edit details in the planning UI and sees review impacts | Vitest | `AssignedEventView.test.tsx` › *saves changed details and reports arrangements that need review* |
+
+## Processing Event Change Requests
+
+Only the assigned Coordinator may decide a pending Change Request; the
+Coordinator Lead can see requests before assignment and on assigned Events.
+Decision outcomes notify the Organiser and are recorded in the Activity Log.
+Major-change previews list affected Venue Bookings and Equipment Requirements
+separately, re-check venue capacity and setup/turnaround conflicts, and leave
+unaffected arrangements unchanged. Status wording in the UI follows `dod.md`.
+
+| Test case | Type | Where |
+|---|---|---|
+| Lead visibility before and after assignment; other Coordinators cannot view or decide | pytest | `test_process_event_change_request.py` › *test_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assignee* |
+| Approval/rejection notifies the Organiser, is activity-logged, and cannot be repeated | pytest | `test_process_event_change_request.py` › *test_decision_notifies_organiser_and_is_activity_logged_once* |
+| Venue suitability, attendance capacity, and setup/turnaround conflicts are rechecked | pytest | `test_process_event_change_request.py` › *test_major_change_preview_rechecks_each_venue_and_setup_turnaround_conflicts* |
+| Only affected arrangements are reopened after approval | pytest | `test_process_event_change_request.py` |
+| Terminal Events refuse approval without mutation | pytest | `test_process_event_change_request.py` › *test_terminal_event_change_request_cannot_be_approved* |
+| Lead can see request details in the read-only review screen | Vitest | `QueuedRequestView.test.tsx` › *shows a pending Event Change Request to the Coordinator Lead* |
+| Coordinator sees suitability, conflict and equipment requirement impacts before deciding | Vitest | `AssignedEventView.test.tsx` › *shows an important proposal and existing commitments, then offers a decision* |
 
 ## AC5 — I cannot view events that are not assigned to me
 

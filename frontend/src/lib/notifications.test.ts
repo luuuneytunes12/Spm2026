@@ -48,8 +48,42 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'safety_check_requested' }, 'safety_officer')).toBe('/safety-checks/7')
   })
 
-  it('has no link without an event, or for roles with no event page', () => {
+  it("sends an Attendee's change and registration notices to the event's page", () => {
+    expect(notificationLink({ ...n, type: 'event_details_changed' }, 'attendee')).toBe('/attendee/events/7')
+    expect(notificationLink({ ...n, type: 'registration_status_changed' }, 'attendee')).toBe('/attendee/events/7')
+  })
+
+  it("sends the Safety Officer's 'left your queue' notice to the queue, not the event's check", () => {
+    expect(notificationLink({ ...n, type: 'safety_check_withdrawn' }, 'safety_officer')).toBe('/safety-checks')
+  })
+
+  it("sends Venue Staff's notices to their booking queue", () => {
+    for (const type of ['venue_booking_requested', 'approved_event_changed', 'safety_returned_to_planning']) {
+      expect(notificationLink({ ...n, type }, 'venue_staff')).toBe('/venue-staff/bookings')
+    }
+  })
+
+  it("gives Technical Support's cancellation notice no link: a cancelled Event has no equipment record", () => {
+    expect(notificationLink({ ...n, type: 'event_cancelled' }, 'tech_support')).toBeNull()
+  })
+
+  it("sends everyone else's cancellation notice where they read the Event", () => {
+    const cancelled = { ...n, type: 'event_cancelled' }
+    expect(notificationLink(cancelled, 'attendee')).toBe('/attendee/events/7')
+    expect(notificationLink(cancelled, 'organiser')).toBe('/organiser/events/7')
+    expect(notificationLink(cancelled, 'coordinator')).toBe('/coordinator/events/7')
+    expect(notificationLink(cancelled, 'venue_staff')).toBe('/venue-staff/bookings')
+  })
+
+  it("sends Technical Support's equipment notices to the Event's equipment record", () => {
+    for (const type of ['equipment_required', 'equipment_requirement_changed', 'equipment_requirement_removed', 'equipment_event_rescheduled']) {
+      expect(notificationLink({ ...n, type }, 'tech_support')).toBe('/equipment-requirements/7')
+    }
+  })
+
+  it('has no link without an event', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
-    expect(notificationLink(n, 'attendee')).toBeNull()
+    expect(notificationLink({ ...n, event_id: null }, 'attendee')).toBeNull()
+    expect(notificationLink({ ...n, event_id: null }, 'venue_staff')).toBeNull()
   })
 })

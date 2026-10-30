@@ -82,7 +82,10 @@ def _notify(db: Session, coordinator_id: int, event: Event) -> None:
         db,
         user_id=coordinator_id,
         type=NotificationType.event_assigned,
-        message=f"You have been assigned to coordinate '{event.name or 'an event'}'.",
+        message=(
+            f"You have been assigned to coordinate '{event.name or 'an event'}' "
+            f"for {event.organiser.name} (Event Organiser)."
+        ),
         event_id=event.id,
     )
 

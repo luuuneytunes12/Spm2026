@@ -98,6 +98,17 @@ def _notified(db_session, s):
     return {n.user_id for n in db_session.query(Notification).filter_by(event_id=s["event_id"])}
 
 
+def _told_of_decision(db_session, s):
+    """Who the Safety Officer's decision itself reached. Leaves out the
+    separate "back in Planning Event" notice every Venue Staff member gets
+    (the Venue Staff notifications story)."""
+    return {
+        n.user_id
+        for n in db_session.query(Notification).filter_by(event_id=s["event_id"])
+        if n.type != "safety_returned_to_planning"
+    }
+
+
 def _last_log(db_session, s):
     return (
         db_session.query(EventStatusHistory)
@@ -320,20 +331,20 @@ def test_s3_ac4_changes_notify_organiser_coordinator_and_only_the_affected_staff
     s = _setup(client, db_session)
     _post(client, s, "request-changes", reason="Move the projector",
           equipment_request_ids=[s["line_id"]])
-    assert _notified(db_session, s) == {s["organiser"].id, s["coordinator"].id, s["tech"].id}
+    assert _told_of_decision(db_session, s) == {s["organiser"].id, s["coordinator"].id, s["tech"].id}
     assert all("Move the projector" in n.message for n in db_session.query(Notification))
 
 
 def test_s3_ac4_rejection_notifies_everyone_responsible_with_the_reason(client, db_session):
     s = _setup(client, db_session)
     _post(client, s, "reject", reason="Unsafe crowd flow")
-    assert _notified(db_session, s) == {
+    assert _told_of_decision(db_session, s) == {
         s["organiser"].id,
         s["coordinator"].id,
         s["venue_staff"].id,
         s["tech"].id,
     }
-    assert s["bystander"].id not in _notified(db_session, s)
+    assert s["bystander"].id not in _told_of_decision(db_session, s)
     assert all("Unsafe crowd flow" in n.message for n in db_session.query(Notification))
 
 

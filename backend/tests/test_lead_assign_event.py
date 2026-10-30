@@ -73,7 +73,11 @@ def test_ac1_the_assigned_coordinator_and_organiser_are_told(client, w):
     assign(client, w, e, w["sam"])
     db = w["db"]
     assert db.query(Notification).filter(Notification.user_id == w["sam"].id, Notification.event_id == e.id).count() == 1
-    org_note = db.query(Notification).filter(Notification.user_id == w["org"].id, Notification.event_id == e.id).one()
+    org_note = db.query(Notification).filter(
+        Notification.user_id == w["org"].id,
+        Notification.event_id == e.id,
+        Notification.type == "event_coordinator_assigned",  # the status notice is the Organiser story's
+    ).one()
     assert "Sam Tan" in org_note.message and "sam@cs.local" in org_note.message
 
 

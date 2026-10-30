@@ -54,6 +54,8 @@ vi.mock('../../lib/events', async () => {
     approveEvent: vi.fn(),
     approveEventChangeRequest: vi.fn(),
     cancelEvent: vi.fn(),
+    completeEvent: vi.fn(),
+    editPlanningEvent: vi.fn(),
     getAssignedEvent: vi.fn(),
     rejectEvent: vi.fn(),
     rejectEventChangeRequest: vi.fn(),
@@ -64,16 +66,20 @@ import {
   approveEvent,
   approveEventChangeRequest,
   cancelEvent,
+  completeEvent,
+  editPlanningEvent,
   getAssignedEvent,
   rejectEvent,
   rejectEventChangeRequest,
 } from '../../lib/events'
-import type { AssignedEventDetail } from '../../lib/events'
+import type { AssignedEventDetail, EventChangeRequest } from '../../lib/events'
 
 const mockGet = vi.mocked(getAssignedEvent)
 const mockApprove = vi.mocked(approveEvent)
 const mockReject = vi.mocked(rejectEvent)
 const mockCancel = vi.mocked(cancelEvent)
+const mockComplete = vi.mocked(completeEvent)
+const mockEditPlanning = vi.mocked(editPlanningEvent)
 const mockApproveChangeRequest = vi.mocked(approveEventChangeRequest)
 const mockRejectChangeRequest = vi.mocked(rejectEventChangeRequest)
 
@@ -82,6 +88,8 @@ const EVENT: AssignedEventDetail = {
   organiser_id: 1,
   coordinator_id: 2,
   coordinator: { id: 2, name: 'Sam Tan', email: 'sam@connectsphere.test' },
+  event_contact_name: null,
+  event_contact_email: null,
   name: 'Regional Partner Conference',
   event_type: 'conference',
   purpose: 'Annual partner briefing',
@@ -138,8 +146,10 @@ beforeEach(() => {
     created_at: '2026-09-10T02:00:00Z',
     reviewed_at: '2026-09-10T03:00:00Z',
     important_change: true,
+    safety_check_required: false,
     venue_bookings_to_reconsider: [],
     equipment_reservations_to_reconsider: [],
+    equipment_requirements_to_reconsider: [],
   })
   mockRejectChangeRequest.mockResolvedValue({
     id: 11,
@@ -152,8 +162,10 @@ beforeEach(() => {
     created_at: '2026-09-10T02:00:00Z',
     reviewed_at: '2026-09-10T03:00:00Z',
     important_change: true,
+    safety_check_required: false,
     venue_bookings_to_reconsider: [],
     equipment_reservations_to_reconsider: [],
+    equipment_requirements_to_reconsider: [],
   })
 })
 
@@ -163,6 +175,87 @@ describe('AC1 - the full requirements are visible', () => {
     renderView()
 
     expect(await screen.findByLabelText('event venue suitability stub')).toBeInTheDocument()
+  })
+
+  describe('planning event edits', () => {
+    it('saves changed details and reports arrangements that need review', async () => {
+      const planningEvent = { ...EVENT, status: 'planning_event' as const }
+      mockGet.mockResolvedValue(planningEvent)
+      mockEditPlanning.mockResolvedValue({
+        ...planningEvent,
+        name: 'Updated partner conference',
+        affected_venue_bookings: ['Main Hall'],
+        affected_equipment_requirements: ['Projector'],
+      })
+      const user = userEvent.setup()
+      renderView()
+
+      const name = await screen.findByLabelText('Event name')
+      await user.clear(name)
+      await user.type(name, 'Updated partner conference')
+      await user.click(screen.getByRole('button', { name: 'Save event details' }))
+
+      expect(await screen.findByText('Event details saved.')).toBeInTheDocument()
+      expect(mockEditPlanning).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          name: 'Updated partner conference',
+          event_contact_name: null,
+          event_contact_email: null,
+        }),
+      )
+      expect(screen.getByText('Venue bookings: Main Hall')).toBeInTheDocument()
+      expect(screen.getByText('Equipment requirements: Projector')).toBeInTheDocument()
+    })
+
+    it.each(['event_approved', 'planning_event', 'awaiting_safety_check', 'safety_check_passed'] as const)(
+      'US2 AC1/AC4: offers the edit form for a %s Event',
+      async (status) => {
+        mockGet.mockResolvedValue({ ...EVENT, status })
+        renderView()
+
+        expect(await screen.findByRole('heading', { name: 'Edit event details' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Save event details' })).toBeInTheDocument()
+      },
+    )
+
+    it.each(['under_review', 'event_cancelled', 'event_completed', 'event_rejected'] as const)(
+      'US2 AC5: offers no edit form for a %s Event',
+      async (status) => {
+        mockGet.mockResolvedValue({ ...EVENT, status })
+        renderView()
+        await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+
+        expect(screen.queryByRole('heading', { name: 'Edit event details' })).toBeNull()
+        expect(screen.queryByRole('button', { name: 'Save event details' })).toBeNull()
+      },
+    )
+
+    it('US2 AC3: shows the server refusal and does not claim the details were saved', async () => {
+      mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event' })
+      mockEditPlanning.mockRejectedValue(
+        new ApiError(422, 'Event name cannot be empty.'),
+      )
+      const user = userEvent.setup()
+      renderView()
+
+      await user.clear(await screen.findByLabelText('Event name'))
+      await user.click(screen.getByRole('button', { name: 'Save event details' }))
+
+      expect(await screen.findByText('Event name cannot be empty.')).toHaveAttribute('role', 'alert')
+      expect(screen.queryByText('Event details saved.')).toBeNull()
+    })
+
+    it('US2: a network failure shows a readable message, not a crash', async () => {
+      mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event' })
+      mockEditPlanning.mockRejectedValue(new TypeError('Failed to fetch'))
+      const user = userEvent.setup()
+      renderView()
+
+      await user.click(await screen.findByRole('button', { name: 'Save event details' }))
+
+      expect(await screen.findByText('Could not save event details.')).toHaveAttribute('role', 'alert')
+    })
   })
 
   it('TC-S3-1b: shows every field named in the acceptance criterion', async () => {
@@ -198,7 +291,7 @@ describe('AC1 - the full requirements are visible', () => {
     renderView()
 
     await screen.findByText('Description')
-    expect(screen.getAllByText('Not provided')).toHaveLength(2)
+    expect(screen.getAllByText('Not provided')).toHaveLength(4)
   })
 
   it('says so plainly when registration is not required', async () => {
@@ -307,6 +400,7 @@ describe('change requests - coordinator review and planning impact', () => {
           created_at: '2026-09-10T02:00:00Z',
           reviewed_at: null,
           important_change: true,
+          safety_check_required: true,
           venue_bookings_to_reconsider: [
             {
               id: 1,
@@ -314,10 +408,22 @@ describe('change requests - coordinator review and planning impact', () => {
               start_time: '2026-11-02T09:00:00Z',
               end_time: '2026-11-02T17:00:00Z',
               status: 'approved',
+              suitable: false,
+              unmet_requirements: ['Insufficient capacity.'],
+              conflicts: ['Conflicts with another booking.'],
             },
           ],
           equipment_reservations_to_reconsider: [
             { id: 2, equipment_name: 'Projector', quantity_requested: 2, status: 'reserved' },
+          ],
+          equipment_requirements_to_reconsider: [
+            {
+              id: 3,
+              category: 'Projection',
+              status: 'reserved',
+              quantity_needed: 2,
+              reserved_items: ['Projector × 2'],
+            },
           ],
         },
       ],
@@ -325,8 +431,13 @@ describe('change requests - coordinator review and planning impact', () => {
     renderView()
 
     expect(await screen.findByText('Important change')).toBeInTheDocument()
+    expect(screen.getByText(/returns this Event to Planning Event/)).toBeInTheDocument()
     expect(screen.getByText(/Main Hall/)).toBeInTheDocument()
-    expect(screen.getByText(/Projector/)).toBeInTheDocument()
+    expect(screen.getByText(/Not Suitable/)).toBeInTheDocument()
+    expect(screen.getByText('Insufficient capacity.')).toBeInTheDocument()
+    expect(screen.getByText('Conflicts with another booking.')).toBeInTheDocument()
+    expect(screen.getByText(/Requirement #3: Projection/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Projector/).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Approve changes' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Approve request' })).toBeDisabled()
   })
@@ -355,8 +466,10 @@ describe('change requests - coordinator review and planning impact', () => {
           created_at: '2026-09-10T02:00:00Z',
           reviewed_at: null,
           important_change: true,
+          safety_check_required: false,
           venue_bookings_to_reconsider: [],
           equipment_reservations_to_reconsider: [],
+          equipment_requirements_to_reconsider: [],
         },
       ],
     })
@@ -655,6 +768,101 @@ describe('what this screen deliberately does not offer', () => {
   })
 })
 
+describe('US3 AC2 - arrangements the change does not touch', () => {
+  const pendingRequest: EventChangeRequest = {
+    id: 21,
+    event_id: 7,
+    requested_by: 1,
+    description: 'More attendees',
+    proposed_changes: { expected_attendance: 180 },
+    status: 'pending',
+    review_notes: null,
+    created_at: '2026-09-10T02:00:00Z',
+    reviewed_at: null,
+    important_change: true,
+    safety_check_required: true,
+    venue_bookings_to_reconsider: [],
+    equipment_reservations_to_reconsider: [],
+    equipment_requirements_to_reconsider: [],
+    other_venue_bookings: [
+      {
+        id: 5,
+        venue_name: 'Annex',
+        start_time: '2026-11-02T09:00:00Z',
+        end_time: '2026-11-02T17:00:00Z',
+        status: 'approved',
+      },
+    ],
+    other_equipment_reservations: [
+      { id: 6, equipment_name: 'Projector', quantity_requested: 2, status: 'reserved' },
+    ],
+  }
+
+  it('lists them as unticked choices, so by default they stay unchanged', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event', change_requests: [pendingRequest] })
+    const user = userEvent.setup()
+    renderView()
+
+    const annex = await screen.findByRole('checkbox', { name: /Venue Booking #5 — Annex/ })
+    const projector = screen.getByRole('checkbox', { name: /Equipment reservation #6 — Projector × 2/ })
+    expect(annex).not.toBeChecked()
+    expect(projector).not.toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Approve changes' }))
+
+    await waitFor(() => expect(mockApproveChangeRequest).toHaveBeenCalledWith(21, undefined))
+  })
+
+  it('sends only the ones the Coordinator ticks', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event', change_requests: [pendingRequest] })
+    const user = userEvent.setup()
+    renderView()
+
+    await user.click(await screen.findByRole('checkbox', { name: /Venue Booking #5/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Equipment reservation #6/ }))
+    await user.click(screen.getByRole('checkbox', { name: /Equipment reservation #6/ }))
+    await user.click(screen.getByRole('button', { name: 'Approve changes' }))
+
+    await waitFor(() =>
+      expect(mockApproveChangeRequest).toHaveBeenCalledWith(21, undefined, {
+        venueBookingIds: [5],
+        equipmentReservationIds: [],
+      }),
+    )
+  })
+
+  it('does not offer the choice once the request has been decided', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'planning_event',
+      change_requests: [{ ...pendingRequest, status: 'approved' }],
+    })
+    renderView()
+    await screen.findByText('More attendees')
+
+    expect(screen.queryByRole('checkbox', { name: /Venue Booking #5/ })).toBeNull()
+  })
+
+  it('shows a readable refusal from the server', async () => {
+    mockGet.mockResolvedValue({ ...EVENT, status: 'planning_event', change_requests: [pendingRequest] })
+    mockApproveChangeRequest.mockRejectedValueOnce(
+      new ApiError(
+        422,
+        'reopen_venue_booking_ids: Venue Booking #5 is not an active booking on this Event, so it cannot be reopened for review.',
+      ),
+    )
+    const user = userEvent.setup()
+    renderView()
+
+    await user.click(await screen.findByRole('checkbox', { name: /Venue Booking #5/ }))
+    await user.click(screen.getByRole('button', { name: 'Approve changes' }))
+
+    expect(
+      await screen.findByText(/Venue Booking #5 is not an active booking on this Event/),
+    ).toHaveAttribute('role', 'alert')
+  })
+})
+
 describe('Coordinator decisions', () => {
   it('approves the assigned request and refreshes its activity', async () => {
     mockGet.mockResolvedValue({ ...EVENT, status: 'under_review' })
@@ -777,6 +985,100 @@ describe('Cancel Event', () => {
   )
 })
 
+describe('Mark Event as Completed', () => {
+  it('marks an ended confirmed Event complete and reloads its Activity Log', async () => {
+    const completedEvent = {
+      ...EVENT,
+      status: 'event_completed' as const,
+      activity: [
+        {
+          from_status: 'safety_check_passed',
+          to_status: 'event_completed',
+          note: 'Event marked completed by the assigned Event Coordinator.',
+          changed_by_name: 'Sam Tan',
+          created_at: '2026-09-10T03:00:00Z',
+        },
+        ...EVENT.activity,
+      ],
+    }
+    mockGet
+      .mockResolvedValueOnce({
+        ...EVENT,
+        status: 'safety_check_passed',
+        proposed_end: '2020-01-01T12:00:00Z',
+      })
+      .mockResolvedValueOnce(completedEvent)
+    mockComplete.mockResolvedValue(completedEvent)
+    renderView()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Mark Event Completed' }))
+
+    expect(mockComplete).toHaveBeenCalledWith(7)
+    expect(await screen.findByText('Event Completed', { selector: '.badge' })).toBeInTheDocument()
+    expect(screen.getByText(/Sam Tan/)).toBeInTheDocument()
+    expect(
+      screen.getByText('Event marked completed by the assigned Event Coordinator.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the scheduled end and displays the server refusal before that time', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'safety_check_passed',
+      proposed_end: '2099-01-01T12:00:00Z',
+    })
+    mockComplete.mockRejectedValue(
+      new ApiError(409, 'An event cannot be marked completed before its scheduled end time has passed.'),
+    )
+    renderView()
+
+    expect(await screen.findByText(/Scheduled end:/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Mark Event Completed' }))
+    expect(mockComplete).toHaveBeenCalledWith(7)
+    expect(
+      await screen.findByText(
+        'An event cannot be marked completed before its scheduled end time has passed.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a useful error when completion is refused', async () => {
+    mockGet.mockResolvedValue({
+      ...EVENT,
+      status: 'safety_check_passed',
+      proposed_end: '2020-01-01T12:00:00Z',
+    })
+    mockComplete.mockRejectedValue(
+      new ApiError(409, 'An event cannot be marked completed before its scheduled end time has passed.'),
+    )
+    renderView()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Mark Event Completed' }))
+
+    expect(
+      await screen.findByText(
+        'An event cannot be marked completed before its scheduled end time has passed.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    'planning_event',
+    'awaiting_safety_check',
+    'event_completed',
+    'event_cancelled',
+  ] as const)(
+    'does not offer completion for %s',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...EVENT, status })
+      renderView()
+
+      await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+      expect(screen.queryByRole('button', { name: 'Mark Event Completed' })).not.toBeInTheDocument()
+    },
+  )
+})
+
 describe('SCRUM-39 - the venue booking card follows the event status', () => {
   it('is offered once the event is approved', async () => {
     mockGet.mockResolvedValue({ ...EVENT, status: 'event_approved' })
@@ -855,7 +1157,9 @@ describe('ER AC1 - the equipment requirements card', () => {
     renderView()
     await screen.findByLabelText('equipment requirements stub')
 
-    // What the Organiser asked for is still part of their request.
-    expect(screen.getByText('Equipment requirements')).toBeInTheDocument()
+    // What the Organiser asked for is still part of their request. Scoped to
+    // the Event Details list: an approved Event also has the edit form, whose
+    // field has the same label.
+    expect(screen.getByText('Equipment requirements', { selector: 'dt' })).toBeInTheDocument()
   })
 })

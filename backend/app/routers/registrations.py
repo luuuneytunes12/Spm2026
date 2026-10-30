@@ -13,6 +13,7 @@ from app.models.events import Event
 from app.models.registrations import Registration
 from app.models.user import User
 from app.models.venues import VenueBooking
+from app.services.attendee_notices import RegistrationStatusNotice
 from app.schemas.registration import (
     AttendeeEntry,
     AttendeeEventDetail,
@@ -69,12 +70,15 @@ def _out(event: Event, registration: Registration | None) -> RegistrableEvent:
     )
 
 
-def _my_registration(event_id: int, user: User, db: Session) -> Registration | None:
-    return (
-        db.query(Registration)
-        .filter(Registration.event_id == event_id, Registration.attendee_id == user.id)
-        .one_or_none()
+def _my_registration(
+    event_id: int, user: User, db: Session, *, lock: bool = False
+) -> Registration | None:
+    """Writes lock the row, so a double click cannot save -- and confirm --
+    the same change twice."""
+    query = db.query(Registration).filter(
+        Registration.event_id == event_id, Registration.attendee_id == user.id
     )
+    return (query.with_for_update() if lock else query).one_or_none()
 
 
 @router.get("/events", response_model=list[RegistrableEvent])
@@ -170,7 +174,7 @@ def register(
     Attendee per event.
     """
     event = db.get(Event, event_id)
-    registration = _my_registration(event_id, user, db) if event else None
+    registration = _my_registration(event_id, user, db, lock=True) if event else None
     # Events an Attendee could never register for are "not found" -- the
     # same principle as _get_own_event: this must not probe draft ids.
     if event is None or (
@@ -205,6 +209,9 @@ def register(
     registration.status = RegistrationStatus.registered
 
     try:
+        # Inside the try: the notice flushes, so a duplicate insert from a
+        # concurrent request is caught here and nobody is told twice.
+        RegistrationStatusNotice(registration).send(db, event)
         db.commit()
     except IntegrityError:
         # A concurrent request (double click) inserted the row first.
@@ -225,7 +232,7 @@ def withdraw(
 ) -> RegistrableEvent:
     """Release the caller's place. Allowed even after registration closes --
     giving a place back late is still better than not giving it back."""
-    registration = _my_registration(event_id, user, db)
+    registration = _my_registration(event_id, user, db, lock=True)
     if registration is None or registration.status != RegistrationStatus.registered:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -234,6 +241,7 @@ def withdraw(
 
     registration.status = RegistrationStatus.withdrawn
     registration.withdrawn_at = datetime.now(timezone.utc)
+    RegistrationStatusNotice(registration).send(db, registration.event)
     db.commit()
     db.refresh(registration)
     return _out(registration.event, registration)
