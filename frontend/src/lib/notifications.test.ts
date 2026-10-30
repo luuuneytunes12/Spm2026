@@ -63,6 +63,18 @@ describe('notificationLink', () => {
     }
   })
 
+  it("gives Technical Support's cancellation notice no link: a cancelled Event has no equipment record", () => {
+    expect(notificationLink({ ...n, type: 'event_cancelled' }, 'tech_support')).toBeNull()
+  })
+
+  it("sends everyone else's cancellation notice where they read the Event", () => {
+    const cancelled = { ...n, type: 'event_cancelled' }
+    expect(notificationLink(cancelled, 'attendee')).toBe('/attendee/events/7')
+    expect(notificationLink(cancelled, 'organiser')).toBe('/organiser/events/7')
+    expect(notificationLink(cancelled, 'coordinator')).toBe('/coordinator/events/7')
+    expect(notificationLink(cancelled, 'venue_staff')).toBe('/venue-staff/bookings')
+  })
+
   it("sends Technical Support's equipment notices to the Event's equipment record", () => {
     for (const type of ['equipment_required', 'equipment_requirement_changed', 'equipment_requirement_removed', 'equipment_event_rescheduled']) {
       expect(notificationLink({ ...n, type }, 'tech_support')).toBe('/equipment-requirements/7')

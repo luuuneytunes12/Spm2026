@@ -54,7 +54,9 @@ def test_ac1_a_double_clicked_cancel_is_told_once(make_client, db, make_user):
     )
 
     assert sorted(r.status_code for r in results).count(200) == 1
-    assert _told(db, organiser.id, NotificationType.event_status_changed) == 1
+    # Cancelling names the new status in its own notice, with the reason.
+    assert _told(db, organiser.id, NotificationType.event_cancelled) == 1
+    assert _told(db, organiser.id, NotificationType.event_status_changed) == 0
 
 
 def test_ac1_a_rolled_back_status_change_is_never_told(db, make_user):

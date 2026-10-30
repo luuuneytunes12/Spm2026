@@ -37,6 +37,7 @@ from tests.test_safety_officer_notifications import _confirm, _ready
 from tests.test_venue_booking_request import _submit_many, _venue
 
 STATUS = NotificationType.event_status_changed.value
+CANCELLED = NotificationType.event_cancelled.value
 VENUE = NotificationType.venue_booking_decided.value
 EQUIPMENT = NotificationType.equipment_outcome.value
 
@@ -86,9 +87,11 @@ def test_ac1_cancelling_names_the_event_and_cancelled(client, db_session):
     res = client.post(f"/events/{w['event_id']}/cancel", json={"reason": "Budget cut"}, headers=w["coord_h"])
 
     assert res.status_code == 200, res.text
-    assert _inbox(client, w["org_h"], STATUS) == [
-        "Your event 'Regional Partner Conference' is now Event Cancelled."
+    # The cancellation notice names the new status and why; no generic one as well.
+    assert _inbox(client, w["org_h"], CANCELLED) == [
+        "Your event 'Regional Partner Conference' has been cancelled. Reason: Budget cut"
     ]
+    assert _inbox(client, w["org_h"], STATUS) == []
 
 
 def test_ac1_an_edit_that_reopens_a_confirmed_event_names_planning_event(client, db_session):
@@ -170,20 +173,30 @@ def test_ac1_the_status_still_changes(client, db_session):
 # --- AC2 / AC6: not my Event -> nothing --------------------------------------
 
 
+def _reopen(client, w):
+    """A confirmed Event's new date sends it back to Planning Event."""
+    res = client.patch(
+        f"/events/assigned/{w['event_id']}/planning",
+        json={"proposed_start": "2026-11-03T09:00:00Z", "proposed_end": "2026-11-03T17:00:00Z"},
+        headers=w["coord_h"],
+    )
+    assert res.status_code == 200, res.text
+
+
 def test_ac2_another_organisers_status_change_is_not_sent_to_me(client, db_session):
-    w = _assigned(client, db_session, EventStatus.planning_event)
+    w = _assigned(client, db_session, EventStatus.safety_check_passed)
     _, other_h = _other_organiser(client, db_session)
 
-    client.post(f"/events/{w['event_id']}/cancel", json={"reason": "Budget cut"}, headers=w["coord_h"])
+    _reopen(client, w)
 
     assert len(_inbox(client, w["org_h"], STATUS)) == 1
     assert _inbox(client, other_h) == []
 
 
 def test_ac2_only_the_organiser_gets_the_status_notice(client, db_session):
-    w = _assigned(client, db_session, EventStatus.planning_event)
+    w = _assigned(client, db_session, EventStatus.safety_check_passed)
 
-    client.post(f"/events/{w['event_id']}/cancel", json={"reason": "Budget cut"}, headers=w["coord_h"])
+    _reopen(client, w)
 
     db_session.expire_all()
     recipients = {n.user_id for n in db_session.query(Notification).filter_by(type=STATUS)}
@@ -194,8 +207,8 @@ def test_ac2_only_the_organiser_gets_the_status_notice(client, db_session):
 
 
 def test_ac3_the_notice_is_there_after_logging_in_again(client, db_session):
-    w = _assigned(client, db_session, EventStatus.planning_event)
-    client.post(f"/events/{w['event_id']}/cancel", json={"reason": "Budget cut"}, headers=w["coord_h"])
+    w = _assigned(client, db_session, EventStatus.safety_check_passed)
+    _reopen(client, w)
 
     login = client.post("/auth/login", json={"email": "organiser@example.com", "password": "password123"})
     assert login.status_code == 200, login.text
