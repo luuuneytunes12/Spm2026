@@ -167,7 +167,9 @@ def test_ac2_notification_is_pushed_live_to_the_organiser(client, db_session):
         _submit(client, organiser_headers)
 
     pushed = [
-        call.args[1] for call in publish.call_args_list if call.args[0] == organiser.id
+        call.args[1]
+        for call in publish.call_args_list
+        if call.args[0] == organiser.id and call.args[1]["type"] != "event_status_changed"  # the status notice is the Organiser story's
     ]
     assert [p["type"] for p in pushed] == ["event_coordinator_assigned"]
     assert "sam@connectsphere.test" in pushed[0]["message"]
@@ -215,7 +217,12 @@ def test_the_activity_log_is_one_record_seen_by_organiser_and_coordinator(client
 
 
 def _types(client, headers) -> list[str]:
-    return [n["type"] for n in client.get("/notifications", headers=headers).json()]
+    # Leaves out the status notice, which is the Organiser story's.
+    return [
+        n["type"]
+        for n in client.get("/notifications", headers=headers).json()
+        if n["type"] != "event_status_changed"
+    ]
 
 
 def test_assignment_sends_each_role_its_own_notification(client, db_session):
@@ -238,7 +245,11 @@ def test_the_organisers_notification_is_worded_for_the_organiser(client, db_sess
     )
     _submit(client, organiser_headers)
 
-    organiser_msg = client.get("/notifications", headers=organiser_headers).json()[0]["message"]
+    organiser_msg = next(
+        n["message"]
+        for n in client.get("/notifications", headers=organiser_headers).json()
+        if n["type"] == "event_coordinator_assigned"
+    )
     coordinator_msg = client.get("/notifications", headers=coordinator_headers).json()[0]["message"]
 
     assert "is now coordinating" in organiser_msg

@@ -56,7 +56,11 @@ def test_scrum23_notifications_are_role_specific_and_the_log_is_shared(client, m
     _o, org_h, _s, sam_h, _p, _ph = _setup(make_user)
     event_id = submit_event(client, org_h)
 
-    org_types = [n["type"] for n in client.get("/notifications", headers=org_h).json()]
+    org_types = [
+        n["type"]
+        for n in client.get("/notifications", headers=org_h).json()
+        if n["type"] != "event_status_changed"  # the status notice is the Organiser story's
+    ]
     sam_types = [n["type"] for n in client.get("/notifications", headers=sam_h).json()]
     assert org_types == ["event_coordinator_assigned"]
     assert sam_types == ["event_assigned"]

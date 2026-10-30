@@ -11,6 +11,8 @@ from app.schemas.clarification import ClarificationOut
 from app.schemas.event import EventIn
 from app.services.equipment_lines import replace_equipment_lines
 from app.services.notifications import notify
+from app.services.tech_support_notices import notify_if_rescheduled
+from app.services.venue_staff_notices import ApprovedEventChangedNotice
 
 
 def to_out(row: EventClarification) -> ClarificationOut:
@@ -81,7 +83,11 @@ def reply_to_clarification(
 ) -> EventClarification:
     note = message
     if updates is not None:
+        old_start, old_end = event.proposed_start, event.proposed_end
+        venue_staff_before = ApprovedEventChangedNotice.before(db, event)
         summary = _apply_updates(db, event, updates)
+        notify_if_rescheduled(db, event, old_start, old_end)
+        ApprovedEventChangedNotice.since(venue_staff_before, event).send(db, event)
         if summary:
             note = f"{message}\nChanged: " + "; ".join(summary)
     row = _record(db, event, organiser, "reply", message, EventStatus.under_review, note)
@@ -90,7 +96,9 @@ def reply_to_clarification(
             db,
             user_id=event.coordinator_id,
             type=NotificationType.clarification_replied,
-            message=f"{organiser.name} replied to your clarification request on '{event.name or 'the event'}'.",
+            # The Event's Organiser, loaded: the signed-in user a route is
+            # given is built from the token and has no name.
+            message=f"{event.organiser.name} replied to your clarification request on '{event.name or 'the event'}'.",
             event_id=event.id,
         )
     return row

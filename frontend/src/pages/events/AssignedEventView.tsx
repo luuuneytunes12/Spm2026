@@ -4,6 +4,7 @@ import { AttendeeListSection } from '../../components/AttendeeListSection'
 import { ClarificationRequestPanel } from '../../components/ClarificationRequestPanel'
 import { EquipmentLines } from '../../components/EquipmentLines'
 import { EquipmentRequirementsSection } from '../../components/EquipmentRequirementsSection'
+import { EventActivityLog } from '../../components/EventActivityLog'
 import { EventVenueSuitability } from '../../components/EventVenueSuitability'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
@@ -15,6 +16,8 @@ import {
   approveEvent,
   approveEventChangeRequest,
   cancelEvent,
+  completeEvent,
+  editPlanningEvent,
   submitForSafetyCheck,
   formatRange,
   formatTimestamp,
@@ -25,15 +28,45 @@ import {
   setEventRegistration,
   toDateTimeLocal,
 } from '../../lib/events'
-import type { ActivityEntry, AssignedEventDetail, EventChangeRequest } from '../../lib/events'
+import type {
+  AssignedEventDetail,
+  EventChangeRequest,
+  EventInput,
+  ReopenChoices,
+} from '../../lib/events'
 
-/** Turn a stored status slug into its label, falling back to the slug.
- *
- *  Activity log entries carry raw strings rather than an EventStatus, because
- *  they are a historical record: a status renamed tomorrow must not make
- *  yesterday's log unrenderable. Hence the lookup-then-fall-back. */
+const EMPTY_REOPEN: ReopenChoices = { venueBookingIds: [], equipmentReservationIds: [] }
+
+/** Add `id` to, or take it out of, one list of a request's reopen choices. */
+function toggleChoice(
+  choices: ReopenChoices | undefined,
+  list: keyof ReopenChoices,
+  id: number,
+  checked: boolean,
+): ReopenChoices {
+  const current = choices ?? EMPTY_REOPEN
+  const ids = current[list].filter((existing) => existing !== id)
+  return { ...current, [list]: checked ? [...ids, id] : ids }
+}
+
 function statusLabel(value: string): string {
   return EVENT_STATUS_LABELS[value as EventStatus] ?? value
+}
+
+function planningDraft(event: AssignedEventDetail): EventInput {
+  return {
+    name: event.name,
+    event_contact_name: event.event_contact_name,
+    event_contact_email: event.event_contact_email,
+    description: event.description,
+    proposed_start: toDateTimeLocal(event.proposed_start),
+    proposed_end: toDateTimeLocal(event.proposed_end),
+    expected_attendance: event.expected_attendance,
+    venue_requirements: event.venue_requirements,
+    room_layout_preference: event.room_layout_preference,
+    equipment_requirements: event.equipment_requirements,
+    registration_enabled: event.registration_enabled,
+  }
 }
 
 const CHANGE_FIELD_LABELS: Record<string, string> = {
@@ -75,49 +108,11 @@ function DetailValue({ value }: { value: string | null }) {
   )
 }
 
-/** One line of the activity log: what changed, who changed it, and when.
+/** Full detail and planning controls for the event assigned to the
+ *  signed-in Coordinator.
  *
- *  Assignments and Organiser corrections can both leave `from_status` and
- *  `to_status` identical. The note distinguishes an assignment from a
- *  correction; neither should be rendered as a status transition. */
-function ActivityLine({ entry }: { entry: ActivityEntry }) {
-  const when = formatTimestamp(entry.created_at)
-  const isAssignment =
-    entry.from_status !== null &&
-    entry.from_status === entry.to_status &&
-    (entry.note?.startsWith('Assigned to ') || entry.note?.startsWith('Reassigned from '))
-  return (
-    <li className="activity-item">
-      <p className="activity-change">
-        {isAssignment ? (
-          <strong>Assignment</strong>
-        ) : entry.from_status && entry.from_status !== entry.to_status ? (
-          <>
-            {statusLabel(entry.from_status)} <span aria-hidden="true">→</span>{' '}
-            <strong>{statusLabel(entry.to_status)}</strong>
-          </>
-        ) : entry.from_status === entry.to_status ? (
-          <strong>Request update</strong>
-        ) : (
-          <strong>{statusLabel(entry.to_status)}</strong>
-        )}
-      </p>
-      <p className="activity-meta">
-        {entry.changed_by_name ?? 'Unknown user'}
-        {when && ` · ${when}`}
-      </p>
-      {entry.note && <p className="activity-note">{entry.note}</p>}
-    </li>
-  )
-}
-
-/** Full detail of an event assigned to the signed-in Coordinator.
- *
- *  Read-only for the event's own fields, by design, not by omission: this
- *  story is about understanding an event well enough to plan it, and
- *  editing what the Organiser wrote is each its own future story.
- *  Booking a venue, requesting equipment, moving it through review are
- *  each still their own story, each free to add its own control here.
+ *  Booking a venue, requesting equipment and moving arrangements through
+ *  review remain separate workflows, each with its own controls here.
  *
  *  An event that is not assigned to this Coordinator comes back as a 404 from
  *  the API, indistinguishable from one that does not exist, and is rendered
@@ -134,9 +129,12 @@ export function AssignedEventView() {
   const [cancellationReason, setCancellationReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
   const [cancellationError, setCancellationError] = useState<string | null>(null)
+  const [completing, setCompleting] = useState(false)
+  const [completionError, setCompletionError] = useState<string | null>(null)
   const [changeRequestNotes, setChangeRequestNotes] = useState<Record<number, string>>({})
   const [reviewingChangeRequest, setReviewingChangeRequest] = useState<number | null>(null)
   const [changeRequestError, setChangeRequestError] = useState<string | null>(null)
+  const [reopenChoices, setReopenChoices] = useState<Record<number, ReopenChoices>>({})
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [registrationOn, setRegistrationOn] = useState(false)
@@ -146,6 +144,12 @@ export function AssignedEventView() {
   const [registrationError, setRegistrationError] = useState<string | null>(null)
   const [registrationFields, setRegistrationFields] = useState<string[]>([])
   const [registrationSaved, setRegistrationSaved] = useState(false)
+  const [planningDraftValues, setPlanningDraftValues] = useState<EventInput | null>(null)
+  const [savingPlanningEdit, setSavingPlanningEdit] = useState(false)
+  const [planningEditError, setPlanningEditError] = useState<string | null>(null)
+  const [planningEditSaved, setPlanningEditSaved] = useState(false)
+  const [affectedVenues, setAffectedVenues] = useState<string[]>([])
+  const [affectedEquipment, setAffectedEquipment] = useState<string[]>([])
 
   useEffect(() => {
     if (!id) return
@@ -154,6 +158,7 @@ export function AssignedEventView() {
       .then((e) => {
         if (cancelled) return
         setEvent(e)
+        setPlanningDraftValues(planningDraft(e))
         setRegistrationOn(e.registration_enabled)
         setOpensAt(toDateTimeLocal(e.registration_opens_at ?? null))
         setClosesAt(toDateTimeLocal(e.registration_closes_at ?? null))
@@ -215,6 +220,27 @@ export function AssignedEventView() {
     }
   }
 
+  async function complete() {
+    if (!event) return
+    setCompleting(true)
+    setCompletionError(null)
+    try {
+      const updated = await completeEvent(event.id)
+      setEvent((current) => (current ? { ...current, ...updated } : current))
+      try {
+        setEvent(await getAssignedEvent(event.id))
+      } catch {
+        setCompletionError('The Event was marked completed, but its latest Activity Log could not be reloaded.')
+      }
+    } catch (err) {
+      setCompletionError(
+        err instanceof ApiError ? err.message : 'Could not mark this Event as completed.',
+      )
+    } finally {
+      setCompleting(false)
+    }
+  }
+
   /** Reload the event after something that can move its status (the first
    *  venue booking or equipment requirement moves an approved event into
    *  planning). A failed reload leaves what is on screen as it was. */
@@ -269,6 +295,37 @@ export function AssignedEventView() {
     }
   }
 
+  async function savePlanningEdit() {
+    if (!event || !planningDraftValues) return
+    setSavingPlanningEdit(true)
+    setPlanningEditError(null)
+    setPlanningEditSaved(false)
+    try {
+      const updated = await editPlanningEvent(event.id, {
+        ...planningDraftValues,
+        proposed_start: fromDateTimeLocal(String(planningDraftValues.proposed_start ?? '')),
+        proposed_end: fromDateTimeLocal(String(planningDraftValues.proposed_end ?? '')),
+      })
+      setEvent((current) => (current ? { ...current, ...updated } : current))
+      setAffectedVenues(updated.affected_venue_bookings)
+      setAffectedEquipment(updated.affected_equipment_requirements)
+      setPlanningEditSaved(true)
+      try {
+        const refreshed = await getAssignedEvent(event.id)
+        setEvent(refreshed)
+        setPlanningDraftValues(planningDraft(refreshed))
+      } catch {
+        setPlanningEditError('Details were saved, but the latest activity could not be reloaded.')
+      }
+    } catch (err) {
+      setPlanningEditError(
+        err instanceof ApiError ? err.message : 'Could not save event details.',
+      )
+    } finally {
+      setSavingPlanningEdit(false)
+    }
+  }
+
   async function decideChangeRequest(request: EventChangeRequest, decision: 'approve' | 'reject') {
     if (!event) return
     setReviewingChangeRequest(request.id)
@@ -276,12 +333,18 @@ export function AssignedEventView() {
     try {
       const notes = changeRequestNotes[request.id]?.trim()
       if (decision === 'approve') {
-        await approveEventChangeRequest(request.id, notes)
+        const chosen = reopenChoices[request.id]
+        if (chosen && (chosen.venueBookingIds.length > 0 || chosen.equipmentReservationIds.length > 0)) {
+          await approveEventChangeRequest(request.id, notes, chosen)
+        } else {
+          await approveEventChangeRequest(request.id, notes)
+        }
       } else {
         await rejectEventChangeRequest(request.id, notes)
       }
       setEvent(await getAssignedEvent(event.id))
       setChangeRequestNotes((current) => ({ ...current, [request.id]: '' }))
+      setReopenChoices((current) => ({ ...current, [request.id]: EMPTY_REOPEN }))
     } catch (err) {
       setChangeRequestError(
         err instanceof ApiError ? err.message : 'Could not save the change-request decision.',
@@ -308,6 +371,8 @@ export function AssignedEventView() {
 
   const details: [string, string | null][] = [
     ['Event type', event.event_type],
+    ['Event contact name', event.event_contact_name ?? null],
+    ['Event contact email', event.event_contact_email ?? null],
     ['Purpose', event.purpose],
     ['Description', event.description],
     ['Date and time', formatRange(event.proposed_start, event.proposed_end)],
@@ -458,6 +523,27 @@ export function AssignedEventView() {
             )}
           </div>
         )}
+        {event.status === EventStatus.SAFETY_CHECK_PASSED && (
+          <div className="status-actions">
+            <h3>Mark Event Completed</h3>
+            <p className="page-subtitle">
+              Scheduled end: {formatTimestamp(event.proposed_end)}
+            </p>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void complete()}
+                disabled={completing || !event.proposed_end}
+              >
+                {completing ? 'Saving…' : 'Mark Event Completed'}
+              </button>
+            </div>
+            {completionError && (
+              <p className="form-error" role="alert">{completionError}</p>
+            )}
+          </div>
+        )}
         {cancellable && (
           <div className="status-actions">
             <h3>Cancel event</h3>
@@ -585,6 +671,133 @@ export function AssignedEventView() {
 
       {event.registration_enabled && <AttendeeListSection eventId={event.id} />}
 
+      {planningDraftValues &&
+        (event.status === EventStatus.EVENT_APPROVED ||
+          event.status === EventStatus.PLANNING_EVENT ||
+          event.status === EventStatus.AWAITING_SAFETY_CHECK ||
+          event.status === EventStatus.SAFETY_CHECK_PASSED) && (
+        <section className="card" aria-labelledby="planning-edit-heading">
+          <h2 id="planning-edit-heading">Edit event details</h2>
+          <div className="stack-tight">
+            <label className="field">
+              <span>Event name</span>
+              <input
+                value={planningDraftValues.name ?? ''}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, name: e.target.value })}
+                maxLength={200}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Description</span>
+              <textarea
+                value={planningDraftValues.description ?? ''}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, description: e.target.value })}
+                rows={3}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Event contact name</span>
+              <input
+                value={planningDraftValues.event_contact_name ?? ''}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, event_contact_name: e.target.value })}
+                maxLength={200}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Event contact email</span>
+              <input
+                type="email"
+                value={planningDraftValues.event_contact_email ?? ''}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, event_contact_email: e.target.value })}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Event starts</span>
+              <input
+                type="datetime-local"
+                value={String(planningDraftValues.proposed_start ?? '')}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, proposed_start: e.target.value })}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Event ends</span>
+              <input
+                type="datetime-local"
+                value={String(planningDraftValues.proposed_end ?? '')}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, proposed_end: e.target.value })}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Expected attendance</span>
+              <input
+                type="number"
+                min={1}
+                value={planningDraftValues.expected_attendance ?? ''}
+                onChange={(e) =>
+                  setPlanningDraftValues({
+                    ...planningDraftValues,
+                    expected_attendance: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Venue requirements</span>
+              <textarea
+                value={planningDraftValues.venue_requirements ?? ''}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, venue_requirements: e.target.value })}
+                rows={2}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="field">
+              <span>Equipment requirements</span>
+              <textarea
+                value={planningDraftValues.equipment_requirements ?? ''}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, equipment_requirements: e.target.value })}
+                rows={2}
+                disabled={savingPlanningEdit}
+              />
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={Boolean(planningDraftValues.registration_enabled)}
+                onChange={(e) => setPlanningDraftValues({ ...planningDraftValues, registration_enabled: e.target.checked })}
+                disabled={savingPlanningEdit}
+              />
+              <span>Attendees must register</span>
+            </label>
+            {planningEditError && <p className="form-error" role="alert">{planningEditError}</p>}
+            {planningEditSaved && <p className="page-subtitle" role="status">Event details saved.</p>}
+            {(affectedVenues.length > 0 || affectedEquipment.length > 0) && (
+              <div className="form-error form-error-stack" role="status">
+                <p>These arrangements need review after the changes:</p>
+                {affectedVenues.length > 0 && <p>Venue bookings: {affectedVenues.join(', ')}</p>}
+                {affectedEquipment.length > 0 && <p>Equipment requirements: {affectedEquipment.join(', ')}</p>}
+              </div>
+            )}
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => void savePlanningEdit()}
+                disabled={savingPlanningEdit}
+              >
+                {savingPlanningEdit ? 'Saving…' : 'Save event details'}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Always present: while the event is under review it explains that
           equipment can be recorded once it is approved, rather than the
           Coordinator wondering where equipment goes. */}
@@ -676,15 +889,38 @@ export function AssignedEventView() {
                 {request.important_change && (
                   <div className="stack-tight">
                     <h4>Existing arrangements to reconsider</h4>
+                    {request.safety_check_required && (
+                      <p>
+                        Approval returns this Event to Planning Event and requires a new Safety Check.
+                      </p>
+                    )}
                     {request.venue_bookings_to_reconsider.length > 0 ? (
                       <ul>
                         {request.venue_bookings_to_reconsider.map((booking) => (
                           <li key={booking.id}>
-                            {booking.venue_name}: {formatRange(booking.start_time, booking.end_time)} ({booking.status})
+                            <strong>
+                              Booking #{booking.id} — {booking.venue_name}
+                            </strong>
+                            : {formatRange(booking.start_time, booking.end_time)} ({booking.status}) ·{' '}
+                            {booking.suitable ? 'Suitable' : 'Not Suitable'}
+                            {booking.unmet_requirements.length > 0 && (
+                              <ul>
+                                {booking.unmet_requirements.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {booking.conflicts.length > 0 && (
+                              <ul>
+                                {booking.conflicts.map((conflict) => (
+                                  <li key={conflict}>{conflict}</li>
+                                ))}
+                              </ul>
+                            )}
                           </li>
                         ))}
                       </ul>
-                    ) : <p>No venue bookings are currently recorded.</p>}
+                    ) : <p>No venue bookings need review.</p>}
                     {request.equipment_reservations_to_reconsider.length > 0 ? (
                       <ul>
                         {request.equipment_reservations_to_reconsider.map((reservation) => (
@@ -693,7 +929,22 @@ export function AssignedEventView() {
                           </li>
                         ))}
                       </ul>
-                    ) : <p>No equipment reservations are currently recorded.</p>}
+                    ) : <p>No equipment reservations need review.</p>}
+                    {request.equipment_requirements_to_reconsider.length > 0 && (
+                      <>
+                        <h4>Equipment requirements to review</h4>
+                        <ul>
+                          {request.equipment_requirements_to_reconsider.map((requirement) => (
+                            <li key={requirement.id}>
+                              Requirement #{requirement.id}: {requirement.category} ×{' '}
+                              {requirement.quantity_needed} — {requirement.status}
+                              {requirement.reserved_items.length > 0 &&
+                                ` (${requirement.reserved_items.join(', ')})`}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </div>
                 )}
                 {request.review_notes && <p className="activity-note">{request.review_notes}</p>}
@@ -711,6 +962,65 @@ export function AssignedEventView() {
                         disabled={reviewingChangeRequest === request.id}
                       />
                     </label>
+                    {((request.other_venue_bookings ?? []).length > 0 ||
+                      (request.other_equipment_reservations ?? []).length > 0) && (
+                      <fieldset className="stack-tight">
+                        <legend>Also reopen for review (optional)</legend>
+                        <p className="page-subtitle">
+                          These arrangements are not affected by the change and stay as they are
+                          unless you tick them.
+                        </p>
+                        {(request.other_venue_bookings ?? []).map((booking) => (
+                          <label key={`venue-${booking.id}`} className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={(reopenChoices[request.id]?.venueBookingIds ?? []).includes(booking.id)}
+                              onChange={(e) =>
+                                setReopenChoices((current) => ({
+                                  ...current,
+                                  [request.id]: toggleChoice(
+                                    current[request.id],
+                                    'venueBookingIds',
+                                    booking.id,
+                                    e.target.checked,
+                                  ),
+                                }))
+                              }
+                              disabled={reviewingChangeRequest !== null}
+                            />
+                            <span>
+                              Venue Booking #{booking.id} — {booking.venue_name} ({booking.status})
+                            </span>
+                          </label>
+                        ))}
+                        {(request.other_equipment_reservations ?? []).map((reservation) => (
+                          <label key={`equipment-${reservation.id}`} className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={(reopenChoices[request.id]?.equipmentReservationIds ?? []).includes(
+                                reservation.id,
+                              )}
+                              onChange={(e) =>
+                                setReopenChoices((current) => ({
+                                  ...current,
+                                  [request.id]: toggleChoice(
+                                    current[request.id],
+                                    'equipmentReservationIds',
+                                    reservation.id,
+                                    e.target.checked,
+                                  ),
+                                }))
+                              }
+                              disabled={reviewingChangeRequest !== null}
+                            />
+                            <span>
+                              Equipment reservation #{reservation.id} — {reservation.equipment_name} ×{' '}
+                              {reservation.quantity_requested} ({reservation.status})
+                            </span>
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
                     <div className="form-actions">
                       <button
                         type="button"
@@ -738,18 +1048,7 @@ export function AssignedEventView() {
         </section>
       )}
 
-      <section className="card">
-        <h2>Activity Log</h2>
-        {event.activity.length === 0 ? (
-          <p className="page-subtitle">No activity recorded yet.</p>
-        ) : (
-          <ol className="activity-list" aria-label="Activity log">
-            {event.activity.map((entry) => (
-              <ActivityLine key={`${entry.created_at}-${entry.to_status}`} entry={entry} />
-            ))}
-          </ol>
-        )}
-      </section>
+      <EventActivityLog status={event.status} activity={event.activity} />
 
       <p>
         <Link to="/coordinator/events">← Back to my assigned events</Link>

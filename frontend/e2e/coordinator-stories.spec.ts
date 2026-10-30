@@ -60,7 +60,8 @@ test('SCRUM-23 AC2: the Organiser is notified with the coordinator’s details, 
   const eventId = await submittedByOlivia(request, 'AC2 event')
   const olivia = await openAs(browser, OLIVIA)
 
-  await expect(olivia.getByRole('button', { name: 'Notifications, 1 unread' })).toBeVisible()
+  // The Coordinator's details, and the "now Submitted" status notice.
+  await expect(olivia.getByRole('button', { name: 'Notifications, 2 unread' })).toBeVisible()
   await olivia.goto('/notifications')
 
   const notice = olivia.getByRole('listitem').filter({ hasText: 'is now coordinating' })

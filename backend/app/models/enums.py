@@ -19,6 +19,26 @@ class EventStatus(enum.StrEnum):
     event_rejected = "event_rejected"
     event_cancelled = "event_cancelled"
 
+    @property
+    def label(self) -> str:
+        """The dod.md name, for messages a person reads."""
+        return _EVENT_STATUS_LABELS[self]
+
+
+_EVENT_STATUS_LABELS = {
+    EventStatus.draft: "Draft",
+    EventStatus.submitted_awaiting_coordinator: "Submitted – Awaiting Coordinator",
+    EventStatus.under_review: "Under Review",
+    EventStatus.awaiting_organiser_reply: "Awaiting Organiser Reply",
+    EventStatus.event_approved: "Event Approved",
+    EventStatus.planning_event: "Planning Event",
+    EventStatus.awaiting_safety_check: "Awaiting Safety Check",
+    EventStatus.safety_check_passed: "Safety Check Passed (Event Confirmed)",
+    EventStatus.event_completed: "Event Completed",
+    EventStatus.event_rejected: "Event Rejected",
+    EventStatus.event_cancelled: "Event Cancelled",
+}
+
 
 # Shared status groups keep workflow decisions aligned across routers and
 # services. Individual Event rows still store exactly one EventStatus value.
@@ -127,6 +147,9 @@ class NotificationType(enum.StrEnum):
     safety_check_rejected = "safety_check_rejected"
     venue_booking_conflict = "venue_booking_conflict"
     safety_check_requested = "safety_check_requested"
+    # The event left the Safety Officer's queue: back to planning because its
+    # arrangements changed, so a check of it now would be of outdated plans.
+    safety_check_withdrawn = "safety_check_withdrawn"
     venue_unavailability_recorded = "venue_unavailability_recorded"
     venue_hold_expiring = "venue_hold_expiring"
     venue_hold_expired = "venue_hold_expired"
@@ -135,7 +158,28 @@ class NotificationType(enum.StrEnum):
     event_returned_to_planning = "event_returned_to_planning"
     clarification_requested = "clarification_requested"
     clarification_replied = "clarification_replied"
+    event_details_changed = "event_details_changed"
+    registration_status_changed = "registration_status_changed"
     venue_booking_released = "venue_booking_released"
+    # Technical Support: equipment to review or reserve, and Events that moved.
+    equipment_required = "equipment_required"
+    equipment_requirement_changed = "equipment_requirement_changed"
+    equipment_requirement_removed = "equipment_requirement_removed"
+    equipment_event_rescheduled = "equipment_event_rescheduled"
+    # Event Organiser: their Event's status, a Venue Booking decision, an
+    # equipment outcome.
+    event_status_changed = "event_status_changed"
+    venue_booking_decided = "venue_booking_decided"
+    equipment_outcome = "equipment_outcome"
+    # Event Coordinator: the Organiser asked for changes to their Event.
+    change_request_submitted = "change_request_submitted"
+    # Venue Staff: a booking to review, an approved Event that changed, an
+    # Event back in planning after its Safety Check.
+    venue_booking_requested = "venue_booking_requested"
+    approved_event_changed = "approved_event_changed"
+    safety_returned_to_planning = "safety_returned_to_planning"
+    # Everyone involved: the Event was cancelled, and why.
+    event_cancelled = "event_cancelled"
 
 
 class ChangeRequestStatus(enum.StrEnum):

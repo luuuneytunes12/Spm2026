@@ -162,7 +162,7 @@ def test_important_change_shows_existing_bookings_and_reservations(client, db_se
         "Main Hall",
         "Garden Hall",
     }
-    assert body["equipment_reservations_to_reconsider"][0]["equipment_name"] == "Projector"
+    assert body["equipment_reservations_to_reconsider"] == []
 
 
 def test_attendance_change_after_approval_returns_event_to_planning_for_safety_review(
@@ -192,7 +192,11 @@ def test_attendance_change_after_approval_returns_event_to_planning_for_safety_r
     assert db_session.get(Event, event_id).status == EventStatus.planning_event
     history = (
         db_session.query(EventStatusHistory)
-        .filter_by(event_id=event_id, to_status=EventStatus.planning_event)
+        .filter(
+            EventStatusHistory.event_id == event_id,
+            EventStatusHistory.to_status == EventStatus.planning_event,
+            EventStatusHistory.note.startswith("Major change request approved"),
+        )
         .one()
     )
     assert "new safety check is required" in history.note

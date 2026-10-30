@@ -45,6 +45,8 @@ const CONFIRMED: AssignedEventDetail = {
   organiser_id: 1,
   coordinator_id: 2,
   coordinator: { id: 2, name: 'Sam Tan', email: 'sam@connectsphere.test' },
+  event_contact_name: null,
+  event_contact_email: null,
   name: 'Regional Partner Conference',
   event_type: 'conference',
   purpose: 'Annual partner briefing',

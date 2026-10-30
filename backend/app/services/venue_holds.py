@@ -86,10 +86,11 @@ def expire_tentative_holds(db: Session, now: datetime | None = None) -> int:
         db.add(
             EventStatusHistory(
                 event_id=hold.event_id,
-                changed_by=hold.reviewed_by or hold.requested_by,
+                changed_by=None,
                 from_status=hold.event.status,
                 to_status=hold.event.status,
                 note=f"Tentative hold on '{hold.venue.name}' expired.",
+                actor_name="System",
             )
         )
     if holds:

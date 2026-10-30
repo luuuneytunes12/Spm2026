@@ -98,6 +98,9 @@ export function LeadEventList({ title, subtitle, emptyText, load, detailTo, show
                 <span className="badge badge-accent">
                   {EVENT_STATUS_LABELS[event.status] ?? event.status}
                 </span>
+                {event.has_pending_change_request && (
+                  <span className="badge">Pending change request</span>
+                )}
                 {detailTo && <Link to={detailTo(event)}>Review →</Link>}
               </div>
             </li>

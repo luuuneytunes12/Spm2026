@@ -33,6 +33,8 @@ const DETAIL: LeadEventDetail = {
   organiser_id: 2,
   coordinator_id: null,
   coordinator: null,
+  event_contact_name: null,
+  event_contact_email: null,
   purpose: 'Annual partner briefing',
   description: 'A full-day briefing for our regional partners.',
   programme: null,
@@ -45,6 +47,16 @@ const DETAIL: LeadEventDetail = {
   registration_enabled: true,
   created_at: '2026-10-01T09:00:00Z',
   organiser: { id: 2, name: 'Olivia Organiser', email: 'olivia@cs.local' },
+  activity: [
+    {
+      from_status: 'draft',
+      to_status: 'submitted_awaiting_coordinator',
+      note: 'Submitted by organiser.',
+      changed_by_name: 'Olivia Organiser',
+      created_at: '2026-10-01T09:30:00Z',
+    },
+  ],
+  change_requests: [],
 }
 
 function renderAt(id: string) {
@@ -86,6 +98,37 @@ describe('QueuedRequestView', () => {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     expect(screen.getByText('Yes')).toBeInTheDocument() // registration needed
+  })
+
+  it('shows the current status and Activity Log to the Coordinator Lead', async () => {
+    vi.mocked(getQueuedRequest).mockResolvedValue(DETAIL)
+    renderAt('7')
+
+    expect(await screen.findByText('Current status: Submitted – Awaiting Coordinator')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument()
+    expect(screen.getByText('Submitted by organiser.')).toBeInTheDocument()
+    expect(screen.getByText(/Olivia Organiser/, { selector: '.activity-meta' })).toBeInTheDocument()
+  })
+
+  it('shows a pending Event Change Request to the Coordinator Lead', async () => {
+    vi.mocked(getQueuedRequest).mockResolvedValue({
+      ...DETAIL,
+      change_requests: [
+        {
+          id: 18,
+          description: 'Attendance changed after registration opened.',
+          proposed_changes: { expected_attendance: 150 },
+          status: 'pending',
+          created_at: '2026-10-02T10:00:00Z',
+        },
+      ],
+    })
+    renderAt('7')
+
+    expect(await screen.findByRole('heading', { name: 'Event change requests' })).toBeInTheDocument()
+    expect(screen.getByText('Attendance changed after registration opened.')).toBeInTheDocument()
+    expect(screen.getByText('expected attendance')).toBeInTheDocument()
+    expect(screen.getByText('150')).toBeInTheDocument()
   })
 
   it('AC4: the request itself is read-only -- the only control is the assign panel', async () => {

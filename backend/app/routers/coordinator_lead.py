@@ -4,8 +4,17 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
+from app.models.enums import ChangeRequestStatus
+from app.models.events import EventChangeRequest
 from app.models.user import User
-from app.schemas.event import LeadAssignIn, LeadCoordinatorOut, LeadEventDetail, LeadEventOut
+from app.schemas.event import (
+    LeadAssignIn,
+    LeadChangeRequestOut,
+    LeadCoordinatorOut,
+    LeadEventDetail,
+    LeadEventOut,
+)
+from app.services.event_activity import event_activity
 from app.services.lead_assignment import AssignEvent, AssignmentRefused, ReassignEvent
 from app.services.assignment_overview import (
     ActiveAssignments,
@@ -20,6 +29,48 @@ router = APIRouter(prefix="/lead", tags=["coordinator-lead"])
 _lead = require_role(Role.COORDINATOR_LEAD)
 
 
+def _lead_event_outs(db: Session, events) -> list[LeadEventOut]:
+    events = list(events)
+    event_ids = [event.id for event in events]
+    pending_event_ids = set()
+    if event_ids:
+        pending_event_ids = {
+            event_id
+            for (event_id,) in db.query(EventChangeRequest.event_id)
+            .filter(
+                EventChangeRequest.event_id.in_(event_ids),
+                EventChangeRequest.status == ChangeRequestStatus.pending,
+            )
+            .distinct()
+            .all()
+        }
+    return [
+        LeadEventOut.model_validate(event).model_copy(
+            update={"has_pending_change_request": event.id in pending_event_ids}
+        )
+        for event in events
+    ]
+
+
+def _event_change_requests(db: Session, event_id: int) -> list[LeadChangeRequestOut]:
+    requests = (
+        db.query(EventChangeRequest)
+        .filter(EventChangeRequest.event_id == event_id)
+        .order_by(EventChangeRequest.created_at.desc(), EventChangeRequest.id.desc())
+        .all()
+    )
+    return [
+        LeadChangeRequestOut(
+            id=request.id,
+            description=request.description,
+            proposed_changes=request.proposed_changes or {},
+            status=request.status,
+            created_at=request.created_at,
+        )
+        for request in requests
+    ]
+
+
 @router.get("/unassigned-requests", response_model=list[LeadEventOut])
 def list_unassigned_requests(
     db: Session = Depends(get_db),
@@ -27,7 +78,7 @@ def list_unassigned_requests(
 ) -> list[LeadEventOut]:
     """Active Event Requests that have no Coordinator yet. Its length is the
     number shown on the Lead's landing-page shortcut."""
-    return [LeadEventOut.model_validate(e) for e in UnassignedRequests().rows(db)]
+    return _lead_event_outs(db, UnassignedRequests().rows(db))
 
 
 @router.get("/assignments", response_model=list[LeadEventOut])
@@ -39,7 +90,7 @@ def list_coordinator_assignments(
     """Every active Event that has a Coordinator, with who it is. With
     `coordinator_id`, only that Coordinator's; the number of Events is the
     length of the list."""
-    return [LeadEventOut.model_validate(e) for e in ActiveAssignments(coordinator_id).rows(db)]
+    return _lead_event_outs(db, ActiveAssignments(coordinator_id).rows(db))
 
 
 @router.get("/assignments/{event_id}", response_model=LeadEventDetail)
@@ -53,7 +104,12 @@ def get_assigned_event(
     event = ActiveAssignments().find(db, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found in the assignments")
-    return LeadEventDetail.model_validate(event)
+    return LeadEventDetail.model_validate(event).model_copy(
+        update={
+            "activity": event_activity(db, event.id),
+            "change_requests": _event_change_requests(db, event.id),
+        }
+    )
 
 
 @router.get("/coordinators", response_model=list[LeadCoordinatorOut])
@@ -72,7 +128,7 @@ def list_unassigned_queue(
 ) -> list[LeadEventOut]:
     """The Unassigned Queue: submitted requests awaiting a Coordinator,
     oldest first. Drafts and already-assigned requests are not listed."""
-    return [LeadEventOut.model_validate(e) for e in UnassignedQueue().rows(db)]
+    return _lead_event_outs(db, UnassignedQueue().rows(db))
 
 
 @router.get("/unassigned-queue/{event_id}", response_model=LeadEventDetail)
@@ -86,7 +142,12 @@ def get_queued_request(
     event = UnassignedQueue().find(db, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found in the queue")
-    return LeadEventDetail.model_validate(event)
+    return LeadEventDetail.model_validate(event).model_copy(
+        update={
+            "activity": event_activity(db, event.id),
+            "change_requests": _event_change_requests(db, event.id),
+        }
+    )
 
 
 def _refuse(exc: AssignmentRefused) -> HTTPException:

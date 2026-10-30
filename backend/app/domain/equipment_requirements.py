@@ -36,6 +36,12 @@ from app.domain.requirement_progress import (
 from app.models.enums import EventStatus
 from app.models.equipment import CoordinatorEquipmentRequirement, Equipment, EquipmentRequest
 from app.models.events import Event, EventStatusHistory
+from app.services.tech_support_notices import (
+    EquipmentRequiredNotice,
+    EquipmentRequirementChangedNotice,
+    EquipmentRequirementRemovedNotice,
+    describe_changes,
+)
 
 # The statuses in which equipment is recorded, and in which Technical
 # Support looks. ONE list for both sides, so a requirement can never sit
@@ -152,6 +158,8 @@ class EquipmentRequirementService:
         self._db.add(requirement)
         self._start_planning(event, coordinator_id)
         self._db.flush()
+        # Technical Support review and reserve it: tell them now.
+        EquipmentRequiredNotice(requirement).send(self._db, event)
         return requirement
 
     def edit(
@@ -166,6 +174,7 @@ class EquipmentRequirementService:
         requirement, event = self._own_requirement(requirement_id, coordinator_id)
         self._ensure_recordable(event)
         progress = self._links.progress_for(requirement)
+        before = (requirement.category, requirement.quantity_needed, requirement.technical_notes)
 
         if "category" in changes:
             category = self._checked_category(changes["category"])
@@ -193,6 +202,15 @@ class EquipmentRequirementService:
         self._status_log.record(
             event, coordinator, requirement, progress.status, after.status, by=coordinator.name
         )
+        # Technical Support are told what changed -- and what is already
+        # reserved for it -- only when something actually did.
+        changed = describe_changes(
+            before, (requirement.category, requirement.quantity_needed, requirement.technical_notes)
+        )
+        if changed:
+            EquipmentRequirementChangedNotice(requirement.category, changed, after.reserved).send(
+                self._db, event
+            )
         return requirement
 
     def remove(self, requirement_id: int, coordinator_id: int) -> None:
@@ -204,8 +222,10 @@ class EquipmentRequirementService:
             raise Conflict(
                 "Equipment is already reserved for this requirement, so it cannot be removed."
             )
+        removed = EquipmentRequirementRemovedNotice(requirement.category, requirement.quantity_needed)
         self._db.delete(requirement)
         self._db.flush()
+        removed.send(self._db, event)
 
     # --- queries ------------------------------------------------------------
 
