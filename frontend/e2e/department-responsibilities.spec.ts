@@ -49,6 +49,7 @@ async function save(page: Page) {
 test('TC-DR-1e: only the listed departments can be chosen', async ({ browser }) => {
   const page = await openAs(browser, VENUE)
   await page.goto('/profile')
+  await expect(page.locator('#department')).toBeVisible()
   const options = await page.locator('#department option').allTextContents()
   expect(options).toEqual(['Select a department', ...DEPARTMENTS])
   await expect(page.locator('#department')).toHaveJSProperty('tagName', 'SELECT')
