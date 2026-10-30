@@ -90,9 +90,12 @@ test('TC-UQ-4e: opening a request shows what the Organiser entered, read-only', 
   await lead.getByRole('link', { name: /Review/ }).click()
   await expect(lead).toHaveURL(/\/coordinator-lead\/queue\/\d+$/)
   await expect(lead.getByRole('heading', { level: 1, name: 'Review me' })).toBeVisible()
-  for (const text of ['Annual partner briefing', 'A full-day briefing for our regional partners.', 'Main hall, stage, podium', 'Step-free access, hearing loop', '2 projectors, 4 radio mics', 'Olivia Organiser']) {
+  for (const text of ['Annual partner briefing', 'A full-day briefing for our regional partners.', 'Main hall, stage, podium', 'Step-free access, hearing loop', '2 projectors, 4 radio mics']) {
     await expect(lead.getByText(text)).toBeVisible()
   }
+  // The activity log also names the organiser; check the actual organiser details section.
+  const organiserDetails = lead.locator('section').filter({ has: lead.getByRole('heading', { name: 'Event Organiser', exact: true }) })
+  await expect(organiserDetails.getByText('Olivia Organiser', { exact: true })).toBeVisible()
   for (const label of ['Purpose', 'Description', 'Type', 'Proposed date and time', 'Expected attendance', 'Venue requirements', 'Accessibility needs', 'Equipment requirements', 'Registration needed']) {
     await expect(lead.getByText(label, { exact: true })).toBeVisible()
   }
