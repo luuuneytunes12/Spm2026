@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { openAs } from './support/coordinator-users'
+import { E2E_TEST_YEAR } from './support/dates'
 import type { SeedUser } from './support/db'
 import { removeUsers, removeVenue, resetUsers, seedUsers, seedVenue } from './support/db'
 
@@ -50,8 +51,8 @@ async function expectNoSeriousViolations(page: Page, label: string) {
   expect(blocking.map((v) => `${v.impact} ${v.id}: ${v.help}`).join('\n'), label).toBe('')
 }
 
-/** A period tomorrow 08:00-18:00, in the browser's local time. */
-async function fillPeriod(page: Page, reason = 'Renovation', start = '2031-03-04T08:00', end = '2031-03-04T18:00') {
+/** Fill a future unavailability period in the browser local time. */
+async function fillPeriod(page: Page, reason = 'Renovation', start = `${E2E_TEST_YEAR}-03-04T08:00`, end = `${E2E_TEST_YEAR}-03-04T18:00`) {
   const form = page.getByRole('form', { name: 'Mark venue unavailable' })
   await form.getByLabel('Unavailable from').fill(start)
   await form.getByLabel('Unavailable until').fill(end)
@@ -75,7 +76,7 @@ test('TC-UN-1e: a period with a reason is saved and persists', async ({ browser 
 test('TC-UN-2e: end before start is blocked and both date fields are flagged', async ({ browser }) => {
   const staff = await openAs(browser, STAFF)
   await openVenue(staff)
-  const form = await fillPeriod(staff, 'Other', '2031-03-04T18:00', '2031-03-04T08:00')
+  const form = await fillPeriod(staff, 'Other', `${E2E_TEST_YEAR}-03-04T18:00`, `${E2E_TEST_YEAR}-03-04T08:00`)
   await form.getByRole('button', { name: 'Save unavailable period' }).click()
   await expect(form.getByRole('alert')).toContainText('The end must be after the start.')
   await expect(form.getByLabel('Unavailable from')).toHaveAttribute('aria-invalid', 'true')
@@ -91,8 +92,8 @@ test('TC-UN-3e: the availability calendar shows the period with its reason', asy
   await form.getByRole('button', { name: 'Save unavailable period' }).click()
   await expect(staff.getByRole('status')).toBeVisible()
   const check = staff.getByRole('form', { name: 'Check availability' })
-  await check.getByLabel('Availability from').fill('2031-03-04T00:00')
-  await check.getByLabel('Availability until').fill('2031-03-05T00:00')
+  await check.getByLabel('Availability from').fill(`${E2E_TEST_YEAR}-03-04T00:00`)
+  await check.getByLabel('Availability until').fill(`${E2E_TEST_YEAR}-03-05T00:00`)
   await check.getByRole('button', { name: 'Check availability' }).click()
   await expect(staff.getByRole('region', { name: 'Availability results' })).toContainText('Safety concern: New floor')
 })
@@ -106,8 +107,8 @@ test('TC-UN-6e: removing a period makes the venue available again', async ({ bro
   await staff.getByRole('button', { name: 'Remove' }).click()
   await expect(staff.getByText('No unavailable periods are recorded.')).toBeVisible()
   const check = staff.getByRole('form', { name: 'Check availability' })
-  await check.getByLabel('Availability from').fill('2031-03-04T00:00')
-  await check.getByLabel('Availability until').fill('2031-03-05T00:00')
+  await check.getByLabel('Availability from').fill(`${E2E_TEST_YEAR}-03-04T00:00`)
+  await check.getByLabel('Availability until').fill(`${E2E_TEST_YEAR}-03-05T00:00`)
   await check.getByRole('button', { name: 'Check availability' }).click()
   await expect(staff.getByRole('region', { name: 'Availability results' })).toContainText('Available for the whole period.')
 })
