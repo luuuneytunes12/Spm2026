@@ -173,6 +173,11 @@ class NotificationType(enum.StrEnum):
     equipment_outcome = "equipment_outcome"
     # Event Coordinator: the Organiser asked for changes to their Event.
     change_request_submitted = "change_request_submitted"
+    # Venue Staff: a booking to review, an approved Event that changed, an
+    # Event back in planning after its Safety Check.
+    venue_booking_requested = "venue_booking_requested"
+    approved_event_changed = "approved_event_changed"
+    safety_returned_to_planning = "safety_returned_to_planning"
 
 
 class ChangeRequestStatus(enum.StrEnum):

@@ -36,6 +36,7 @@ from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.notifications import notify
 from app.services.coordinator_notices import CoordinatorVenueDecisionNotice
 from app.services.organiser_notices import VenueBookingDecisionNotice
+from app.services.venue_staff_notices import BookingRequestedNotice
 from app.services.safety_reopen import SafetyCheckReopen
 from app.services.venue_holds import active_hold_filter, reminder_lead
 
@@ -529,6 +530,8 @@ def submit_venue_booking(
             )
         )
     db.flush()
+    for booking in created:
+        BookingRequestedNotice(booking).send(db, event)
     ids = [b.id for b in created]
     db.commit()
     rows = db.scalars(
@@ -633,6 +636,7 @@ def request_replacement_venue(
         )
     )
     db.flush()
+    BookingRequestedNotice(replacement, replaces=original).send(db, event)
     new_id = replacement.id
     db.commit()
     return _reloaded(db, [new_id], user)[0]

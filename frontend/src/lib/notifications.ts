@@ -124,6 +124,8 @@ export function notificationLink(n: Notification, role: Role): string | null {
     return n.type === 'safety_check_withdrawn' ? '/safety-checks' : `/safety-checks/${n.event_id}`
   }
   if (role === Role.ATTENDEE) return `/attendee/events/${n.event_id}`
+  // Venue Staff have no page per Event: they act from the booking queue.
+  if (role === Role.VENUE_STAFF) return '/venue-staff/bookings'
   return null
 }
 

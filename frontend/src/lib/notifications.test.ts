@@ -57,15 +57,21 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...n, type: 'safety_check_withdrawn' }, 'safety_officer')).toBe('/safety-checks')
   })
 
+  it("sends Venue Staff's notices to their booking queue", () => {
+    for (const type of ['venue_booking_requested', 'approved_event_changed', 'safety_returned_to_planning']) {
+      expect(notificationLink({ ...n, type }, 'venue_staff')).toBe('/venue-staff/bookings')
+    }
+  })
+
   it("sends Technical Support's equipment notices to the Event's equipment record", () => {
     for (const type of ['equipment_required', 'equipment_requirement_changed', 'equipment_requirement_removed', 'equipment_event_rescheduled']) {
       expect(notificationLink({ ...n, type }, 'tech_support')).toBe('/equipment-requirements/7')
     }
   })
 
-  it('has no link without an event, or for roles with no event page', () => {
+  it('has no link without an event', () => {
     expect(notificationLink({ ...n, event_id: null }, 'coordinator')).toBeNull()
     expect(notificationLink({ ...n, event_id: null }, 'attendee')).toBeNull()
-    expect(notificationLink(n, 'venue_staff')).toBeNull()
+    expect(notificationLink({ ...n, event_id: null }, 'venue_staff')).toBeNull()
   })
 })

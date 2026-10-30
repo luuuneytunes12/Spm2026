@@ -38,6 +38,7 @@ from app.schemas.safety_check import (
 )
 from app.services.notifications import notify
 from app.services.safety_decisions import EventSafetyDecisions, OfficerPastSafetyChecks
+from app.services.venue_staff_notices import SafetyReturnedNotice
 
 router = APIRouter(prefix="/safety-checks", tags=["safety-checks"])
 
@@ -119,7 +120,10 @@ def _send_back(
     for item in [*bookings, *lines]:
         item.safety_recheck_reason = reason
     _record(db, event, officer, EventStatus.planning_event, note)
-    _notify_all(db, event, {item.reviewed_by for item in [*bookings, *lines]}, type, message)
+    staff = {item.reviewed_by for item in [*bookings, *lines]}
+    _notify_all(db, event, staff, type, message)
+    # Every Venue Staff member re-plans around it; those told above are not told twice.
+    SafetyReturnedNotice(reason, already_told=staff).send(db, event)
     db.commit()
     db.refresh(event)
     return EventOut.model_validate(event)
