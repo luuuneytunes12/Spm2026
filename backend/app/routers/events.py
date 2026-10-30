@@ -66,6 +66,7 @@ from app.services.safety_notices import (
 )
 from app.services.submission_notice import SubmissionNotice
 from app.services.tech_support_notices import notify_if_rescheduled
+from app.services.venue_staff_notices import ApprovedEventChangedNotice
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -1244,9 +1245,11 @@ def approve_change_request(
     # same schema that accepted the request before applying them.
     typed = EventIn.model_validate(changes)
     old_start, old_end = event.proposed_start, event.proposed_end
+    venue_staff_before = ApprovedEventChangedNotice.before(db, event)
     for field in changes:
         setattr(event, field, getattr(typed, field))
     notify_if_rescheduled(db, event, old_start, old_end)
+    ApprovedEventChangedNotice.since(venue_staff_before, event).send(db, event)
 
     major_change_after_approval = (
         bool(changed_fields.intersection(IMPORTANT_CHANGE_FIELDS))
@@ -1951,6 +1954,9 @@ def edit_planning_event(
         else EventChangedNotice([])
     )
 
+    # Before the edit: an important change reopens the Approved bookings below.
+    venue_staff_before = ApprovedEventChangedNotice.before(db, event)
+
     changed_fields: set[str] = set()
     for field, value in proposed.items():
         current = getattr(event, field)
@@ -2024,6 +2030,7 @@ def edit_planning_event(
             )
         )
         attendee_notice.send(db, event)
+        ApprovedEventChangedNotice.since(venue_staff_before, event).send(db, event)
         db.commit()
         db.refresh(event)
 
