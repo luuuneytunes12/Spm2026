@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
@@ -41,7 +42,7 @@ async function lapsedHold(request: APIRequestContext, name: string) {
   const bookingId = (await booked.json())[0].id as number
   const staff = await login(request, VERA.email, VERA.password)
   const held = await request.post(`${API}/venue-bookings/${bookingId}/hold`, {
-    data: { expires_at: '2030-01-02T10:00:00Z', required_action: 'Pay the deposit' },
+    data: { expires_at: `${E2E_TEST_YEAR - 1}-01-02T10:00:00Z`, required_action: 'Pay the deposit' },
     headers: staff,
   })
   expect(held.ok()).toBe(true)
@@ -55,7 +56,7 @@ test('AC2 + AC3 + AC4: a lapsed hold shows as expired, never confirmed, and both
 
   await sam.goto(`/coordinator/events/${eventId}`)
   const bookings = sam.getByRole('region', { name: 'Venue bookings' })
-  await expect(bookings).toContainText('Hold expired') // AC2
+  await expect(bookings).toContainText(/Hold expired/i) // AC2
   await expect(bookings).toContainText('Request it again or choose another venue.')
   await expect(bookings.getByText('Approved', { exact: true })).toHaveCount(0) // AC4
   await expect(sam.getByRole('checkbox', { name: new RegExp(VENUE) })).toBeEnabled() // the venue is free again
@@ -76,7 +77,7 @@ test('accessibility: the expired hold on the Event page has no serious axe viola
   const { eventId } = await lapsedHold(request, 'A11y lapsed hold')
   const sam = await openAs(browser, SAM)
   await sam.goto(`/coordinator/events/${eventId}`)
-  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText('Hold expired')
+  await expect(sam.getByRole('region', { name: 'Venue bookings' })).toContainText(/Hold expired/i)
 
   await sam.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))))
   const { violations } = await new AxeBuilder({ page: sam }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()

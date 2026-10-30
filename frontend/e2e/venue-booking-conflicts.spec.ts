@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
@@ -71,8 +72,8 @@ async function expectNoSeriousViolations(page: Page, label: string) {
 }
 
 async function checkAvailability(page: Page) {
-  await page.getByLabel('Availability from').fill('2026-11-02T00:00')
-  await page.getByLabel('Availability until').fill('2026-11-03T00:00')
+  await page.getByLabel('Availability from').fill(`${E2E_TEST_YEAR}-11-02T00:00`)
+  await page.getByLabel('Availability until').fill(`${E2E_TEST_YEAR}-11-03T00:00`)
   await page.getByRole('button', { name: 'Check availability' }).click()
 }
 
@@ -116,8 +117,8 @@ test('TC-BC-3e: the availability list does not show the venue free during an app
   await expect(results).toContainText(`Booked for ${FIRST}`)
   await expect(results).not.toContainText('Available for the whole period')
   // A far-off window is free.
-  await staff.getByLabel('Availability from').fill('2030-01-01T00:00')
-  await staff.getByLabel('Availability until').fill('2030-01-02T00:00')
+  await staff.getByLabel('Availability from').fill(`${E2E_TEST_YEAR + 1}-01-01T00:00`)
+  await staff.getByLabel('Availability until').fill(`${E2E_TEST_YEAR + 1}-01-02T00:00`)
   await staff.getByRole('button', { name: 'Check availability' }).click()
   await expect(results).toContainText('Available for the whole period')
 })
@@ -126,8 +127,8 @@ test('TC-BC-3e: an end before the start is refused beside the fields', async ({ 
   const { venueId } = await overlappingPair(request)
   const staff = await openAs(browser, STAFF)
   await staff.goto(`/venues/${venueId}`)
-  await staff.getByLabel('Availability from').fill('2026-11-03T00:00')
-  await staff.getByLabel('Availability until').fill('2026-11-02T00:00')
+  await staff.getByLabel('Availability from').fill(`${E2E_TEST_YEAR}-11-03T00:00`)
+  await staff.getByLabel('Availability until').fill(`${E2E_TEST_YEAR}-11-02T00:00`)
   await staff.getByRole('button', { name: 'Check availability' }).click()
   await expect(staff.getByRole('alert').filter({ hasText: 'The end must be after the start.' })).toBeVisible()
   await expect(staff.getByLabel('Availability from')).toHaveAttribute('aria-invalid', 'true')

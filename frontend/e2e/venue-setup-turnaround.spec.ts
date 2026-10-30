@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -113,7 +114,7 @@ test('TC-VT-6e: a booking shows the Event time with its setup and turnaround', a
     headers: olivia,
     data: {
       name: 'E2E Buffer Event', purpose: 'E2E', event_type: 'conference', description: 'E2E AC6',
-      proposed_start: '2026-11-02T10:00:00Z', proposed_end: '2026-11-02T12:00:00Z', expected_attendance: 50,
+      proposed_start: `${E2E_TEST_YEAR}-11-02T10:00:00Z`, proposed_end: `${E2E_TEST_YEAR}-11-02T12:00:00Z`, expected_attendance: 50,
       venue_requirements: 'Hall', accessibility_needs: 'None', equipment_requirements: 'None', registration_enabled: true,
     },
   })
@@ -132,11 +133,11 @@ test('TC-VT-6e: a booking shows the Event time with its setup and turnaround', a
 
   const coord = await openAs(browser, COORD)
   await coord.goto(`/venues/${venueId}/availability`)
-  await coord.getByLabel('From').fill('2026-11-02T00:00')
-  await coord.getByLabel('Until').fill('2026-11-02T23:59')
+  await coord.getByLabel('From').fill(`${E2E_TEST_YEAR}-11-02T00:00`)
+  await coord.getByLabel('Until').fill(`${E2E_TEST_YEAR}-11-02T23:59`)
   await coord.getByRole('button', { name: 'Check availability' }).click()
-  await coord.getByRole('button', { name: /Monday, November 2, 2026/ }).click()
-  const day = coord.getByRole('region', { name: /Availability on 2026-11-02/ })
+  await coord.getByRole('button', { name: new Date(E2E_TEST_YEAR, 10, 2).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) }).click()
+  const day = coord.getByRole('region', { name: `Availability on ${E2E_TEST_YEAR}-11-02` })
   await expect(day).toContainText(/Event \d{2}:\d{2}/)
   await expect(day).toContainText('Setup 20 min')
   await expect(day).toContainText('Turnaround 40 min')

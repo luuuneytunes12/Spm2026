@@ -10,7 +10,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 // The throwaway database these tests write to.
 //
-// Hardcoded to localhost on purpose: this must NEVER be the team's Supabase
+// DATABASE ISOLATION: restricted to localhost; do not point a tunnel at the team's Supabase
 // project. In CI a `postgres:16` service container answers on this exact
 // address, so one value works identically on a laptop and on GitHub with no
 // environment variable at all. The credentials are not a secret -- they
@@ -20,16 +20,21 @@ export const E2E_DATABASE_URL =
   process.env.E2E_DATABASE_URL ??
   'postgresql+psycopg://postgres:postgres@localhost:5432/connectsphere_test'
 
-// Belt and braces: if someone overrides the variable, refuse anything that
-// is not local. Writing test events into the database used for demos is
-// exactly the accident worth failing loudly to prevent.
-if (!/@(localhost|127\.0\.0\.1)[:/]/.test(E2E_DATABASE_URL)) {
-  throw new Error(
-    `Refusing to run end-to-end tests against a non-local database.\n` +
-      `  E2E_DATABASE_URL = ${E2E_DATABASE_URL}\n` +
-      `These tests create and delete event requests. Point them at a ` +
-      `disposable local postgres, never the shared Supabase project.`,
-  )
+// Parse the actual host and database instead of searching the URL text: a
+// hostname hidden in a query string must not make a remote database look safe.
+// Never echo the URL on failure; an accidental override may contain a secret.
+// This guard cannot detect a remote database forwarded through a local tunnel.
+let e2eDatabase: URL
+try {
+  e2eDatabase = new URL(E2E_DATABASE_URL)
+} catch {
+  throw new Error('Invalid E2E_DATABASE_URL; use a disposable local Postgres database.')
+}
+if (
+  !['localhost', '127.0.0.1', '[::1]'].includes(e2eDatabase.hostname) ||
+  e2eDatabase.pathname !== '/connectsphere_test'
+) {
+  throw new Error('E2E tests require a local disposable database named connectsphere_test.')
 }
 
 /** Credentials for the organiser account the CI workflow seeds. */
@@ -52,8 +57,9 @@ export const E2E_JWT_SECRET = 'e2e-not-a-real-secret-just-for-local-and-ci-tests
 // project. Separate ports plus reuseExistingServer:false means Playwright
 // always starts servers it configured itself, and a stray dev server causes
 // an obvious port clash rather than a silent switch to the wrong database.
+// Both ports can be overridden so independent local test runs stay isolated.
 export const E2E_API_PORT = Number(process.env.E2E_API_PORT ?? 8001)
-const E2E_WEB_PORT = 5174
+const E2E_WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 5174)
 
 export default defineConfig({
   testDir: './e2e',

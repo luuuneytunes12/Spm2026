@@ -66,6 +66,8 @@ test('AC1 + AC2 + AC4: Venue Staff approve a queued request and the Coordinator 
 })
 
 test('AC2 + AC3 + AC4 + AC5: a rejection carries a reason and an alternative, and the request can be resubmitted again and again', async ({ browser, request }) => {
+  // Three decisions and two resubmissions involve two authenticated browsers.
+  test.setTimeout(90_000)
   const { eventId } = await pendingRequest(request, 'Reject me')
   const vera = await openAs(browser, VERA)
   const sam = await openAs(browser, SAM)

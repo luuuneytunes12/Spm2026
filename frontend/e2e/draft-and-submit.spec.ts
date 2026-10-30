@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import { expect, test } from '@playwright/test'
 import { E2E_ORGANISER } from '../playwright.config'
 import { resetUsers } from './support/db'
@@ -82,8 +83,8 @@ test('TC-S2-3c: a completed request submits and moves out of Drafts', async ({ p
   await page.getByLabel('Event name').fill(name)
   await page.getByLabel('Event type').fill('conference')
   await page.getByLabel('Purpose').fill('Annual partner briefing')
-  await page.getByLabel('Preferred start').fill('2026-11-02T09:00')
-  await page.getByLabel('Preferred end').fill('2026-11-02T17:00')
+  await page.getByLabel('Preferred start').fill(`${E2E_TEST_YEAR}-11-02T09:00`)
+  await page.getByLabel('Preferred end').fill(`${E2E_TEST_YEAR}-11-02T17:00`)
   await page.getByLabel('Expected attendees').fill('120')
   await page.getByLabel('Venue requirements').fill('Main hall, stage, podium')
   await page.getByLabel('Accessibility requirements').fill('Step-free access, hearing loop')

@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { API, call, login } from './support/api'
+import { E2E_TEST_YEAR } from './support/dates'
 import { openAs } from './support/coordinator-users'
 import type { SeedUser } from './support/db'
 import {
@@ -83,8 +84,9 @@ async function underReview(request: APIRequestContext, h: Record<string, Headers
       purpose: 'Annual partner briefing',
       event_type: 'conference',
       description: 'A full-day briefing.',
-      proposed_start: '2026-11-02T09:00:00Z',
-      proposed_end: '2026-11-02T17:00:00Z',
+      // Keep the event in the future so status tracking does not expire with the calendar.
+      proposed_start: `${E2E_TEST_YEAR}-11-02T09:00:00Z`,
+      proposed_end: `${E2E_TEST_YEAR}-11-02T17:00:00Z`,
       expected_attendance: 120,
       venue_requirements: 'Main hall',
       accessibility_needs: 'Step-free access',

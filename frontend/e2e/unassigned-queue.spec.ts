@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -79,7 +80,7 @@ test('TC-UQ-3e: each row shows the review fields, oldest first', async ({ browse
   await expect(rows.nth(0)).toContainText('120 attendees')
   await expect(rows.nth(0)).toContainText('Organiser: Olivia Organiser')
   await expect(rows.nth(0)).toContainText(/Submitted [A-Z][a-z]{2} \d/)
-  await expect(rows.nth(0)).toContainText(/(2 Nov|Nov 2),? 2026/)
+  await expect(rows.nth(0)).toContainText(new RegExp(`(2 Nov|Nov 2),? ${E2E_TEST_YEAR}`))
 })
 
 test('TC-UQ-4e: opening a request shows what the Organiser entered, read-only', async ({ browser, request }) => {
@@ -89,9 +90,12 @@ test('TC-UQ-4e: opening a request shows what the Organiser entered, read-only', 
   await lead.getByRole('link', { name: /Review/ }).click()
   await expect(lead).toHaveURL(/\/coordinator-lead\/queue\/\d+$/)
   await expect(lead.getByRole('heading', { level: 1, name: 'Review me' })).toBeVisible()
-  for (const text of ['Annual partner briefing', 'A full-day briefing for our regional partners.', 'Main hall, stage, podium', 'Step-free access, hearing loop', '2 projectors, 4 radio mics', 'Olivia Organiser']) {
+  for (const text of ['Annual partner briefing', 'A full-day briefing for our regional partners.', 'Main hall, stage, podium', 'Step-free access, hearing loop', '2 projectors, 4 radio mics']) {
     await expect(lead.getByText(text)).toBeVisible()
   }
+  // The activity log also names the organiser; check the actual organiser details section.
+  const organiserDetails = lead.locator('section').filter({ has: lead.getByRole('heading', { name: 'Event Organiser', exact: true }) })
+  await expect(organiserDetails.getByText('Olivia Organiser', { exact: true })).toBeVisible()
   for (const label of ['Purpose', 'Description', 'Type', 'Proposed date and time', 'Expected attendance', 'Venue requirements', 'Accessibility needs', 'Equipment requirements', 'Registration needed']) {
     await expect(lead.getByText(label, { exact: true })).toBeVisible()
   }

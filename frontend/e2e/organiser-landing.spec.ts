@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
@@ -34,8 +35,8 @@ const REQUEST = {
   purpose: 'Annual partner briefing',
   event_type: 'conference',
   description: 'A full-day briefing.',
-  proposed_start: '2026-11-02T09:00:00Z',
-  proposed_end: '2026-11-02T17:00:00Z',
+  proposed_start: `${E2E_TEST_YEAR}-11-02T09:00:00Z`,
+  proposed_end: `${E2E_TEST_YEAR}-11-02T17:00:00Z`,
   expected_attendance: 120,
   venue_requirements: 'Main hall',
   accessibility_needs: 'Step-free access',

@@ -1,3 +1,4 @@
+import { E2E_TEST_YEAR } from './support/dates'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Browser, BrowserContextOptions, Page } from '@playwright/test'
@@ -77,8 +78,8 @@ async function awaitingEvent(request: APIRequestContext, h: Record<string, Heade
       purpose: 'Annual partner briefing',
       event_type: 'conference',
       description: 'A full-day briefing.',
-      proposed_start: '2026-11-02T09:00:00Z',
-      proposed_end: '2026-11-02T17:00:00Z',
+      proposed_start: `${E2E_TEST_YEAR}-11-02T09:00:00Z`,
+      proposed_end: `${E2E_TEST_YEAR}-11-02T17:00:00Z`,
       expected_attendance: 120,
       venue_requirements: 'Main hall',
       accessibility_needs: 'Step-free access',
@@ -143,7 +144,7 @@ test('TC-PSC-AC1: the decided event is listed with its decision, reason and time
   const row = officer.locator('.request-list li', { hasText: 'PSC listed' })
   await expect(row).toContainText('Rejected')
   await expect(row).toContainText('Reason: Exits blocked by staging')
-  await expect(row).toContainText(/Decided .*2026/)
+  await expect(row).toContainText(new RegExp(`Decided .*${new Date().getFullYear()}`))
   await expect(row).toContainText('Now: Planning Event')
 })
 

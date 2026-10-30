@@ -1580,7 +1580,8 @@
   border-style: solid;
   border-color: var(--warning-border);
   background: var(--warning-bg);
-  color: var(--warning);
+  /* The text-specific warning color meets contrast requirements at 13px. */
+  color: var(--warning-text);
 }
 
 /* Room inside the pill for its own remove button. */
@@ -1605,7 +1606,7 @@
 }
 
 .filter-chip-wrap:has(.filter-chip-warning) .filter-chip-remove {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .filter-chip-remove:hover {
