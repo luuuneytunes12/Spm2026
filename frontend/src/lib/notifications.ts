@@ -117,8 +117,11 @@ export function notificationLink(n: Notification, role: Role): string | null {
   if (role === Role.COORDINATOR) return `/coordinator/events/${n.event_id}`
   if (role === Role.ORGANISER) return `/organiser/events/${n.event_id}`
   if (role === Role.COORDINATOR_LEAD) return `/coordinator-lead/queue/${n.event_id}`
-  // Technical Support review the Event's equipment on its record page.
-  if (role === Role.TECH_SUPPORT) return `/equipment-requirements/${n.event_id}`
+  // Technical Support review the Event's equipment on its record page --
+  // which a cancelled Event no longer has, so its notice opens nothing.
+  if (role === Role.TECH_SUPPORT) {
+    return n.type === 'event_cancelled' ? null : `/equipment-requirements/${n.event_id}`
+  }
   if (role === Role.SAFETY_OFFICER) {
     // An event that left the queue has nothing to check: open the queue.
     return n.type === 'safety_check_withdrawn' ? '/safety-checks' : `/safety-checks/${n.event_id}`

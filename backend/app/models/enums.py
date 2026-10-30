@@ -178,6 +178,8 @@ class NotificationType(enum.StrEnum):
     venue_booking_requested = "venue_booking_requested"
     approved_event_changed = "approved_event_changed"
     safety_returned_to_planning = "safety_returned_to_planning"
+    # Everyone involved: the Event was cancelled, and why.
+    event_cancelled = "event_cancelled"
 
 
 class ChangeRequestStatus(enum.StrEnum):

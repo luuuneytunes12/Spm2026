@@ -227,6 +227,28 @@ export function assignEventTo(eventId: number, email: string): void {
   python(ASSIGN_TO, { event_id: eventId, email })
 }
 
+const REGISTER = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.enums import RegistrationStatus
+from app.models.registrations import Registration
+from app.models.user import User
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+attendee = db.query(User).filter(User.email == spec["email"]).one()
+db.add(Registration(event_id=spec["event_id"], attendee_id=attendee.id, status=RegistrationStatus(spec["status"])))
+db.commit()
+db.close()
+`
+
+/** Put an Attendee on an Event's registration list, as Registered or
+ *  Withdrawn -- the starting position, without the confirm-and-open steps
+ *  registering through the UI needs. */
+export function registerAttendee(eventId: number, email: string, status: 'registered' | 'withdrawn' = 'registered'): void {
+  python(REGISTER, { event_id: eventId, email, status })
+}
+
 const SEED_EQUIPMENT = `
 import json, sys
 from app.core.db import SessionLocal

@@ -142,6 +142,7 @@ STATUS_ANNOUNCING_TYPES = frozenset(
         NotificationType.safety_check_passed,
         NotificationType.safety_changes_requested,
         NotificationType.safety_check_rejected,
+        NotificationType.event_cancelled,
     }
 )
 

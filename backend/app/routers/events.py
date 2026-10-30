@@ -56,6 +56,7 @@ from app.schemas.event import (
     VenueBookingProgress,
 )
 from app.services.attendee_notices import CONFIRMED, EventChangedNotice
+from app.services.cancellation_notices import EventCancellation
 from app.services.coordinator_notices import ChangeRequestSubmittedNotice
 from app.services.event_activity import event_activity
 from app.services.notifications import notify
@@ -1737,6 +1738,8 @@ def cancel_event(
             detail=f"An event in status '{event.status}' cannot be cancelled.",
         )
 
+    # Who to tell is read before the cancel releases anything.
+    cancellation = EventCancellation(db, event)
     previous_status = event.status
     event.status = EventStatus.event_cancelled
 
@@ -1757,6 +1760,7 @@ def cancel_event(
             note=body.reason,
         )
     )
+    cancellation.send(body.reason)
     db.commit()
     db.refresh(event)
     return EventOut.model_validate(event)
