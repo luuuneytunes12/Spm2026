@@ -8,6 +8,7 @@ import { EventActivityLog } from '../../components/EventActivityLog'
 import { EventVenueSuitability } from '../../components/EventVenueSuitability'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { VenueBookingSection } from '../../components/VenueBookingSection'
+import { AffectedVenueBookings } from '../../components/AffectedVenueBookings'
 import { BOOKABLE_EVENT_STATUSES } from '../../lib/venueBookings'
 import { ApiError } from '../../lib/api'
 import {
@@ -605,6 +606,11 @@ export function AssignedEventView() {
               : ' not yet submitted for it.'}
           </p>
         </section>
+      )}
+
+      {(event.status === EventStatus.AWAITING_SAFETY_CHECK ||
+        event.status === EventStatus.SAFETY_CHECK_PASSED) && (
+        <AffectedVenueBookings eventId={event.id} />
       )}
 
       {event.status === EventStatus.SAFETY_CHECK_PASSED && (

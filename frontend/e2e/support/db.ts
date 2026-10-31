@@ -310,7 +310,27 @@ export function setBookingStatus(eventId: number, status: 'pending' | 'approved'
   python(SET_BOOKING_STATUS, { event_id: eventId, status })
 }
 
-export type ScheduledBookingStatus = 'pending' | 'tentative_hold' | 'approved' | 'rejected' | 'cancelled'
+const SET_EVENT_STATUS = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.events import Event
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+db.query(Event).filter(Event.id == spec["event_id"]).update(
+    {Event.status: spec["status"]}, synchronize_session=False
+)
+db.commit()
+db.close()
+`
+
+/** Put an event into `status`, straight on the row -- how a spec reaches a
+ *  later status without walking the whole workflow to it. */
+export function setEventStatus(eventId: number, status: string): void {
+  python(SET_EVENT_STATUS, { event_id: eventId, status })
+}
+
+export type ScheduledBookingStatus ='pending' | 'tentative_hold' | 'approved' | 'rejected' | 'cancelled'
 
 export interface ScheduledVenue {
   name: string

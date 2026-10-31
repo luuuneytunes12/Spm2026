@@ -32,6 +32,14 @@ vi.mock('../../lib/venueBookings', async () => {
   }
 })
 
+vi.mock('../../lib/events', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/events')>('../../lib/events')
+  return { ...actual, getAssignedEvent: vi.fn() }
+})
+
+import { AffectedVenueBookings } from '../../components/AffectedVenueBookings'
+import { getAssignedEvent } from '../../lib/events'
+import type { AssignedEventDetail, EventStatus } from '../../lib/events'
 import { listVenueFilterOptions, listVenues } from '../../lib/venues'
 import {
   findReplacementPath,
@@ -71,8 +79,13 @@ const FLAGGED: VenueBooking = {
 
 const HALL = { id: 9, name: 'Bay Room', location: 'Level 2', capacity: 200, facilities: [], is_active: true }
 
+function eventIn(status: EventStatus) {
+  vi.mocked(getAssignedEvent).mockResolvedValue({ id: 7, status } as AssignedEventDetail)
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
+  eventIn('planning_event')
   vi.mocked(listVenues).mockResolvedValue([HALL])
   vi.mocked(listVenueFilterOptions).mockResolvedValue({ layouts: ['Theatre'], facilities: [], accessibility_features: [] })
   vi.mocked(listApprovedBookings).mockResolvedValue([])
@@ -153,6 +166,80 @@ describe('SCRUM-95 AC1 - Find replacement opens Venue Search pre-filled', () => 
     )
     await screen.findByText('Bay Room')
     expect(screen.queryByRole('button', { name: /as replacement/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('replacement search on an Event past planning', () => {
+  function renderAffected() {
+    return render(
+      <MemoryRouter>
+        <AffectedVenueBookings eventId={7} />
+      </MemoryRouter>,
+    )
+  }
+
+  it('AC1: a flagged booking links to the search with its date, time and needs', async () => {
+    vi.mocked(listEventVenueBookings).mockResolvedValue([FLAGGED])
+    renderAffected()
+    const link = await screen.findByRole('link', { name: 'Find replacement for Marina Hall booking' })
+    expect(link).toHaveAttribute('href', findReplacementPath(FLAGGED))
+    expect(screen.queryByRole('button', { name: /Cancel Marina Hall booking/ })).not.toBeInTheDocument()
+  })
+
+  it('shows nothing when no booking needs a replacement', async () => {
+    vi.mocked(listEventVenueBookings).mockResolvedValue([{ ...FLAGGED, conflict_flagged: false }])
+    const { container } = renderAffected()
+    await waitFor(() => expect(listEventVenueBookings).toHaveBeenCalled())
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('says a replacement is already requested instead of offering another search', async () => {
+    vi.mocked(listEventVenueBookings).mockResolvedValue([
+      {
+        ...FLAGGED,
+        id: 12,
+        status: 'pending',
+        conflict_flagged: false,
+        venue: { id: 9, name: 'Bay Room', location: 'Level 2', capacity: 200 },
+        replaces: { id: 11, status: 'approved', venue: { id: 3, name: 'Marina Hall' } },
+      },
+      FLAGGED,
+    ])
+    renderAffected()
+    expect(await screen.findByText(/Replacement requested at Bay Room/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Find replacement/ })).not.toBeInTheDocument()
+  })
+
+  it.each(['event_approved', 'planning_event', 'awaiting_safety_check', 'safety_check_passed'] as const)(
+    'AC1 AC2: the search offers a replacement on a %s Event',
+    async (status) => {
+      eventIn(status)
+      render(
+        <MemoryRouter initialEntries={[findReplacementPath(FLAGGED)]}>
+          <Venues />
+        </MemoryRouter>,
+      )
+      expect(await screen.findByRole('button', { name: 'Request as replacement: Bay Room' })).toBeInTheDocument()
+      await waitFor(() => expect(getAssignedEvent).toHaveBeenCalledWith(7))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    ['event_cancelled', 'Event Cancelled'],
+    ['event_completed', 'Event Completed'],
+    ['event_rejected', 'Event Rejected'],
+  ] as const)('AC4: the search is refused with a reason on a %s Event', async (status, label) => {
+    eventIn(status)
+    render(
+      <MemoryRouter initialEntries={[findReplacementPath(FLAGGED)]}>
+        <Venues />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(`This event is ${label}`)
+    await screen.findByText('Bay Room')
+    expect(screen.queryByRole('button', { name: /as replacement/ })).not.toBeInTheDocument()
+    expect(requestReplacementVenue).not.toHaveBeenCalled()
   })
 })
 

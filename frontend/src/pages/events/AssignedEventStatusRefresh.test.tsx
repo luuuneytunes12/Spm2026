@@ -11,6 +11,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssignedEventView } from './AssignedEventView'
 
 // Each stub stands in for its real section and simply reports a change.
+vi.mock('../../components/AffectedVenueBookings', () => ({
+  AffectedVenueBookings: () => <section aria-label="affected bookings stub" />,
+}))
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: ({ onChanged }: { onChanged?: () => void }) => (
     <button type="button" onClick={() => onChanged?.()}>

@@ -46,6 +46,13 @@ router = APIRouter(prefix="/venue-bookings", tags=["venue-bookings"])
 # for as long as it stays in planning. After it goes to the Safety Officer
 # the arrangement is judged as it stands.
 BOOKABLE_EVENT_STATUSES = (EventStatus.event_approved, EventStatus.planning_event)
+# Wider than requesting a venue: while the Event is still going ahead, a venue
+# that fell through can be replaced (Week 7 change #2).
+REPLACEMENT_EVENT_STATUSES = (
+    *BOOKABLE_EVENT_STATUSES,
+    EventStatus.awaiting_safety_check,
+    EventStatus.safety_check_passed,
+)
 
 _coordinator = require_role(Role.COORDINATOR)
 _venue_staff = require_role(Role.VENUE_STAFF)
@@ -565,18 +572,21 @@ def request_replacement_venue(
     if event is None or event.coordinator_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     db.refresh(original, with_for_update=True)
-    if original.conflict_flagged_at is None or original.status not in LIVE_BOOKING_STATUSES:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only a live booking marked 'Venue Unavailable - Action Required' can be replaced.",
-        )
-    if event.status not in (*BOOKABLE_EVENT_STATUSES, EventStatus.safety_check_passed):
+    # The Event first: ending it releases its bookings, and "not going ahead"
+    # is the reason the Coordinator needs, not "this booking is not live".
+    if event.status not in REPLACEMENT_EVENT_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "A replacement can only be requested while the event is 'Event Approved', "
-                f"'Planning Event' or 'Safety Check Passed (Event Confirmed)'; it is '{event.status}'."
+                "'Planning Event', 'Awaiting Safety Check' or 'Safety Check Passed (Event "
+                f"Confirmed)'; it is '{event.status}'."
             ),
+        )
+    if original.conflict_flagged_at is None or original.status not in LIVE_BOOKING_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a live booking marked 'Venue Unavailable - Action Required' can be replaced.",
         )
     if db.scalar(
         select(VenueBooking.id).where(
