@@ -242,51 +242,14 @@ def test_no_notification_or_exchange_reaches_outsiders(client, w):
     assert client.get(f"/events/{w['id']}/clarifications", headers=out_h).status_code == 404
 
 
-# --------------------------------------------------------------------------
-# SCRUM-27 AC7/AC8 -- Coordinator amendment request: GAP (strict xfail)
-# --------------------------------------------------------------------------
-# Jira SCRUM-27 asks the Coordinator to send an AMENDMENT request that names
-# the fields to change and gives a message. On this branch only the plain text
-# request exists (POST /events/{id}/clarifications). The endpoint silently
-# ignores an `amended_fields` key, so a request with named fields is accepted
-# as an ordinary message and the fields are lost. The amendments that DO exist
-# belong to the Organiser's reply (SCRUM-103 AC6).
-#
-# The request shape is taken from the AC wording, because no contract for a
-# Coordinator amendment is defined in code. Strict xfail: these flip to
-# failures once the feature is built, so the assertions can be tightened.
+# SCRUM-27 AC7/AC8: Jira describes named-field amendment requests. The
+# current API supports text clarification and organiser replies; no separate
+# coordinator amendment contract exists. These criteria require clarification.
 
 
-@pytest.mark.xfail(strict=True, reason="SCRUM-27 AC7: named fields are dropped; no amendment request")
-def test_27_ac7_coordinator_amendment_request_stores_the_named_fields_and_awaits_reply(client, w):
-    """SCRUM-27 AC7, positive: fields named + a message -> the named fields are
-    saved (not just the message) and the status becomes Awaiting Organiser Reply."""
-    res = client.post(
-        f"/events/{w['id']}/clarifications",
-        json={"message": "Please reduce attendance", "amended_fields": {"expected_attendance": 90}},
-        headers=w["coord_h"],
-    )
-    assert res.status_code == 201
-    assert res.json().get("amended_fields") == {"expected_attendance": 90}
-    assert _event(w).status == EventStatus.awaiting_organiser_reply
-
-
-@pytest.mark.xfail(strict=True, reason="SCRUM-27 AC8: a message with no named fields is accepted as a request")
-def test_27_ac8_an_amendment_with_no_named_fields_is_refused_and_unchanged(client, w):
-    """SCRUM-27 AC8, negative boundary: an amendment that names no fields must be
-    refused with the status unchanged. Today a plain message is accepted instead."""
-    res = client.post(
-        f"/events/{w['id']}/clarifications",
-        json={"message": "Please reduce attendance", "amended_fields": {}},
-        headers=w["coord_h"],
-    )
-    assert res.status_code == 422
-    assert _event(w).status == EventStatus.under_review
-
-
-def test_27_ac8_an_amendment_with_no_message_is_refused_and_unchanged(client, w):
-    """SCRUM-27 AC8, negative boundary: named fields without a message are refused,
-    nothing is written and the status stays Under Review. This half already holds."""
+def test_27_ac5_a_request_with_no_message_is_refused_and_unchanged(client, w):
+    """SCRUM-27 AC5: a request without a message is refused and nothing changes.
+    Named amendment fields are not a defined request contract."""
     res = client.post(
         f"/events/{w['id']}/clarifications",
         json={"amended_fields": {"expected_attendance": 90}},

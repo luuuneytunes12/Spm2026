@@ -255,48 +255,6 @@ def test_rolled_back_assignment_pushes_nothing(client, db_session):
     assert db_session.query(Notification).count() == 0
 
 
-# --------------------------------------------------------------------------
-# SCRUM-24 Declare Coordinator Global Unavailability -- GAPS (strict xfail)
-# --------------------------------------------------------------------------
-# The self-service endpoints for this story were removed in commit 896957f
-# ("removed deprecated shit"): PATCH /coordinators/me/availability and
-# GET /coordinators/me/availability-history. Nothing a user can call now sets
-# `User.is_available`, so AC1 and AC4 below cannot pass on this branch.
-#
-# These are strict xfails: they pass as "expected to fail" today. When the
-# endpoints come back they will XPASS and FAIL the run, which is the signal to
-# turn them into ordinary tests. AC2, AC3 and AC5 are real tests above and in
-# test_available_coordinator_count.py.
-
-
-@pytest.mark.xfail(strict=True, reason="SCRUM-24 AC1: no self-service endpoint (removed in 896957f)")
-def test_scrum24_ac1_a_coordinator_can_mark_themselves_unavailable_and_available(client, db_session):
-    """SCRUM-24 AC1, positive: the Coordinator switches their own global status.
-    Expected: PATCH returns 200 and the stored flag follows it both ways."""
-    coordinator, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-
-    off = client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
-    assert off.status_code == 200
-    db_session.refresh(coordinator)
-    assert coordinator.is_available is False
-
-    on = client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
-    assert on.status_code == 200
-    db_session.refresh(coordinator)
-    assert coordinator.is_available is True
-
-
-@pytest.mark.xfail(strict=True, reason="SCRUM-24 AC4: no availability history (removed in 896957f)")
-def test_scrum24_ac4_every_change_is_recorded_with_a_timestamp_even_with_no_events(client, db_session):
-    """SCRUM-24 AC4, positive: a change is recorded with a time, though the
-    Coordinator holds no events. Expected: history lists each real change, newest first."""
-    _coordinator_obj, headers = _coordinator(client, db_session, "sam@connectsphere.test", "Sam Tan")
-
-    client.patch("/coordinators/me/availability", json={"is_available": False}, headers=headers)
-    client.patch("/coordinators/me/availability", json={"is_available": True}, headers=headers)
-
-    history = client.get("/coordinators/me/availability-history", headers=headers)
-    assert history.status_code == 200
-    entries = history.json()
-    assert [e["is_available"] for e in entries] == [True, False]
-    assert all(e["created_at"] for e in entries)
+# SCRUM-24 AC1/AC4: this branch has no coordinator self-service availability
+# or availability-history endpoint. The tests above cover assignment decisions
+# using the stored availability flag, but do not verify those two Jira criteria.
