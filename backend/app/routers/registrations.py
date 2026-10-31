@@ -57,6 +57,23 @@ def registration_open(event: Event) -> bool:
     return _utc(event.proposed_start) > now
 
 
+def event_is_full(event: Event, db: Session) -> bool:
+    """Full means `expected_attendance` Attendees are Registered. Withdrawn
+    rows do not count, so a withdrawal frees its place. No expected
+    attendance means no limit."""
+    if event.expected_attendance is None:
+        return False
+    registered = (
+        db.query(Registration)
+        .filter(
+            Registration.event_id == event.id,
+            Registration.status == RegistrationStatus.registered,
+        )
+        .count()
+    )
+    return registered >= event.expected_attendance
+
+
 def _out(event: Event, registration: Registration | None) -> RegistrableEvent:
     return RegistrableEvent(
         id=event.id,
@@ -173,7 +190,10 @@ def register(
     unique on (event_id, attendee_id), so there is only ever one row per
     Attendee per event.
     """
-    event = db.get(Event, event_id)
+    # Lock the event row first: concurrent registrations for the same event
+    # then queue here, so the "is it full?" count below cannot be read by two
+    # requests at once and both take the last place.
+    event = db.get(Event, event_id, with_for_update=True)
     registration = _my_registration(event_id, user, db, lock=True) if event else None
     # Events an Attendee could never register for are "not found" -- the
     # same principle as _get_own_event: this must not probe draft ids.
@@ -199,6 +219,9 @@ def register(
                 else "Registration for this event has closed."
             ),
         )
+
+    if event_is_full(event, db):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This event is full.")
 
     if registration is None:
         registration = Registration(event_id=event.id, attendee_id=user.id)
