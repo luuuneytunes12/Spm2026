@@ -133,6 +133,31 @@ describe('Story 2 AC3 - submitted requests appear on their own page', () => {
     )
   })
 
+  it.each(['event_approved', 'planning_event', 'safety_check_passed'] as const)(
+    'AC1: offers a change request on a %s Event',
+    async (status) => {
+      mockList.mockResolvedValue([{ ...SUBMITTED, status }])
+      renderAt('/organiser/events?tab=submitted')
+
+      const row = await screen.findByRole('listitem')
+      expect(within(row).getByRole('link', { name: /request changes/i })).toHaveAttribute(
+        'href',
+        '/organiser/events/2/edit',
+      )
+    },
+  )
+
+  it.each(['event_completed', 'event_cancelled', 'event_rejected'] as const)(
+    'AC3: does not offer a change request on a %s Event',
+    async (status) => {
+      mockList.mockResolvedValue([{ ...SUBMITTED, status }])
+      renderAt('/organiser/events?tab=submitted')
+
+      const row = await screen.findByRole('listitem')
+      expect(within(row).queryByRole('link', { name: /request changes/i })).not.toBeInTheDocument()
+    },
+  )
+
   it('hides the list shortcut and marks an event while a change request is pending', async () => {
     const pending = { ...SUBMITTED, has_pending_change_request: true }
     mockList.mockResolvedValue([pending])

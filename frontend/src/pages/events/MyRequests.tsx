@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../lib/api'
 import {
+  canRequestChanges,
   EVENT_STATUS_LABELS,
   EventStatus,
   formatRange,
@@ -160,8 +161,7 @@ export function MyRequests() {
                 ) : (
                   <>
                     <Link to={`/organiser/events/${event.id}`}>View →</Link>
-                    {(event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR ||
-                      event.status === EventStatus.UNDER_REVIEW) &&
+                    {canRequestChanges(event.status) &&
                       !event.has_pending_change_request && (
                       <Link to={`/organiser/events/${event.id}/edit`}>Request changes →</Link>
                     )}

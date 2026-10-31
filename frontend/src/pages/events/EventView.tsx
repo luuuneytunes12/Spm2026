@@ -8,6 +8,7 @@ import { EventStatusTracker } from '../../components/EventStatusTracker'
 import { StatusTimeline } from '../../components/StatusTimeline'
 import { ApiError } from '../../lib/api'
 import {
+  canRequestChanges,
   EVENT_STATUS_LABELS,
   EventStatus,
   formatRange,
@@ -17,7 +18,7 @@ import {
 } from '../../lib/events'
 import type { ActivityEntry, EventChangeRequest, EventDetail } from '../../lib/events'
 
-/** View an event request and offer corrections until its review is decided. */
+/** View an event request and offer corrections in the statuses that allow them. */
 export function EventView() {
   const { id } = useParams()
   const [event, setEvent] = useState<EventDetail | null>(null)
@@ -114,8 +115,7 @@ export function EventView() {
           </p>
         </div>
         {(event.status === EventStatus.DRAFT ||
-          ((event.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR || event.status === EventStatus.UNDER_REVIEW) &&
-            !hasPendingChangeRequest)) && (
+          (canRequestChanges(event.status) && !hasPendingChangeRequest)) && (
           <Link to={`/organiser/events/${event.id}/edit`} className="btn-primary btn-link">
             {event.status === EventStatus.DRAFT ? 'Continue editing' : 'Request changes'}
           </Link>

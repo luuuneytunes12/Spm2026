@@ -278,6 +278,63 @@ def test_blocked_status_cannot_receive_change_request(client, db_session, blocke
     assert db_session.query(EventChangeRequest).count() == 0
 
 
+@pytest.mark.parametrize(
+    "allowed_status",
+    [
+        EventStatus.event_approved,
+        EventStatus.planning_event,
+        EventStatus.safety_check_passed,
+    ],
+)
+def test_ac1_ac2_change_request_accepted_after_approval_leaves_event_unchanged(
+    client, db_session, allowed_status
+):
+    _, organiser_headers, _, _, event_id = review_setup(client, db_session)
+    event = db_session.get(Event, event_id)
+    event.status = allowed_status
+    db_session.commit()
+
+    response = client.post(
+        f"/events/{event_id}/change-requests",
+        json={"description": "Change", "proposed_changes": {"expected_attendance": 160}},
+        headers=organiser_headers,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending"
+    db_session.expire_all()
+    event = db_session.get(Event, event_id)
+    assert event.status == allowed_status
+    assert event.expected_attendance == COMPLETE["expected_attendance"]
+
+
+@pytest.mark.parametrize(
+    "blocked_status",
+    [
+        EventStatus.event_completed,
+        EventStatus.event_cancelled,
+        EventStatus.event_rejected,
+    ],
+)
+def test_ac3_finished_event_refuses_change_request_with_a_reason(
+    client, db_session, blocked_status
+):
+    _, organiser_headers, _, _, event_id = review_setup(client, db_session)
+    event = db_session.get(Event, event_id)
+    event.status = blocked_status
+    db_session.commit()
+
+    response = client.post(
+        f"/events/{event_id}/change-requests",
+        json={"description": "Change", "proposed_changes": {"name": "New name"}},
+        headers=organiser_headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This event can no longer be changed."
+    assert db_session.query(EventChangeRequest).count() == 0
+
+
 def test_coordinator_rejection_keeps_values_and_exposes_reason(client, db_session):
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     requested = client.post(
