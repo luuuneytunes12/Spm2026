@@ -124,6 +124,9 @@ export function EventForm() {
   const formRef = useRef<HTMLFormElement>(null)
   const bannerRef = useRef<HTMLParagraphElement>(null)
   const originalPayload = useRef<EventInput>(toPayload(EMPTY))
+  // A new form creates a draft before submitting. Remember its ID if submit
+  // fails so correcting the form or saving a draft updates that same record.
+  const createdDraftId = useRef<number | null>(null)
 
   // A failed submit leaves the reason somewhere above the button that was
   // just pressed -- often a screen away on a form this long. Without this
@@ -215,7 +218,8 @@ export function EventForm() {
    *  screen, not whatever was last saved. */
   async function persist(changeReason?: string): Promise<number> {
     const payload = toPayload(form)
-    if (eventId !== null) {
+    const savedDraftId = eventId ?? createdDraftId.current
+    if (savedDraftId !== null) {
       if (canCorrectSubmitted) {
         if (!changeReason) {
           throw new Error('Please explain why these changes are needed.')
@@ -227,13 +231,15 @@ export function EventForm() {
               JSON.stringify(originalPayload.current[field as keyof EventInput]),
           ),
         ) as EventInput
-        await requestEventChanges(eventId, changeReason, changedFields)
+        await requestEventChanges(savedDraftId, changeReason, changedFields)
       } else {
-        await updateEvent(eventId, payload)
+        await updateEvent(savedDraftId, payload)
       }
-      return eventId
+      return savedDraftId
     }
-    return (await createEvent(payload)).id
+    const created = await createEvent(payload)
+    createdDraftId.current = created.id
+    return created.id
   }
 
   function reportError(err: unknown, fallback: string) {

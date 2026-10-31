@@ -293,6 +293,36 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
 })
 
 describe('Story 2 AC1 - submitting an incomplete request is blocked and the gaps are flagged', () => {
+  it('reuses the created draft when the organiser corrects a failed submission', async () => {
+    const user = userEvent.setup()
+    mockSubmit.mockRejectedValueOnce(new ApiError(422, 'purpose: required', ['purpose']))
+    renderNew()
+
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+    await screen.findByRole('alert')
+    await user.type(screen.getByLabelText('Purpose'), 'A corrected purpose')
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(2))
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+    expect(mockUpdate).toHaveBeenCalledWith(SAVED.id, expect.objectContaining({ purpose: 'A corrected purpose' }))
+    expect(mockSubmit).toHaveBeenLastCalledWith(SAVED.id)
+  })
+
+  it('saves the same draft when the organiser chooses Save as draft after a failed submission', async () => {
+    const user = userEvent.setup()
+    mockSubmit.mockRejectedValueOnce(new ApiError(422, 'purpose: required', ['purpose']))
+    renderNew()
+
+    await user.click(screen.getByRole('button', { name: 'Submit request' }))
+    await screen.findByRole('alert')
+    await user.type(screen.getByLabelText('Purpose'), 'Continue later')
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }))
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1))
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+    expect(mockUpdate).toHaveBeenCalledWith(SAVED.id, expect.objectContaining({ purpose: 'Continue later' }))
+  })
   it('TC-S2-1c: marks exactly the fields the server rejected', async () => {
     const user = userEvent.setup()
     mockSubmit.mockRejectedValueOnce(
