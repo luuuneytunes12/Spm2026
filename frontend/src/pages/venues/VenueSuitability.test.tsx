@@ -5,7 +5,8 @@ import { VenueSuitability } from './VenueSuitability'
 vi.mock('../../lib/events', () => ({
   listAssignedEvents: vi.fn(),
 }))
-vi.mock('../../lib/venues', () => ({
+vi.mock('../../lib/venues', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/venues')>()),
   checkVenueSuitability: vi.fn(),
 }))
 
@@ -55,6 +56,56 @@ beforeEach(() => {
 })
 
 describe('Check Venue Suitability for an Event', () => {
+  async function checkWith(check: VenueSuitabilityResult['checks'][number]) {
+    mockCheck.mockResolvedValue({ ...SUITABLE, suitable: check.met, checks: [check] })
+    renderSuitability()
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Event' }), {
+      target: { value: '18' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Check suitability' }))
+  }
+
+  it('AC1: shows operating hours as met when the event is inside them', async () => {
+    await checkWith({
+      category: 'operating_hours',
+      requirement: 'Mon 02 Nov 2026 10:00 to Mon 02 Nov 2026 12:00',
+      available: 'Mon-Fri 09:00-17:00',
+      met: true,
+      message: 'Within operating hours.',
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Suitable for Hottie Stuff testing 2' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('operating hours: Pass')).toBeInTheDocument()
+  })
+
+  it('AC2: shows Not suitable and "Outside operating hours" with what to do next', async () => {
+    await checkWith({
+      category: 'operating_hours',
+      requirement: 'Mon 02 Nov 2026 18:00 to Mon 02 Nov 2026 20:00',
+      available: 'Mon-Fri 09:00-17:00',
+      met: false,
+      message: 'Outside operating hours',
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Not suitable for Hottie Stuff testing 2' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('Outside operating hours')).toBeInTheDocument()
+    expect(screen.getByText(/Choose a venue that is open for the whole event/)).toBeInTheDocument()
+  })
+
+  it('tells the Coordinator who can fix operating hours that cannot be read', async () => {
+    await checkWith({
+      category: 'operating_hours',
+      requirement: 'Mon 02 Nov 2026 10:00 to Mon 02 Nov 2026 12:00',
+      available: 'By appointment',
+      met: false,
+      message: "Cannot read this venue's operating hours, so they cannot be confirmed.",
+    })
+
+    expect(await screen.findByText(/Ask Venue Staff to record the hours/)).toBeInTheDocument()
+  })
+
   it('checks this venue directly even when the event has no venue booking', async () => {
     mockCheck.mockResolvedValue(SUITABLE)
     renderSuitability()

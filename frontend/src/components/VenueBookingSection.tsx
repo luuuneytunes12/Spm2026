@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link, useInRouterContext } from 'react-router'
 import { ApiError } from '../lib/api'
 import { formatRange, formatTimestamp } from '../lib/events'
 import { listVenues } from '../lib/venues'
@@ -7,7 +6,6 @@ import type { VenueSummary } from '../lib/venues'
 import {
   BOOKING_STATUS_LABELS,
   CONFLICT_FLAG_LABEL,
-  findReplacementPath,
   formatBookingPeriods,
   isLiveBooking,
   listEventVenueBookings,
@@ -16,6 +14,7 @@ import {
 import type { VenueBooking, VenueRequest } from '../lib/venueBookings'
 import { CancelAllBookingsDialog } from './CancelAllBookingsDialog'
 import { CancelBookingDialog } from './CancelBookingDialog'
+import { FindReplacementLink } from './FindReplacementLink'
 import { VenueBookingChangeForm } from './VenueBookingChangeForm'
 
 interface Props {
@@ -25,23 +24,6 @@ interface Props {
    *  request moves an approved event into planning, and every change is a line
    *  in the Activity Log, so the page reloads the event to show both. */
   onChanged?: () => void
-}
-
-/** "Find replacement" for a booking marked Venue Unavailable - Action Required.
- *  A router link where there is a router, a plain link otherwise. */
-function FindReplacementLink({ booking }: { booking: VenueBooking }) {
-  const inRouter = useInRouterContext()
-  const to = findReplacementPath(booking)
-  const label = `Find replacement for ${booking.venue.name} booking`
-  return inRouter ? (
-    <Link to={to} className="btn-link-accent" aria-label={label}>
-      Find replacement
-    </Link>
-  ) : (
-    <a href={to} className="btn-link-accent" aria-label={label}>
-      Find replacement
-    </a>
-  )
 }
 
 /** What the Coordinator typed for one chosen venue. */

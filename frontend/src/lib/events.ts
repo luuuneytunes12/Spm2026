@@ -19,6 +19,20 @@ export const EventStatus = {
 } as const
 export type EventStatus = (typeof EventStatus)[keyof typeof EventStatus]
 
+/** Where the Organiser is offered "Request changes". The backend's
+ *  CHANGE_REQUEST_ALLOWED_STATUSES decides what is actually accepted. */
+const ORGANISER_CHANGE_REQUEST_STATUSES: readonly EventStatus[] = [
+  EventStatus.SUBMITTED_AWAITING_COORDINATOR,
+  EventStatus.UNDER_REVIEW,
+  EventStatus.EVENT_APPROVED,
+  EventStatus.PLANNING_EVENT,
+  EventStatus.SAFETY_CHECK_PASSED,
+]
+
+export function canRequestChanges(status: EventStatus): boolean {
+  return ORGANISER_CHANGE_REQUEST_STATUSES.includes(status)
+}
+
 /** The ONLY wording for an Event's status anywhere in the UI, for every role.
  *  These are the names in dod.md section 11a, spelled exactly as written there.
  *  The stored slugs (the keys) are the database's own and differ for a few

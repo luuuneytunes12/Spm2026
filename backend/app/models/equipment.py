@@ -13,6 +13,16 @@ from app.models.user import User
 class Equipment(Base):
     __tablename__ = "equipment"
 
+    # Mirrors the migration, so the SQLite test database has it too.
+    __table_args__ = (
+        CheckConstraint("damaged_quantity >= 0", name="ck_equipment_damaged_quantity"),
+        CheckConstraint("maintenance_quantity >= 0", name="ck_equipment_maintenance_quantity"),
+        CheckConstraint(
+            "damaged_quantity + maintenance_quantity <= total_quantity",
+            name="ck_equipment_out_of_service_within_total",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(Text)
     # The equipment "type" the catalogue is filtered by.
@@ -33,6 +43,32 @@ class Equipment(Base):
         default=EquipmentOperationalStatus.available,
     )
     technical_specs: Mapped[str | None] = mapped_column(Text)
+    # Units of this item out of service, whatever the window (SCRUM-115).
+    # operational_status is about the whole item; these are about part of it.
+    damaged_quantity: Mapped[int] = mapped_column(default=0, server_default="0")
+    maintenance_quantity: Mapped[int] = mapped_column(default=0, server_default="0")
+
+    @property
+    def out_of_service_quantity(self) -> int:
+        # `or 0`: a defaulted column is None until the row is first flushed.
+        return (self.damaged_quantity or 0) + (self.maintenance_quantity or 0)
+
+
+class EquipmentActivity(Base):
+    """The equipment item's Activity Log (SCRUM-115): one append-only row per
+    quantity marked out of service or returned -- what, who, and when."""
+
+    __tablename__ = "equipment_activity"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("equipment.id", ondelete="CASCADE")
+    )
+    changed_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL")
+    )
+    note: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class EquipmentRequest(Base):

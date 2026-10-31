@@ -19,6 +19,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { AssignedEventView } from './AssignedEventView'
 
+vi.mock('../../components/AffectedVenueBookings', () => ({
+  AffectedVenueBookings: () => <section aria-label="affected bookings stub" />,
+}))
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
@@ -1162,4 +1165,28 @@ describe('ER AC1 - the equipment requirements card', () => {
     // field has the same label.
     expect(screen.getByText('Equipment requirements', { selector: 'dt' })).toBeInTheDocument()
   })
+})
+
+describe('affected venue bookings past the planning window', () => {
+  it.each(['awaiting_safety_check', 'safety_check_passed'] as const)(
+    'AC1 AC2: a %s Event shows them instead of the full booking section',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...EVENT, status })
+      renderView()
+
+      expect(await screen.findByRole('region', { name: 'affected bookings stub' })).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'venue booking stub' })).not.toBeInTheDocument()
+    },
+  )
+
+  it.each(['event_completed', 'event_cancelled', 'event_rejected'] as const)(
+    'AC4: a %s Event offers no way into the search',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...EVENT, status })
+      renderView()
+
+      await screen.findByRole('heading', { name: 'Regional Partner Conference' })
+      expect(screen.queryByRole('region', { name: 'affected bookings stub' })).not.toBeInTheDocument()
+    },
+  )
 })

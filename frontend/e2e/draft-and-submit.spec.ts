@@ -76,6 +76,30 @@ test('TC-S2-1e: submitting an incomplete request is blocked and flags the gaps',
   await expect(page.getByRole('listitem').filter({ hasText: name })).toBeVisible()
 })
 
+/** An incomplete new request must reuse its first draft when corrected and submitted. */
+test('SCRUM-21: correcting an incomplete submission does not leave a duplicate draft', async ({ page }) => {
+  const name = `${RUN} retry`
+  await page.goto('/organiser/events/new')
+  await page.getByLabel('Event name').fill(name)
+  await page.getByRole('button', { name: 'Submit request' }).click()
+  await expect(page.getByRole('alert')).toContainText('required')
+
+  // Correct the same form, rather than starting a separate request.
+  await page.getByLabel('Event type').fill('conference')
+  await page.getByLabel('Purpose').fill('Annual partner briefing')
+  await page.getByLabel('Preferred start').fill(`${E2E_TEST_YEAR}-11-02T09:00`)
+  await page.getByLabel('Preferred end').fill(`${E2E_TEST_YEAR}-11-02T17:00`)
+  await page.getByLabel('Expected attendees').fill('120')
+  await page.getByLabel('Venue requirements').fill('Main hall')
+  await page.getByLabel('Accessibility requirements').fill('Step-free access')
+  await page.getByRole('button', { name: 'Submit request' }).click()
+
+  await expect(page.getByRole('listitem').filter({ hasText: name })).toHaveCount(1)
+  await page.getByRole('tab', { name: 'Drafts' }).click()
+  // If retry created another event, the original incomplete draft appears here.
+  await expect(page.getByRole('listitem').filter({ hasText: name })).toHaveCount(0)
+})
+
 test('TC-S2-3c: a completed request submits and moves out of Drafts', async ({ page }) => {
   const name = `${RUN} complete`
 

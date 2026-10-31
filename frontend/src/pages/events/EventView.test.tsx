@@ -125,14 +125,31 @@ describe('AC2 - the assigned coordinator is visible on the event page', () => {
     )
   })
 
-  it('does not offer correction after the Coordinator decides', async () => {
-    mockGet.mockResolvedValue({ ...BASE, status: 'event_approved' })
+  it.each(['event_approved', 'planning_event', 'safety_check_passed'] as const)(
+    'AC1: offers a change request on a %s Event',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...BASE, status })
 
-    renderView()
+      renderView()
 
-    await screen.findByRole('list', { name: 'Status timeline' })
-    expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
-  })
+      expect(await screen.findByRole('link', { name: 'Request changes' })).toHaveAttribute(
+        'href',
+        '/organiser/events/7/edit',
+      )
+    },
+  )
+
+  it.each(['event_completed', 'event_cancelled', 'event_rejected'] as const)(
+    'AC3: does not offer a change request on a %s Event',
+    async (status) => {
+      mockGet.mockResolvedValue({ ...BASE, status })
+
+      renderView()
+
+      await screen.findByRole('list', { name: 'Status timeline' })
+      expect(screen.queryByRole('link', { name: 'Request changes' })).not.toBeInTheDocument()
+    },
+  )
 
   it('shows the organiser the decision and coordinator reason for a change request', async () => {
     const changeRequest: EventChangeRequest = {

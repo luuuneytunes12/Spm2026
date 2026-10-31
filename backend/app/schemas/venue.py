@@ -164,7 +164,7 @@ class VenueAvailabilityOut(BaseModel):
 
 
 class VenueSuitabilityCheck(BaseModel):
-    category: Literal["capacity", "layout", "accessibility", "facility"]
+    category: Literal["capacity", "layout", "accessibility", "facility", "operating_hours"]
     requirement: str
     available: str
     met: bool

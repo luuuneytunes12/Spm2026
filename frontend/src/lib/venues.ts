@@ -93,11 +93,16 @@ export interface VenueAvailability {
 }
 
 export interface VenueSuitabilityCheck {
-  category: 'capacity' | 'layout' | 'accessibility' | 'facility'
+  category: 'capacity' | 'layout' | 'accessibility' | 'facility' | 'operating_hours'
   requirement: string
   available: string
   met: boolean
   message: string
+}
+
+/** How a check's category reads on screen. */
+export function suitabilityCategoryLabel(category: VenueSuitabilityCheck['category']): string {
+  return category === 'operating_hours' ? 'operating hours' : category
 }
 
 export interface VenueSuitability {

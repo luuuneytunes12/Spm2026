@@ -1,11 +1,13 @@
 """Schemas for the equipment catalogue.
 
-Read-only: this module describes what the catalogue *shows*, not what can
-be changed. Creating, editing and retiring items is EQUIPMENT_MANAGE and a
+Mostly what the catalogue *shows*. The one change here is marking units out
+of service; creating, editing and retiring items is EQUIPMENT_MANAGE and a
 separate story.
 """
 
-from pydantic import BaseModel, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, StrictInt
 
 from app.models.enums import EquipmentOperationalStatus
 
@@ -40,6 +42,17 @@ class EquipmentOut(BaseModel):
     operational_status: EquipmentOperationalStatus
     available_quantity: int
     technical_specs: str | None
+    damaged_quantity: int
+    maintenance_quantity: int
+
+
+class EquipmentConditionChange(BaseModel):
+    """Some units of an item going out of service, or coming back."""
+
+    condition: Literal[EquipmentOperationalStatus.damaged, EquipmentOperationalStatus.maintenance]
+    # Strict, so 2.5 or "2" are refused rather than quietly converted. Whether
+    # the number is acceptable is the domain's rule.
+    quantity: StrictInt
 
 
 class EquipmentCatalogueOut(BaseModel):

@@ -12,6 +12,7 @@ from app.core.deps import get_current_user, require_permission, require_role
 from app.core.roles import Permission, Role
 from app.domain.requirement_progress import RequirementReservationLinks
 from app.domain.venue_occupancy import occupied_window, overlap_of
+from app.domain.venue_operating_hours import UnreadableOperatingHours, outside_operating_hours
 from app.models.enums import (
     ACTIVE_ASSIGNMENT_STATUSES,
     CHANGE_REQUEST_ALLOWED_STATUSES,
@@ -530,6 +531,14 @@ def _change_request_out(
         for item in pieces(facilities):
             if item.casefold() not in {value.casefold() for value in venue.facilities or []}:
                 unmet.append(f"Missing venue facility: {item}.")
+        hours_start = proposed_start if time_changed else booking.start_time
+        hours_end = proposed_end if time_changed else booking.end_time
+        if hours_start is not None and hours_end is not None:
+            try:
+                if outside_operating_hours(venue.operating_hours, hours_start, hours_end):
+                    unmet.append("Outside operating hours")
+            except UnreadableOperatingHours:
+                unmet.append("Cannot read this venue's operating hours.")
 
         conflicts: list[str] = []
         if time_changed and proposed_start is not None and proposed_end is not None:

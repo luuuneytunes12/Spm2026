@@ -20,10 +20,11 @@ import { EquipmentCatalogue } from './EquipmentCatalogue'
 
 vi.mock('../../lib/equipment', async () => {
   const actual = await vi.importActual<typeof import('../../lib/equipment')>('../../lib/equipment')
-  return { ...actual, listEquipment: vi.fn() } // keep the real labels and formatter
+  return { ...actual, listEquipment: vi.fn(), markOutOfService: vi.fn(), returnToService: vi.fn() } // keep the real labels and formatter
 })
 
-import { listEquipment } from '../../lib/equipment'
+import { ApiError } from '../../lib/api'
+import { listEquipment, markOutOfService, returnToService } from '../../lib/equipment'
 import type { EquipmentCatalogue as Catalogue, EquipmentItem } from '../../lib/equipment'
 
 const mockList = vi.mocked(listEquipment)
@@ -38,6 +39,8 @@ const MICROPHONE: EquipmentItem = {
   operational_status: 'available',
   available_quantity: 14,
   technical_specs: 'UHF wireless, 300ft range',
+  damaged_quantity: 0,
+  maintenance_quantity: 0,
 }
 
 const BROKEN_MIXER: EquipmentItem = {
@@ -50,6 +53,8 @@ const BROKEN_MIXER: EquipmentItem = {
   operational_status: 'damaged',
   available_quantity: 0,
   technical_specs: 'Channel 7 fader unresponsive',
+  damaged_quantity: 0,
+  maintenance_quantity: 0,
 }
 
 const PROJECTOR: EquipmentItem = {
@@ -71,6 +76,79 @@ function catalogue(items: EquipmentItem[], types = ALL_TYPES): Catalogue {
 beforeEach(() => {
   vi.clearAllMocks()
   mockList.mockResolvedValue(catalogue([]))
+})
+
+describe('SCRUM-115 - marking part of an item out of service', () => {
+  async function openForm() {
+    const user = userEvent.setup()
+    mockList.mockResolvedValue(catalogue([MICROPHONE]))
+    render(<EquipmentCatalogue />)
+    await user.click(
+      await screen.findByRole('button', { name: `Update condition of ${MICROPHONE.name}` }),
+    )
+    return user
+  }
+
+  it('AC1: marks a quantity and shows it is no longer available', async () => {
+    vi.mocked(markOutOfService).mockResolvedValue({
+      ...MICROPHONE,
+      available_quantity: 11,
+      maintenance_quantity: 3,
+    })
+    const user = await openForm()
+
+    await user.selectOptions(screen.getByLabelText('Condition'), 'maintenance')
+    await user.type(screen.getByLabelText('Quantity'), '3')
+    await user.click(screen.getByRole('button', { name: 'Mark out of service' }))
+
+    expect(markOutOfService).toHaveBeenCalledWith(1, 'maintenance', 3)
+    expect(await screen.findByText('11 of 16 available')).toBeInTheDocument()
+    expect(screen.getByText('3 under maintenance')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('3 marked Under maintenance.')
+  })
+
+  it('AC3: returns a repaired quantity to service', async () => {
+    vi.mocked(returnToService).mockResolvedValue({ ...MICROPHONE, available_quantity: 15 })
+    const user = await openForm()
+
+    await user.type(screen.getByLabelText('Quantity'), '1')
+    await user.click(screen.getByRole('button', { name: 'Return to service' }))
+
+    expect(returnToService).toHaveBeenCalledWith(1, 'damaged', 1)
+    expect(await screen.findByText('15 of 16 available')).toBeInTheDocument()
+  })
+
+  it.each(['0', '-1', '2.5', ''])('AC4: "%s" is refused before anything is sent', async (value) => {
+    const user = await openForm()
+
+    if (value) await user.type(screen.getByLabelText('Quantity'), value)
+    await user.click(screen.getByRole('button', { name: 'Mark out of service' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('whole number greater than 0')
+    expect(markOutOfService).not.toHaveBeenCalled()
+    expect(screen.getByText('14 of 16 available')).toBeInTheDocument()
+  })
+
+  it('AC4: shows the reason when the server refuses a quantity above the total', async () => {
+    vi.mocked(markOutOfService).mockRejectedValue(
+      new ApiError(422, 'Only 16 of 16 Mic can be marked; 0 already out of service.'),
+    )
+    const user = await openForm()
+
+    await user.type(screen.getByLabelText('Quantity'), '17')
+    await user.click(screen.getByRole('button', { name: 'Mark out of service' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Only 16 of 16')
+    expect(screen.getByText('14 of 16 available')).toBeInTheDocument()
+  })
+
+  it('offers nothing on an item with a status as a whole', async () => {
+    mockList.mockResolvedValue(catalogue([BROKEN_MIXER]))
+    render(<EquipmentCatalogue />)
+
+    await screen.findByText(BROKEN_MIXER.name)
+    expect(screen.queryByRole('button', { name: /Update condition/ })).not.toBeInTheDocument()
+  })
 })
 
 describe('AC1 - every item held by ConnectSphere is visible', () => {

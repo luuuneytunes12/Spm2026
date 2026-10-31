@@ -5,15 +5,31 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.deps import require_permission
-from app.core.roles import Permission
+from app.core.deps import require_permission, require_role
+from app.core.roles import Permission, Role
+from app.domain.equipment_condition import (
+    ConditionChange,
+    EquipmentConditionService,
+    MarkOutOfService,
+    ReturnToService,
+)
 from app.models.enums import EquipmentOperationalStatus, EquipmentStatus
 from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event
-from app.schemas.equipment import EquipmentCatalogueOut, EquipmentOption, EquipmentOut
+from app.models.user import User
+from app.schemas.equipment import (
+    EquipmentCatalogueOut,
+    EquipmentConditionChange,
+    EquipmentOption,
+    EquipmentOut,
+)
 from app.services.equipment_availability import available_quantity, held_after
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
+
+# The role, not EQUIPMENT_MANAGE: the Organiser, an external client, holds every
+# permission as the admin-equivalent and must not change stock levels.
+_tech_support = require_role(Role.TECH_SUPPORT)
 
 
 def _reserved_units_subquery():
@@ -60,6 +76,8 @@ def _to_out(item: Equipment, reserved: int) -> EquipmentOut:
         operational_status=item.operational_status,
         available_quantity=available_quantity(item, reserved),
         technical_specs=item.technical_specs,
+        damaged_quantity=item.damaged_quantity,
+        maintenance_quantity=item.maintenance_quantity,
     )
 
 
@@ -159,3 +177,37 @@ def list_equipment(
     ]
 
     return EquipmentCatalogueOut(items=items, types=types)
+
+
+def _change_condition(
+    equipment_id: int, change: ConditionChange, db: Session, user: User
+) -> EquipmentOut:
+    item = EquipmentConditionService(db).apply(equipment_id, user, change)
+    db.commit()
+    reserved = _reserved_units_subquery()
+    return _to_out(
+        item,
+        db.scalar(select(reserved.c.reserved).where(reserved.c.equipment_id == item.id)) or 0,
+    )
+
+
+@router.post("/{equipment_id}/out-of-service", response_model=EquipmentOut)
+def mark_out_of_service(
+    equipment_id: int,
+    body: EquipmentConditionChange,
+    db: Session = Depends(get_db),
+    user: User = Depends(_tech_support),
+) -> EquipmentOut:
+    """Mark some units of an item Damaged or Under Maintenance (SCRUM-115)."""
+    return _change_condition(equipment_id, MarkOutOfService(body.condition, body.quantity), db, user)
+
+
+@router.post("/{equipment_id}/return-to-service", response_model=EquipmentOut)
+def return_to_service(
+    equipment_id: int,
+    body: EquipmentConditionChange,
+    db: Session = Depends(get_db),
+    user: User = Depends(_tech_support),
+) -> EquipmentOut:
+    """Return repaired units, which count as available again (SCRUM-115)."""
+    return _change_condition(equipment_id, ReturnToService(body.condition, body.quantity), db, user)

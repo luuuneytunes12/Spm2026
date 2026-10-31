@@ -36,9 +36,46 @@ export interface EquipmentItem {
   location: string | null
   operational_status: OperationalStatus
   /** Units free to reserve right now. Computed server-side: total minus
-   *  reserved, and always 0 for an item that is not operational. */
+   *  those out of service and reserved, and always 0 for an item that is not
+   *  operational. */
   available_quantity: number
   technical_specs: string | null
+  /** Units out of service, whatever the window. `operational_status` is about
+   *  the whole item; these are about part of it. */
+  damaged_quantity: number
+  maintenance_quantity: number
+}
+
+/** What part of an item can be out of service as. */
+export type OutOfServiceCondition = typeof OperationalStatus.DAMAGED | typeof OperationalStatus.MAINTENANCE
+
+function changeCondition(
+  action: 'out-of-service' | 'return-to-service',
+  id: number,
+  condition: OutOfServiceCondition,
+  quantity: number,
+): Promise<EquipmentItem> {
+  return apiFetch(`/equipment/${id}/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ condition, quantity }),
+  }) as Promise<EquipmentItem>
+}
+
+export function markOutOfService(
+  id: number,
+  condition: OutOfServiceCondition,
+  quantity: number,
+): Promise<EquipmentItem> {
+  return changeCondition('out-of-service', id, condition, quantity)
+}
+
+export function returnToService(
+  id: number,
+  condition: OutOfServiceCondition,
+  quantity: number,
+): Promise<EquipmentItem> {
+  return changeCondition('return-to-service', id, condition, quantity)
 }
 
 export interface EquipmentCatalogue {

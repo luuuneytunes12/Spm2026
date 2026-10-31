@@ -60,7 +60,8 @@ def available_quantity(item: Equipment, reserved: int) -> int:
     An item that is not operational reports 0 regardless of the
     arithmetic: two damaged mixers are not two available mixers. The Week 1
     briefing is explicit that equipment recorded as unavailable must not be
-    treated as freely available.
+    treated as freely available. Units marked damaged or under maintenance
+    are out for every window, so they come off whatever the reservations.
 
     Clamped at 0 so over-reservation (more reserved than owned, possible if
     stock is reduced after the fact) reports "none left" rather than a
@@ -68,4 +69,4 @@ def available_quantity(item: Equipment, reserved: int) -> int:
     """
     if item.operational_status is not EquipmentOperationalStatus.available:
         return 0
-    return max(item.total_quantity - reserved, 0)
+    return max(item.total_quantity - item.out_of_service_quantity - reserved, 0)

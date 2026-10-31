@@ -135,13 +135,13 @@ from app.models.venues import Venue
 v = json.loads(sys.argv[1])
 db = SessionLocal()
 if not db.query(Venue).filter(Venue.name == v["name"]).first():
-    db.add(Venue(name=v["name"], location=v["location"], capacity=v["capacity"], is_active=True))
+    db.add(Venue(name=v["name"], location=v["location"], capacity=v["capacity"], operating_hours=v.get("operating_hours"), facilities=v.get("facilities"), accessibility_features=v.get("accessibility_features"), is_active=True))
     db.commit()
 db.close()
 `
 
 /** Make sure a bookable venue with this name exists. */
-export function seedVenue(venue: { name: string; location: string; capacity: number }): void {
+export function seedVenue(venue: { name: string; location: string; capacity: number; operating_hours?: string; facilities?: string[]; accessibility_features?: string[] }): void {
   python(SEED_VENUE, venue)
 }
 
@@ -310,13 +310,34 @@ export function setBookingStatus(eventId: number, status: 'pending' | 'approved'
   python(SET_BOOKING_STATUS, { event_id: eventId, status })
 }
 
-export type ScheduledBookingStatus = 'pending' | 'tentative_hold' | 'approved' | 'rejected' | 'cancelled'
+const SET_EVENT_STATUS = `
+import json, sys
+from app.core.db import SessionLocal
+from app.models.events import Event
+
+spec = json.loads(sys.argv[1])
+db = SessionLocal()
+db.query(Event).filter(Event.id == spec["event_id"]).update(
+    {Event.status: spec["status"]}, synchronize_session=False
+)
+db.commit()
+db.close()
+`
+
+/** Put an event into `status`, straight on the row -- how a spec reaches a
+ *  later status without walking the whole workflow to it. */
+export function setEventStatus(eventId: number, status: string): void {
+  python(SET_EVENT_STATUS, { event_id: eventId, status })
+}
+
+export type ScheduledBookingStatus ='pending' | 'tentative_hold' | 'approved' | 'rejected' | 'cancelled'
 
 export interface ScheduledVenue {
   name: string
   capacity: number
   setupMinutes?: number
   turnaroundMinutes?: number
+  operatingHours?: string
   /** ISO 8601 times. Each booking gets an event of its own, owned by the
    *  `owner` passed to seedVenueSchedule. A tentative hold needs `expiresAt`
    *  (the database refuses one without); a past one is an expired hold. */
@@ -344,6 +365,7 @@ for v in p["venues"]:
     venue.capacity = v["capacity"]
     venue.setup_minutes = v.get("setupMinutes")
     venue.turnaround_minutes = v.get("turnaroundMinutes")
+    venue.operating_hours = v.get("operatingHours")
     venue.is_active = True
     db.flush()
     # Start from an empty schedule, so a re-run sees exactly what is listed.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { EquipmentConditionForm } from '../../components/EquipmentConditionForm'
 import { ApiError } from '../../lib/api'
 import {
   OPERATIONAL_STATUS_LABELS,
@@ -15,9 +16,9 @@ const SEARCH_DEBOUNCE_MS = 250
 
 /** The equipment catalogue, for Technical Support Staff.
  *
- *  Read-only on purpose: this story is "see what equipment exists and in
- *  what quantity". Adding, editing and retiring items is EQUIPMENT_MANAGE
- *  and a separate story, which is why there is no "New item" button here.
+ *  The only change made here is marking units out of service. Adding, editing
+ *  and retiring items is EQUIPMENT_MANAGE and a separate story, which is why
+ *  there is no "New item" button here.
  *
  *  Lives at /equipment rather than under /tech-support/ because unlike
  *  "my event requests" or "my assigned events" it is not scoped to the
@@ -34,6 +35,7 @@ export function EquipmentCatalogue() {
   const [items, setItems] = useState<EquipmentItem[]>([])
   const [types, setTypes] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [changingId, setChangingId] = useState<number | null>(null)
   // Which filter combination the current `items` belong to. Deriving
   // loading from this rather than setting a flag at the top of the effect
   // keeps the effect free of synchronous setState, and means a filter
@@ -177,6 +179,30 @@ export function EquipmentCatalogue() {
                         <em className="text-muted">No description recorded.</em>
                       )}
                     </p>
+                    {/* A status on the whole item leaves no part of it to mark. */}
+                    {item.operational_status === OperationalStatus.AVAILABLE && (
+                      <p>
+                        <button
+                          type="button"
+                          className="btn-link-accent"
+                          aria-expanded={changingId === item.id}
+                          aria-label={`Update condition of ${item.name}`}
+                          onClick={() => setChangingId(changingId === item.id ? null : item.id)}
+                        >
+                          Update condition
+                        </button>
+                      </p>
+                    )}
+                    {changingId === item.id && (
+                      <EquipmentConditionForm
+                        item={item}
+                        onChanged={(updated) =>
+                          setItems((current) =>
+                            current.map((row) => (row.id === updated.id ? updated : row)),
+                          )
+                        }
+                      />
+                    )}
                   </div>
                   <div className="request-side">
                     <span
@@ -190,6 +216,14 @@ export function EquipmentCatalogue() {
                         item.operational_status}
                     </span>
                     <span className="request-meta">{formatAvailability(item)}</span>
+                    {item.damaged_quantity > 0 && (
+                      <span className="request-meta">{item.damaged_quantity} damaged</span>
+                    )}
+                    {item.maintenance_quantity > 0 && (
+                      <span className="request-meta">
+                        {item.maintenance_quantity} under maintenance
+                      </span>
+                    )}
                   </div>
                 </li>
               ))}

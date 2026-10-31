@@ -93,6 +93,22 @@ for (const decision of ['approve', 'reject'] as const) {
   })
 }
 
+test('an approved event offers a change request and stays unchanged while it is pending', async ({ browser, request }) => {
+  const id = await submittedEvent(request, 'E2E change after approval')
+  await call(request, 'post', `/events/${id}/approve`, await login(request, coordinator.email, password))
+  const org = await openAs(browser, organiser)
+  await org.goto(`/organiser/events/${id}`)
+  await org.getByRole('link', { name: 'Request changes' }).click()
+  await org.getByLabel('Purpose').fill('Updated purpose')
+  await org.getByRole('button', { name: 'Request changes' }).click()
+  const dialog = org.getByRole('dialog', { name: 'Submit change request?' })
+  await dialog.getByLabel('Reason for change').fill('The organiser revised the programme')
+  await dialog.getByRole('button', { name: 'Submit change request' }).click()
+  await expect(org.getByRole('list', { name: 'Change requests' })).toContainText('Pending')
+  await expect(org.getByText('Original purpose', { exact: true })).toBeVisible()
+  await expect(org.getByText('Event Approved').first()).toBeVisible()
+})
+
 /** Verify cancellation from the screen and the release of both resource types. */
 test('E29: cancellation needs a reason, releases arrangements, and is visible to the organiser', async ({ browser, request }) => {
   const id = await submittedEvent(request, 'E2E cancellation')
