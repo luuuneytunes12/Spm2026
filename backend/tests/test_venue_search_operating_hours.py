@@ -11,7 +11,7 @@ import pytest
 from app.core.roles import Role
 from app.models.enums import BookingStatus
 from app.models.venues import VenueBooking
-from test_venue_search import _at, _booking, _coordinator, _headers, _names, _venue
+from test_venue_search import _booking, _coordinator, _headers, _names, _venue
 
 HOURS = "Mon-Fri 09:00-17:00"
 
@@ -89,7 +89,9 @@ def test_ac4_an_open_venue_with_a_booking_or_hold_is_still_excluded(client, db_s
     taken = _venue(db_session, "Taken Hall", operating_hours=HOURS)
     _venue(db_session, "Free Hall", operating_hours=HOURS)
     # 02:00-04:00 UTC is 10:00-12:00 at the venue.
-    _booking(db_session, taken, _at(2), _at(4))
+    # Match the fixed Monday in _window; the shared _at helper uses 2099.
+    _booking(db_session, taken, datetime(2026, 11, 2, 2, tzinfo=timezone.utc),
+             datetime(2026, 11, 2, 4, tzinfo=timezone.utc))
     if status == BookingStatus.tentative_hold:
         # The database refuses a hold with no expiry, which _booking cannot set.
         booking = db_session.query(VenueBooking).filter_by(venue_id=taken.id).one()
