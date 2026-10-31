@@ -307,10 +307,53 @@ create table equipment (
     -- venue may not be usable for a given event.
     location text,
     operational_status equipment_operational_status not null default 'available',
-    technical_specs text
+    technical_specs text,
+    -- Units out of service, whatever the window. operational_status is about
+    -- the whole item; these are about part of it.
+    damaged_quantity integer not null default 0
+        constraint ck_equipment_damaged_quantity check (damaged_quantity >= 0),
+    maintenance_quantity integer not null default 0
+        constraint ck_equipment_maintenance_quantity check (maintenance_quantity >= 0),
+    constraint ck_equipment_out_of_service_within_total
+        check (damaged_quantity + maintenance_quantity <= total_quantity)
 );
 
 create index idx_equipment_category on equipment (category);
+
+-- Append-only: who marked or returned how many units, and when.
+create table equipment_activity (
+    id bigint generated always as identity primary key,
+    equipment_id bigint not null references equipment (id) on delete cascade,
+    changed_by bigint references users (id) on delete set null,
+    note text not null,
+    created_at timestamptz not null default now()
+);
+
+create index idx_equipment_activity_equipment on equipment_activity (equipment_id, created_at desc);
+
+create or replace function public.refuse_equipment_activity_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+    -- An entry may go only with its item (ON DELETE CASCADE), or lose its
+    -- actor when that user is deleted (ON DELETE SET NULL).
+    if tg_op = 'DELETE'
+       and not exists (select 1 from public.equipment where id = old.equipment_id) then
+        return old;
+    end if;
+    if tg_op = 'UPDATE' and new.changed_by is null
+       and new.equipment_id = old.equipment_id and new.note = old.note
+       and new.created_at = old.created_at then
+        return new;
+    end if;
+    raise exception 'Equipment activity log entries are immutable';
+end;
+$$;
+
+create trigger equipment_activity_immutable
+    before update or delete on equipment_activity
+    for each row execute function public.refuse_equipment_activity_mutation();
 
 create table equipment_requests (
     id bigint generated always as identity primary key,

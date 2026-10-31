@@ -122,6 +122,8 @@ function item(id: number, name: string): EquipmentItem {
     operational_status: 'available',
     available_quantity: 10,
     technical_specs: null,
+    damaged_quantity: 0,
+    maintenance_quantity: 0,
   }
 }
 
