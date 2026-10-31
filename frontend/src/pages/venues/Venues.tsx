@@ -427,7 +427,7 @@ export function Venues() {
             ) : (
               <p id="venue-window-message" className="field-hint">
                 Leaves out venues booked, tentatively held or closed then, counting each
-                venue's setup and turnaround time.
+                venue's setup and turnaround time, and venues outside their operating hours.
               </p>
             )}
           </FilterChip>

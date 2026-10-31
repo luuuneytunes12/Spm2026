@@ -375,3 +375,13 @@ def test_ac3_database_refuses_a_name_differing_only_by_case(client, make_user, d
     assert res.status_code == 409
     db.expire_all()
     assert db.query(Venue).count() == 1
+
+
+def test_search_leaves_out_venues_closed_in_the_window(client, venues, coordinator_h):
+    # 09:00-18:00 at the venue: Seminar Room 3's exact hours, before Rooftop
+    # Garden opens, and 100% Lab has none recorded.
+    window = {"start": "2026-11-02T01:00:00Z", "end": "2026-11-02T10:00:00Z"}
+
+    res = client.get("/venues", params=window, headers=coordinator_h).json()
+
+    assert [v["name"] for v in res] == ["100% Lab", "Main Hall", "Seminar Room 3"]

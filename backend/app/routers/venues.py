@@ -308,7 +308,7 @@ def list_venues(
         None,
         description="Start of the window, ISO 8601. Venues with an approved booking, an "
         "unexpired tentative hold or a closure clashing with it -- each venue's setup and "
-        "turnaround time included -- are excluded.",
+        "turnaround time included -- are excluded, as are venues closed for any of it.",
     ),
     end: datetime | None = Query(None, description="End of the window, ISO 8601."),
     db: Session = Depends(get_db),
@@ -352,6 +352,7 @@ def list_venues(
     venues = list(db.execute(stmt.order_by(Venue.name, Venue.id)).scalars().all())
 
     if start is not None and end is not None:
+        venues = [v for v in venues if _may_be_open(v, start, end)]
         venues = _free_of_closures(db, venues, as_utc(start), as_utc(end))
         venues = _free_of_bookings(db, venues, as_utc(start), as_utc(end))
 
@@ -370,6 +371,20 @@ def list_venues(
         venues = [v for v in venues if _has_all(v.accessibility_features, accessibility)]
 
     return [VenueSummary.model_validate(v) for v in venues]
+
+
+def _may_be_open(venue: Venue, start: datetime, end: datetime) -> bool:
+    """False only when the venue's recorded hours rule the window out.
+
+    The window itself is compared, without setup and turnaround: one that
+    starts at opening and ends at closing still fits. Hours that cannot be read
+    do not rule anything out, so the venue stays findable and the suitability
+    check is what reports them.
+    """
+    try:
+        return not outside_operating_hours(venue.operating_hours, start, end)
+    except UnreadableOperatingHours:
+        return True
 
 
 def _free_of_closures(db: Session, venues: list[Venue], start: datetime, end: datetime) -> list[Venue]:

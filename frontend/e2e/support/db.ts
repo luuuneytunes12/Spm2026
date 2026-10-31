@@ -337,6 +337,7 @@ export interface ScheduledVenue {
   capacity: number
   setupMinutes?: number
   turnaroundMinutes?: number
+  operatingHours?: string
   /** ISO 8601 times. Each booking gets an event of its own, owned by the
    *  `owner` passed to seedVenueSchedule. A tentative hold needs `expiresAt`
    *  (the database refuses one without); a past one is an expired hold. */
@@ -364,6 +365,7 @@ for v in p["venues"]:
     venue.capacity = v["capacity"]
     venue.setup_minutes = v.get("setupMinutes")
     venue.turnaround_minutes = v.get("turnaroundMinutes")
+    venue.operating_hours = v.get("operatingHours")
     venue.is_active = True
     db.flush()
     # Start from an empty schedule, so a re-run sees exactly what is listed.
