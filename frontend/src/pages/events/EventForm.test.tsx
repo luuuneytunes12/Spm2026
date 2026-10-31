@@ -258,6 +258,33 @@ describe('Story 1 AC2 - an incomplete request can be saved and resumed', () => {
     expect(navigate).toHaveBeenCalledWith('/organiser/events/7', { replace: true })
   })
 
+  it.each(['event_approved', 'planning_event', 'safety_check_passed'] as const)(
+    'AC1: sends a change request, not a draft save, for a %s Event',
+    async (status) => {
+      const user = userEvent.setup()
+      mockGet.mockResolvedValue({ ...SAVED, status })
+      renderEdit()
+      await waitFor(() => expect(mockGet).toHaveBeenCalledWith(7))
+
+      await user.clear(screen.getByLabelText('Event name'))
+      await user.type(screen.getByLabelText('Event name'), 'Corrected conference name')
+      expect(screen.queryByRole('button', { name: 'Submit request' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Request changes' }))
+
+      const dialog = await screen.findByRole('dialog', { name: 'Submit change request?' })
+      await user.type(within(dialog).getByLabelText('Reason for change'), 'Correcting a typo')
+      await user.click(within(dialog).getByRole('button', { name: 'Submit change request' }))
+
+      await waitFor(() =>
+        expect(mockRequestChanges).toHaveBeenCalledWith(7, 'Correcting a typo', {
+          name: 'Corrected conference name',
+        }),
+      )
+      expect(mockUpdate).not.toHaveBeenCalled()
+      expect(mockSubmit).not.toHaveBeenCalled()
+    },
+  )
+
   it('requires a reason in the confirmation modal before sending', async () => {
     const user = userEvent.setup()
     mockGet.mockResolvedValue({ ...SAVED, status: 'under_review' })

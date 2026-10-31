@@ -5,8 +5,8 @@ import { EquipmentPicker } from '../../components/EquipmentPicker'
 import { ChangeRequestConfirmModal } from '../../components/ChangeRequestConfirmModal'
 import { ApiError } from '../../lib/api'
 import {
+  canRequestChanges,
   createEvent,
-  EventStatus,
   fromDateTimeLocal,
   getEvent,
   requestEventChanges,
@@ -168,9 +168,7 @@ export function EventForm() {
       try {
         const e = await getEvent(eventId)
         if (cancelled) return
-        setCanCorrectSubmitted(
-          e.status === EventStatus.SUBMITTED_AWAITING_COORDINATOR || e.status === EventStatus.UNDER_REVIEW,
-        )
+        setCanCorrectSubmitted(canRequestChanges(e.status))
         const loadedForm: FormState = {
           name: e.name ?? '',
           purpose: e.purpose ?? '',
