@@ -426,14 +426,12 @@ def test_scrum22_ac6_nobody_but_the_organiser_may_request_a_change(client, make_
     assert db.query(EventChangeRequest).count() == 0
 
 
-# Not strict: the bug only shows when the threads actually collide, which a
-# small CI runner does not always manage -- an XPASS there is luck, not a fix.
-@pytest.mark.xfail(strict=False, reason=(
-    "BUG: POST /events/{id}/change-requests reads the Event without a row lock, so "
-    "simultaneous requests all pass the 'already pending' check and several pending "
-    "change requests are stored. Fix: _get_own_event(..., lock=True) in request_event_changes."
-))
 def test_scrum22_a_double_clicked_change_request_is_recorded_once(make_client, client, make_user, db):
+    """SCRUM-22 AC1: simultaneous submissions create only one pending request.
+
+    Real PostgreSQL is necessary because SQLite does not enforce row locks.
+    All workers start together; one succeeds and the rest see the pending row.
+    """
     _o, org_h, _l, _lh, _c, _ch, event_id = _world(client, make_user)
 
     results = race(make_client, THREADS,

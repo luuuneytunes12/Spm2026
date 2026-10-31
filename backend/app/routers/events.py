@@ -1012,7 +1012,9 @@ def request_event_changes(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(Permission.EVENT_WRITE)),
 ) -> EventChangeRequestOut:
-    event = _get_own_event(event_id, user, db)
+    # Serialize the pending-request check and insert for this event. Without
+    # the row lock, two concurrent submissions can both see no pending request.
+    event = _get_own_event(event_id, user, db, lock=True)
     if event.status not in CHANGE_REQUEST_ALLOWED_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
