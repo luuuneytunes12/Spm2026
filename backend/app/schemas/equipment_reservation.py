@@ -50,6 +50,7 @@ class EquipmentAvailabilityOut(BaseModel):
     operational_status: EquipmentOperationalStatus
     total_quantity: int
     reserved_quantity: int
+    out_of_service_quantity: int
     available_quantity: int
     start_time: datetime
     end_time: datetime

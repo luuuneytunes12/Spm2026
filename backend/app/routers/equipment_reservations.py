@@ -136,6 +136,7 @@ def check_availability(
         operational_status=item.operational_status,
         total_quantity=item.total_quantity,
         reserved_quantity=reserved,
+        out_of_service_quantity=item.out_of_service_quantity,
         available_quantity=available,
         start_time=window_start,
         end_time=window_end,
