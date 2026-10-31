@@ -38,6 +38,14 @@ export const BOOKABLE_EVENT_STATUSES: readonly EventStatus[] = [
   EventStatus.PLANNING_EVENT,
 ] as const
 
+/** Event statuses in which a flagged booking can be replaced: the Event is
+ *  still going ahead. Mirrors REPLACEMENT_EVENT_STATUSES on the server. */
+export const REPLACEMENT_EVENT_STATUSES: readonly EventStatus[] = [
+  ...BOOKABLE_EVENT_STATUSES,
+  EventStatus.AWAITING_SAFETY_CHECK,
+  EventStatus.SAFETY_CHECK_PASSED,
+]
+
 export interface VenueBooking {
   id: number
   status: BookingStatus

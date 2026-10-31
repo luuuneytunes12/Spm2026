@@ -231,6 +231,75 @@ def test_ac4_negative_the_event_stays_confirmed_until_the_replacement_is_approve
     assert _notes(db_session, w["sam"].id, "event_returned_to_planning") == []
 
 
+def _flagged_in_status(client, db_session, event_status):
+    w, original, other = _flagged_world(client, db_session)
+    db_session.get(Event, original.event_id).status = event_status
+    db_session.commit()
+    return w, original, other
+
+
+@pytest.mark.parametrize(
+    "going_ahead",
+    [
+        EventStatus.event_approved,
+        EventStatus.planning_event,
+        EventStatus.awaiting_safety_check,
+        EventStatus.safety_check_passed,
+    ],
+)
+def test_replacement_search_ac1_ac2_works_while_the_event_is_going_ahead(client, db_session, going_ahead):
+    w, original, other = _flagged_in_status(client, db_session, going_ahead)
+
+    res = _replace(client, w, original, other)
+
+    assert res.status_code == 201, res.text
+    assert res.json()["start_time"].startswith("2030-11-02T10:00")
+    assert res.json()["replaces"]["id"] == original.id
+
+
+def test_replacement_search_ac3_confirmed_event_unchanged_until_one_is_chosen(client, db_session):
+    w, original, _ = _confirmed_flagged_world(client, db_session)
+    event = db_session.get(Event, original.event_id)
+    log_before = db_session.query(EventStatusHistory).filter_by(event_id=event.id).count()
+    bookings_before = db_session.query(VenueBooking).count()
+
+    # What opening the search reads; none of it may write anything.
+    assert client.get(f"/events/assigned/{event.id}", headers=w["sam_h"]).status_code == 200
+    listed = client.get(f"/venue-bookings/events/{event.id}", headers=w["sam_h"]).json()
+
+    assert [b["conflict_flagged"] for b in listed] == [True]
+    db_session.expire_all()
+    assert db_session.get(Event, event.id).status == EventStatus.safety_check_passed
+    assert db_session.get(VenueBooking, original.id).status == BookingStatus.approved
+    assert db_session.query(VenueBooking).count() == bookings_before
+    assert db_session.query(EventStatusHistory).filter_by(event_id=event.id).count() == log_before
+
+
+def test_replacement_search_awaiting_safety_check_stays_in_the_queue_when_approved(client, db_session):
+    w, original, other = _flagged_in_status(client, db_session, EventStatus.awaiting_safety_check)
+
+    event_id = _approve_replacement(client, w, original, other)
+
+    db_session.expire_all()
+    assert db_session.get(Event, event_id).status == EventStatus.awaiting_safety_check
+    assert db_session.get(VenueBooking, original.id).status == BookingStatus.replaced
+
+
+@pytest.mark.parametrize(
+    "finished",
+    [EventStatus.event_cancelled, EventStatus.event_completed, EventStatus.event_rejected],
+)
+def test_replacement_search_ac4_refused_with_a_reason_on_a_finished_event(client, db_session, finished):
+    w, original, other = _flagged_in_status(client, db_session, finished)
+    bookings_before = db_session.query(VenueBooking).count()
+
+    res = _replace(client, w, original, other)
+
+    assert res.status_code == 409
+    assert finished.value in res.json()["detail"]
+    assert db_session.query(VenueBooking).count() == bookings_before
+
+
 def test_ac4_negative_an_event_in_planning_is_not_notified_when_a_replacement_is_approved(client, db_session):
     w, original, other = _flagged_world(client, db_session)
     event_id = _approve_replacement(client, w, original, other)

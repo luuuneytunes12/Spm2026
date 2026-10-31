@@ -5,7 +5,7 @@ import type { APIRequestContext, Page } from '@playwright/test'
 import { API, login } from './support/api'
 import { OLIVIA, PASSWORD, SAM, openAs } from './support/coordinator-users'
 import type { SeedUser } from './support/db'
-import { autoAssign, removeUsers, removeVenue, resetUsers, seedUsers, seedVenue } from './support/db'
+import { autoAssign, removeUsers, removeVenue, resetUsers, seedUsers, seedVenue, setEventStatus } from './support/db'
 
 /**
  * End-to-end coverage of SCRUM-95, "Request Replacement Venue for Affected
@@ -132,6 +132,29 @@ test('TC-VR-2e: the request shows Venue Staff what it replaces; approval marks t
   await coord.goto(`/coordinator/events/${eventId}`)
   await expect(coord.getByText('Replaced by another venue booking')).toBeVisible()
   await expect(coord.getByText('Replaced', { exact: true })).toBeVisible()
+})
+
+test('a confirmed event can start a replacement search and stays unchanged until one is chosen', async ({ browser, request }) => {
+  const { eventId } = await flaggedBooking(request)
+  setEventStatus(eventId, 'safety_check_passed')
+  const coord = await openReplacement(browser, eventId)
+  await expect(coord.getByRole('button', { name: `Request as replacement: ${NEW}` })).toBeVisible()
+  await expectNoSeriousViolations(coord, 'replacement search on a confirmed event')
+
+  await coord.goto(`/coordinator/events/${eventId}`)
+  await expect(coord.getByText('Safety Check Passed (Event Confirmed)').first()).toBeVisible()
+  await expect(coord.getByRole('heading', { name: 'Venue bookings needing action' })).toBeVisible()
+  await expectNoSeriousViolations(coord, 'affected bookings on a confirmed event')
+})
+
+test('a cancelled event refuses a replacement search with a reason', async ({ browser, request }) => {
+  const { eventId } = await flaggedBooking(request)
+  const coord = await openReplacement(browser, eventId)
+  const search = coord.url()
+  setEventStatus(eventId, 'event_cancelled')
+  await coord.goto(search)
+  await expect(coord.getByRole('alert')).toContainText('This event is Event Cancelled')
+  await expect(coord.getByRole('button', { name: /Request as replacement/ })).toHaveCount(0)
 })
 
 for (const scheme of ['light', 'dark'] as const) {

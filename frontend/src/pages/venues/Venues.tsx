@@ -2,8 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../../lib/api'
-import { fromDateTimeLocal, toDateTimeLocal } from '../../lib/events'
-import { requestReplacementVenue } from '../../lib/venueBookings'
+import { EVENT_STATUS_LABELS, fromDateTimeLocal, getAssignedEvent, toDateTimeLocal } from '../../lib/events'
+import { REPLACEMENT_EVENT_STATUSES, requestReplacementVenue } from '../../lib/venueBookings'
 import { AddVenueLink } from './AddVenueLink'
 import { listVenueFilterOptions, listVenues } from '../../lib/venues'
 import type { VenueFilterOptions, VenueSearch, VenueSummary } from '../../lib/venues'
@@ -57,6 +57,27 @@ export function Venues() {
     done: null,
     error: null,
   })
+  const replacementEventId = replacesId === null ? null : Number(params.get('event')) || null
+  const [replacementRefusal, setReplacementRefusal] = useState<string | null>(null)
+  useEffect(() => {
+    if (replacementEventId === null) return
+    let cancelled = false
+    getAssignedEvent(replacementEventId)
+      .then((event) => {
+        if (!cancelled && !REPLACEMENT_EVENT_STATUSES.includes(event.status)) {
+          setReplacementRefusal(
+            `This event is ${EVENT_STATUS_LABELS[event.status]}, so a replacement venue cannot be requested.`,
+          )
+        }
+      })
+      .catch((err: unknown) => {
+        // Not refused by this: the request itself is checked by the server.
+        console.error('Failed to check the event for a replacement search.', { error: err })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [replacementEventId])
   const list = (name: string) => (params.get(name) ?? '').split(',').filter(Boolean)
   // The prefilled window arrives as ISO instants; the form wants a local day and hours.
   const [fromDate, fromTime = ''] = toDateTimeLocal(params.get('from')).split('T')
@@ -251,11 +272,17 @@ export function Venues() {
 
       {replacesId !== null && (
         <section className="card" aria-label="Replacement venue request">
-          <p>
-            Finding a replacement for your booking at{' '}
-            <strong>{params.get('replacesVenue') ?? 'the affected venue'}</strong>. Its date, time and
-            requirements are filled in below.
-          </p>
+          {replacementRefusal ? (
+            <p className="form-error" role="alert">
+              {replacementRefusal}
+            </p>
+          ) : (
+            <p>
+              Finding a replacement for your booking at{' '}
+              <strong>{params.get('replacesVenue') ?? 'the affected venue'}</strong>. Its date, time and
+              requirements are filled in below.
+            </p>
+          )}
           {replaceState.done && (
             <p role="status" className="field-hint">
               {replaceState.done}{' '}
@@ -503,7 +530,7 @@ export function Venues() {
                 </div>
                 <div className="request-side">
                   {!venue.is_active && <span className="badge badge-muted">Inactive</span>}
-                  {replacesId !== null && venue.is_active && (
+                  {replacesId !== null && replacementRefusal === null && venue.is_active && (
                     <button
                       type="button"
                       className="btn-secondary"

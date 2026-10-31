@@ -18,6 +18,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api'
 import { AssignedEventView } from './AssignedEventView'
 
+vi.mock('../../components/AffectedVenueBookings', () => ({
+  AffectedVenueBookings: () => <section aria-label="affected bookings stub" />,
+}))
 vi.mock('../../components/VenueBookingSection', () => ({
   VenueBookingSection: () => <section aria-label="venue booking stub" />,
 }))
