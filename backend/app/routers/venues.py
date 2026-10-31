@@ -13,6 +13,11 @@ from app.core.db import get_db
 from app.core.deps import require_role
 from app.core.roles import Role
 from app.domain.venue_occupancy import occupied_window
+from app.domain.venue_operating_hours import (
+    VENUE_TIMEZONE,
+    UnreadableOperatingHours,
+    outside_operating_hours,
+)
 from app.models.enums import BookingStatus
 from app.models.events import Event
 from app.models.user import User
@@ -196,6 +201,48 @@ def _checks_for_requirements(
     return checks
 
 
+def _operating_hours_checks(
+    venue: Venue, start: datetime | None, end: datetime | None
+) -> list[VenueSuitabilityCheck]:
+    """Empty when no hours are recorded: the venue is treated as open."""
+    recorded = (venue.operating_hours or "").strip()
+    if not recorded:
+        return []
+    available = "; ".join(line.strip() for line in recorded.splitlines() if line.strip())
+
+    def check(requirement: str, met: bool, message: str) -> list[VenueSuitabilityCheck]:
+        return [
+            VenueSuitabilityCheck(
+                category="operating_hours",
+                requirement=requirement,
+                available=available,
+                met=met,
+                message=message,
+            )
+        ]
+
+    if start is None or end is None:
+        return check(
+            "Event time is not recorded",
+            False,
+            "Cannot confirm operating hours until the event time is recorded.",
+        )
+    local_start = as_utc(start).astimezone(VENUE_TIMEZONE)
+    local_end = as_utc(end).astimezone(VENUE_TIMEZONE)
+    requirement = f"{local_start:%a %d %b %Y %H:%M} to {local_end:%a %d %b %Y %H:%M}"
+    try:
+        outside = outside_operating_hours(recorded, start, end)
+    except UnreadableOperatingHours:
+        return check(
+            requirement,
+            False,
+            "Cannot read this venue's operating hours, so they cannot be confirmed.",
+        )
+    if outside:
+        return check(requirement, False, "Outside operating hours")
+    return check(requirement, True, "Within operating hours.")
+
+
 def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityCheck]:
     return _checks_for_requirements(
         venue,
@@ -203,7 +250,7 @@ def _suitability_checks(event: Event, venue: Venue) -> list[VenueSuitabilityChec
         event.room_layout_preference,
         event.accessibility_needs,
         event.venue_requirements,
-    )
+    ) + _operating_hours_checks(venue, event.proposed_start, event.proposed_end)
 
 
 def _booking_suitability_checks(
@@ -217,7 +264,7 @@ def _booking_suitability_checks(
         booking.room_layout_preference or event.room_layout_preference,
         booking.accessibility_needs or event.accessibility_needs,
         booking.facilities_needs or event.venue_requirements,
-    )
+    ) + _operating_hours_checks(booking.venue, booking.start_time, booking.end_time)
 
 
 # Declared before "/{venue_id}". That route takes an int, so "filter-options"
