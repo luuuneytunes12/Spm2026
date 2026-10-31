@@ -25,6 +25,8 @@ constraint; the double-clicked Register is raced against it here.
 """
 
 import itertools
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -561,6 +563,34 @@ def test_scrum47_a_double_clicked_register_keeps_one_row(make_client, client, w,
 
     assert sorted(results) == [200] + [409] * (THREADS - 1)
     assert db.query(Registration).filter_by(event_id=open_event).count() == 1
+
+
+def test_event_full_ac4_two_attendees_racing_for_the_last_place_only_one_gets_it(
+    make_client, client, w, open_event, make_user, db, monkeypatch
+):
+    # Hold each request between "is it full?" and commit, so without the
+    # event-row lock every racer would see a free place.
+    import app.routers.registrations as reg
+    real = reg.event_is_full
+    monkeypatch.setattr(reg, "event_is_full", lambda e, s: (real(e, s), time.sleep(0.2))[0])
+    db.get(Event, open_event).expected_attendance = 1
+    db.commit()
+    headers = [make_user(Role.ATTENDEE, f"racer{i}@connectsphere.test")[1] for i in range(THREADS)]
+    queue = iter(headers)
+    lock = threading.Lock()
+
+    def register(c):
+        with lock:
+            h = next(queue)
+        res = c.post(f"/registrations/events/{open_event}", headers=h)
+        return res.status_code, res.json().get("detail")
+
+    results = race(make_client, THREADS, register)
+
+    assert sorted(r[0] for r in results) == [200] + [409] * (THREADS - 1)
+    assert all(d == "This event is full." for code, d in results if code == 409)
+    db.expire_all()
+    assert db.query(Registration).filter_by(event_id=open_event, status=RegistrationStatus.registered).count() == 1
 
 
 def test_scrum48_ac1_ac2_withdraw_then_register_again_on_the_same_row(client, w, open_event, attendee, db):
