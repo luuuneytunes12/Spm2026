@@ -20,7 +20,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("coordinator_auto
 
 
 def _at(hour, minute=0):
-    return datetime(2026, 11, 2, hour, minute, tzinfo=timezone.utc)
+    return datetime(2099, 11, 2, hour, minute, tzinfo=timezone.utc)
 
 
 def _body(start=None, end=None, category="Maintenance", reason="Aircon"):
@@ -80,7 +80,7 @@ def test_ac3_ac4_ac5_calendar_review_flag_and_nothing_cancelled(client, make_use
 
     busy = client.get(
         f"/venues/{venue_id}/availability",
-        params={"start": "2026-11-02T00:00:00Z", "end": "2026-11-03T00:00:00Z"},
+        params={"start": "2099-11-02T00:00:00Z", "end": "2099-11-03T00:00:00Z"},
         headers=sam_h,
     ).json()["busy"]
     assert [b["reason_category"] for b in busy if b["kind"] == "closure"] == ["Maintenance"]

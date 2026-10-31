@@ -14,11 +14,11 @@ from app.models.events import Event
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
 
 UTC = timezone.utc
-WINDOW = {"start": "2026-11-02T09:00:00Z", "end": "2026-11-02T17:00:00Z"}
+WINDOW = {"start": "2099-11-02T09:00:00Z", "end": "2099-11-02T17:00:00Z"}
 
 
 def _at(hour, minute=0):
-    return datetime(2026, 11, 2, hour, minute, tzinfo=UTC)
+    return datetime(2099, 11, 2, hour, minute, tzinfo=UTC)
 
 
 def _venue(db, name, **fields):
@@ -77,10 +77,10 @@ def test_ac1_ac2_holds_bookings_closures_and_padding_on_postgres(client, make_us
     assert db.get(VenueBooking, lapsed.id).status == BookingStatus.hold_expired
 
     # The same window in Singapore time is the same moment.
-    sgt = {"start": "2026-11-02T17:00:00+08:00", "end": "2026-11-03T01:00:00+08:00"}
+    sgt = {"start": "2099-11-02T17:00:00+08:00", "end": "2099-11-03T01:00:00+08:00"}
     assert _names(client, sam_h, **sgt) == ["D Expired Hall", "E Rejected Hall", "F Free Hall"]
     # Clear of everything, padding included, they are all back but the hold.
-    later = {"start": "2026-11-02T13:00:00Z", "end": "2026-11-02T14:00:00Z"}
+    later = {"start": "2099-11-02T13:00:00Z", "end": "2099-11-02T14:00:00Z"}
     assert _names(client, sam_h, **later) == [
         "A Held Hall", "B Padded Hall", "C Closed Hall", "D Expired Hall", "E Rejected Hall", "F Free Hall",
     ]
@@ -90,7 +90,7 @@ def test_ac3_an_end_before_the_start_is_refused_on_postgres(client, make_user):
     _sam, sam_h = make_user(Role.COORDINATOR, "sam@connectsphere.test", "Sam Tan")
     res = client.get(
         "/venues",
-        params={"start": "2026-11-02T17:00:00Z", "end": "2026-11-02T09:00:00Z"},
+        params={"start": "2099-11-02T17:00:00Z", "end": "2099-11-02T09:00:00Z"},
         headers=sam_h,
     )
     assert res.status_code == 422

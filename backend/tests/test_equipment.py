@@ -347,6 +347,9 @@ def test_an_anonymous_caller_cannot_read_the_catalogue(client, db_session):
     assert client.get("/equipment").status_code == 401
 
 
+# DISPUTED SCOPE, not a Jira requirement: SCRUM-42 is written for Technical Support
+# Staff only. Coordinators may read the catalogue so they can record requirements; that
+# is a product decision to confirm, not something this story asks for.
 def test_a_coordinator_can_read_the_catalogue(client, db_session):
     """The endpoint is gated on EQUIPMENT_READ, not on the tech_support role.
 

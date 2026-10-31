@@ -847,3 +847,28 @@ def test_er_ac2_only_technical_support_can_use_the_support_view(client, db_sessi
 )
 def test_er_ac2_an_anonymous_caller_is_unauthenticated(client, db_session, path):
     assert client.get(path).status_code == 401
+
+
+# --------------------------------------------------------------------------
+# SCRUM-43 AC1 -- placement at recording: GAP (strict xfail)
+# --------------------------------------------------------------------------
+# Jira SCRUM-43 AC1 says the Coordinator records type, quantity, technical notes
+# AND placement (where it will be set up). On this branch placement is recorded
+# only when Technical Support reserves (it lives on the reservation, which the
+# Safety Officer reads). That was a design decision, so this is a DISPUTE, not a
+# bug. The `placement` field name below is inferred from the AC wording; no
+# contract for it exists in code. Strict xfail: flips once placement is recorded
+# at requirement level and the test is re-agreed.
+
+
+@pytest.mark.xfail(strict=True, reason="SCRUM-43 AC1: placement is recorded at reservation, not at requirement (disputed)")
+def test_er_ac1_placement_can_be_recorded_when_the_requirement_is_added(client, db_session):
+    """SCRUM-43 AC1, positive: a placement given with a new requirement is saved and
+    returned with it. Today the field is ignored and the response has no placement."""
+    w = _world(client, db_session)
+    body = _added(client, w.headers, w.event.id, category="Audio", quantity_needed=2,
+                  placement="Stage left")
+    assert body["placement"] == "Stage left"
+    db_session.expire_all()
+    row = db_session.get(CoordinatorEquipmentRequirement, body["id"])
+    assert row.placement == "Stage left"

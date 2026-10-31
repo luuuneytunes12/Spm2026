@@ -49,7 +49,7 @@ def test_ac1_lists_each_decided_event_with_name_date_decision_reason_and_time(cl
     [row] = res.json()
     assert row["id"] == s["event_id"]
     assert row["name"] == "Regional Partner Conference"
-    assert row["proposed_start"].startswith("2026-11-02T09:00")
+    assert row["proposed_start"].startswith("2099-11-02T09:00")
     assert row["decision"] == "Rejected"
     assert row["reason"] == "Exits blocked"
     assert row["decided_at"]

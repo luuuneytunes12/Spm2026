@@ -64,8 +64,8 @@ from tests.test_equipment_requirements import (
     _organiser_line,
 )
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------

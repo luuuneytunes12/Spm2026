@@ -1,4 +1,12 @@
-"""Tests for the Event Organiser's notifications about their own Events.
+"""SCRUM-52 - Organiser notifications about their own Events.
+
+AC7 has NO test in this file: the Organiser is told of a passed or failed
+Safety Check in test_safety_checks.py (test_s2_ac2_approval_notifies_organiser_
+coordinator_venue_staff_and_tech_support; test_s3_ac4_changes_notify_organiser_
+coordinator_and_only_the_affected_staff; test_s3_ac4_rejection_notifies_everyone_
+responsible_with_the_reason). Those tests belong to SCRUM-65/88/89.
+
+Tests for the Event Organiser's notifications about their own Events.
 
     AC1  My Event's status changes: I get a notification naming the Event
          and its new status.
@@ -69,7 +77,7 @@ def _assigned(client, db_session, status=EventStatus.under_review):
     return {"organiser": organiser, "org_h": org_h, "coord_h": coord_h, "event_id": event_id}
 
 
-# --- AC1: my Event's status changes -> event and new status -----------------
+# --- SCRUM-52 AC1: my Event's status changes -> event and new status -----------------
 
 
 def test_ac1_submitting_names_the_event_and_its_new_status(client, db_session):
@@ -99,7 +107,7 @@ def test_ac1_an_edit_that_reopens_a_confirmed_event_names_planning_event(client,
 
     res = client.patch(
         f"/events/assigned/{w['event_id']}/planning",
-        json={"proposed_start": "2026-11-03T09:00:00Z", "proposed_end": "2026-11-03T17:00:00Z"},
+        json={"proposed_start": "2099-11-03T09:00:00Z", "proposed_end": "2099-11-03T17:00:00Z"},
         headers=w["coord_h"],
     )
 
@@ -170,14 +178,14 @@ def test_ac1_the_status_still_changes(client, db_session):
     assert db_session.get(Event, w["event_id"]).status == EventStatus.event_cancelled
 
 
-# --- AC2 / AC6: not my Event -> nothing --------------------------------------
+# --- SCRUM-52 AC2 / AC6: not my Event -> nothing --------------------------------------
 
 
 def _reopen(client, w):
     """A confirmed Event's new date sends it back to Planning Event."""
     res = client.patch(
         f"/events/assigned/{w['event_id']}/planning",
-        json={"proposed_start": "2026-11-03T09:00:00Z", "proposed_end": "2026-11-03T17:00:00Z"},
+        json={"proposed_start": "2099-11-03T09:00:00Z", "proposed_end": "2099-11-03T17:00:00Z"},
         headers=w["coord_h"],
     )
     assert res.status_code == 200, res.text
@@ -203,7 +211,7 @@ def test_ac2_only_the_organiser_gets_the_status_notice(client, db_session):
     assert recipients == {w["organiser"].id}
 
 
-# --- AC3: received -> there when I log in -----------------------------------
+# --- SCRUM-52 AC3: received -> there when I log in -----------------------------------
 
 
 def test_ac3_the_notice_is_there_after_logging_in_again(client, db_session):
@@ -223,7 +231,7 @@ def test_ac3_signed_out_nothing_is_shown(client):
     assert client.get("/notifications").status_code == 401
 
 
-# --- AC4: one Venue Booking decided -> that Venue and the decision ----------
+# --- SCRUM-52 AC4: one Venue Booking decided -> that Venue and the decision ----------
 
 
 def _two_bookings(client, db_session):
@@ -327,7 +335,7 @@ def test_ac4_the_decision_is_still_recorded(client, db_session):
     assert body["status"] == BookingStatus.approved.value
 
 
-# --- AC5: equipment confirmed or unavailable -> event, equipment, outcome ---
+# --- SCRUM-52 AC5: equipment confirmed or unavailable -> event, equipment, outcome ---
 
 
 def test_ac5_fully_reserved_equipment_is_confirmed(client, db_session):
@@ -396,7 +404,7 @@ def test_ac5_a_refused_update_sends_nothing(client, db_session):
     assert _inbox(client, w.organiser_headers, EQUIPMENT) == []
 
 
-# --- AC6: another Organiser's Event -> no Venue or equipment notice ---------
+# --- SCRUM-52 AC6: another Organiser's Event -> no Venue or equipment notice ---------
 
 
 def test_ac6_another_organiser_gets_no_venue_decision(client, db_session):
@@ -420,7 +428,7 @@ def test_ac6_another_organiser_gets_no_equipment_outcome(client, db_session):
     assert w.organiser.id in recipients and other.id not in recipients
 
 
-# --- AC7: Safety Check passed or failed -> I am told ------------------------
+# --- SCRUM-52 AC7: Safety Check passed or failed -> I am told ------------------------
 
 
 def _awaiting_safety(client, db_session):

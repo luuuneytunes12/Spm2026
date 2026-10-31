@@ -37,7 +37,9 @@ PATH = "/equipment-requirements/support/requested"
 
 
 def _utc(month, day, hour=9):
-    return datetime(2026, month, day, hour, tzinfo=timezone.utc)
+    # Future dates (2099) so these events stay upcoming. The one past event is
+    # built explicitly in test_ac1_an_event_that_has_already_happened_is_still_listed.
+    return datetime(2099, month, day, hour, tzinfo=timezone.utc)
 
 
 def _listed(client, headers):
@@ -69,8 +71,8 @@ def test_ac1_a_requested_requirement_is_listed_with_its_event_type_quantity_and_
     assert row["status"] == "requested"
     assert row["event"]["id"] == w.event.id
     assert row["event"]["name"] == w.event.name
-    assert row["event"]["proposed_start"].startswith("2026-11-02T09:00")
-    assert row["event"]["proposed_end"].startswith("2026-11-02T17:00")
+    assert row["event"]["proposed_start"].startswith("2099-11-02T09:00")
+    assert row["event"]["proposed_end"].startswith("2099-11-02T17:00")
 
 
 def test_ac1_requirements_from_every_event_are_in_the_one_list(client, db_session):
@@ -83,7 +85,7 @@ def test_ac1_requirements_from_every_event_are_in_the_one_list(client, db_sessio
 
 
 def test_ac1_the_oldest_event_date_comes_first(client, db_session):
-    w = _world(client, db_session)  # 2 Nov 2026
+    w = _world(client, db_session)  # 2 Nov 2099
     _, earlier = _on_another_event(client, db_session, w, "Workshop", _utc(10, 20), _utc(10, 20, 17))
     _, later = _on_another_event(client, db_session, w, "Gala", _utc(12, 5), _utc(12, 5, 17))
 
@@ -115,7 +117,10 @@ def test_ac1_an_event_that_has_already_happened_is_still_listed(client, db_sessi
     """Requested is a status, not a date: a requirement never fulfilled stays
     waiting until Technical Support deal with it."""
     w = _world(client, db_session)
-    _, past = _on_another_event(client, db_session, w, "Last year", _utc(1, 5), _utc(1, 5, 17))
+    _, past = _on_another_event(
+        client, db_session, w, "Last year",
+        datetime(2020, 1, 5, 9, tzinfo=timezone.utc), datetime(2020, 1, 5, 17, tzinfo=timezone.utc),
+    )
 
     ids = [row["id"] for row in _listed(client, w.tech)]
 

@@ -126,7 +126,7 @@ def test_s1_ac1_queue_shows_each_awaiting_event_with_name_date_and_coordinator(c
     [row] = client.get("/safety-checks", headers=s["officer_h"]).json()
     assert row["id"] == s["event_id"]
     assert row["name"] == "Regional Partner Conference"
-    assert row["proposed_start"].startswith("2026-11-02T09:00")
+    assert row["proposed_start"].startswith("2099-11-02T09:00")
     assert row["coordinator"]["name"] == "Coordinator"
 
 
@@ -223,8 +223,8 @@ def test_s2_ac5_an_event_that_has_not_passed_cannot_move_to_preparation(client, 
     s = _setup(client, db_session)
     settings = {
         "registration_enabled": True,
-        "registration_opens_at": "2026-10-10T09:00:00Z",
-        "registration_closes_at": "2026-10-20T09:00:00Z",
+        "registration_opens_at": "2099-10-10T09:00:00Z",
+        "registration_closes_at": "2099-10-20T09:00:00Z",
     }
     url = f"/events/assigned/{s['event_id']}/registration"
     assert client.put(url, json=settings, headers=s["coord_h"]).status_code == 409

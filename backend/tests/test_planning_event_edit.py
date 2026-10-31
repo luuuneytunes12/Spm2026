@@ -1,4 +1,4 @@
-"""US2 - Edit Event Details During Planning.
+"""SCRUM-32 - Edit Event Details During Planning (earlier notes called it US2).
 
 Each test is named after the acceptance criterion it proves:
 
@@ -112,7 +112,7 @@ def _requirement_status(client, event_id, headers):
     return response.json()[0]["status"]
 
 
-# --- AC1 -------------------------------------------------------------------------
+# --- SCRUM-32 AC1 -------------------------------------------------------------------------
 
 
 def test_ac1_ac4_assigned_coordinator_can_edit_planning_details_and_activity_is_recorded(
@@ -175,7 +175,7 @@ def test_ac1_event_contacts_are_nullable_when_not_provided(client, db_session):
     assert response.json()["event_contact_email"] is None
 
 
-# --- AC2 -------------------------------------------------------------------------
+# --- SCRUM-32 AC2 -------------------------------------------------------------------------
 
 
 def test_ac2_a_date_or_time_change_identifies_bookings_and_equipment_for_review(
@@ -191,8 +191,8 @@ def test_ac2_a_date_or_time_change_identifies_bookings_and_equipment_for_review(
         event_id,
         coordinator_headers,
         {
-            "proposed_start": "2026-11-03T09:00:00Z",
-            "proposed_end": "2026-11-03T17:00:00Z",
+            "proposed_start": "2099-11-03T09:00:00Z",
+            "proposed_end": "2099-11-03T17:00:00Z",
         },
     )
 
@@ -205,7 +205,7 @@ def test_ac2_a_date_or_time_change_identifies_bookings_and_equipment_for_review(
     db_session.refresh(booking)
     db_session.refresh(reservation)
     assert booking.status == BookingStatus.pending
-    assert booking.start_time.isoformat().startswith("2026-11-03T09:00")
+    assert booking.start_time.isoformat().startswith("2099-11-03T09:00")
     assert reservation.status == EquipmentStatus.requested
     assert _requirement_status(client, event_id, coordinator_headers) == "requested"
 
@@ -263,7 +263,7 @@ def test_ac2_frozen_literal_a_name_only_edit_leaves_arrangements_alone(client, d
     assert reservation.status == EquipmentStatus.reserved
 
 
-# --- AC3 -------------------------------------------------------------------------
+# --- SCRUM-32 AC3 -------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -273,16 +273,24 @@ def test_ac2_frozen_literal_a_name_only_edit_leaves_arrangements_alone(client, d
         ({"name": None}, "Event name cannot be empty."),
         (
             {
-                "proposed_start": "2026-11-02T17:00:00Z",
-                "proposed_end": "2026-11-02T09:00:00Z",
+                "proposed_start": "2099-11-02T17:00:00Z",
+                "proposed_end": "2099-11-02T09:00:00Z",
             },
             "proposed_end must be after proposed_start",
         ),
         (
-            {"proposed_end": "2026-11-02T08:00:00Z"},
+            {"proposed_end": "2099-11-02T08:00:00Z"},
             "The event must have an end time after its start time.",
         ),
         ({"expected_attendance": None}, "Expected attendance must be at least 1."),
+        # Boundary: an end EQUAL to the start is not an end after it.
+        (
+            {
+                "proposed_start": "2099-11-02T09:00:00Z",
+                "proposed_end": "2099-11-02T09:00:00Z",
+            },
+            "proposed_end must be after proposed_start",
+        ),
     ],
 )
 def test_ac3_invalid_planning_edit_is_refused_without_mutating_event(
@@ -307,7 +315,7 @@ def test_ac3_invalid_planning_edit_is_refused_without_mutating_event(
     assert db_session.query(EventStatusHistory).count() == original_history_count
 
 
-# --- AC4 -------------------------------------------------------------------------
+# --- SCRUM-32 AC4 -------------------------------------------------------------------------
 
 
 def test_ac4_an_edit_to_an_event_approved_event_is_logged_with_identity_and_timestamp(
@@ -345,7 +353,7 @@ def test_ac4_saving_without_changes_adds_no_log_entry(client, db_session):
     assert db_session.query(EventStatusHistory).filter_by(event_id=event_id).count() == before
 
 
-# --- AC5 -------------------------------------------------------------------------
+# --- SCRUM-32 AC5 -------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -387,7 +395,7 @@ def test_ac5_frozen_literal_an_event_not_yet_approved_or_rejected_is_not_edited_
     assert response.status_code == 409
 
 
-# --- AC6 -------------------------------------------------------------------------
+# --- SCRUM-32 AC6 -------------------------------------------------------------------------
 
 
 def test_ac6_only_assigned_coordinator_can_edit_event(client, db_session):
@@ -417,7 +425,7 @@ def test_ac6_other_roles_cannot_edit_event(client, db_session, role):
     assert db_session.get(Event, event_id).description is None
 
 
-# --- AC7 / AC8 --------------------------------------------------------------------
+# --- SCRUM-32 AC7 / AC8 --------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -426,7 +434,7 @@ def test_ac6_other_roles_cannot_edit_event(client, db_session, role):
 @pytest.mark.parametrize(
     "payload",
     [
-        {"proposed_start": "2026-11-02T10:00:00Z"},
+        {"proposed_start": "2099-11-02T10:00:00Z"},
         {"expected_attendance": 90},
         {"venue_requirements": "Breakout rooms"},
         {"equipment_requirements": "Extra microphones"},
@@ -540,7 +548,7 @@ def test_ac8_frozen_literal_attendance_within_capacity_stays_suitable(client, db
     assert capacity_check["met"] is True
 
 
-# --- AC9 / AC10 -------------------------------------------------------------------
+# --- SCRUM-32 AC9 / AC10 -------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -561,8 +569,8 @@ def test_ac9_ac10_major_change_request_approval_returns_confirmed_event_to_plann
         json={
             "description": "Move the event to a new time and recheck equipment.",
             "proposed_changes": {
-                "proposed_start": "2026-11-03T09:00:00Z",
-                "proposed_end": "2026-11-03T17:00:00Z",
+                "proposed_start": "2099-11-03T09:00:00Z",
+                "proposed_end": "2099-11-03T17:00:00Z",
             },
         },
     )

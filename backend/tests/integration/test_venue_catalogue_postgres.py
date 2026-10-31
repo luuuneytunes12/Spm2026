@@ -151,30 +151,30 @@ def _calendar_world(client, make_user, db, venues):
     db.get(Event, event_id).status = EventStatus.planning_event
     db.add_all([
         VenueBooking(event_id=event_id, venue_id=hall, requested_by=sam.id, status=BookingStatus.approved,
-                     start_time=datetime(2026, 11, 2, 9, tzinfo=SGT), end_time=datetime(2026, 11, 2, 12, tzinfo=SGT)),
+                     start_time=datetime(2099, 11, 2, 9, tzinfo=SGT), end_time=datetime(2099, 11, 2, 12, tzinfo=SGT)),
         VenueUnavailability(venue_id=hall, created_by=staff.id, reason_category="Maintenance",
                             reason="Aircon servicing",
-                            start_time="2026-11-05T00:00:00Z", end_time="2026-11-06T00:00:00Z"),
+                            start_time="2099-11-05T00:00:00Z", end_time="2099-11-06T00:00:00Z"),
     ])
     # Never on the calendar: requests not yet decided, or turned down.
     for i, status in enumerate((BookingStatus.pending, BookingStatus.rejected)):
         other = submit_event(client, org_h, name=f"Other {i}")
         db.add(VenueBooking(event_id=other, venue_id=hall, requested_by=sam.id, status=status,
-                            start_time="2026-11-03T09:00:00Z", end_time="2026-11-03T12:00:00Z"))
+                            start_time="2099-11-03T09:00:00Z", end_time="2099-11-03T12:00:00Z"))
     db.commit()
     return hall, staff_h, event_id
 
 
 def test_scrum37_ac1_to_ac3_confirmed_bookings_and_closures_are_on_the_calendar(client, make_user, db, venues, coordinator_h):
     hall, staff_h, event_id = _calendar_world(client, make_user, db, venues)
-    window = {"start": "2026-11-01T00:00:00Z", "end": "2026-11-08T00:00:00Z"}
+    window = {"start": "2099-11-01T00:00:00Z", "end": "2099-11-08T00:00:00Z"}
 
     seen = client.get(f"/venues/{hall}/availability", params=window, headers=coordinator_h).json()
 
     kinds = sorted(i["kind"] for i in seen["items"])
     assert kinds == ["confirmed_booking", "unavailability"]
     booking = next(i for i in seen["items"] if i["kind"] == "confirmed_booking")
-    assert booking["start_time"].startswith("2026-11-02T01:00")  # +08:00 stored as one instant
+    assert booking["start_time"].startswith("2099-11-02T01:00")  # +08:00 stored as one instant
     closure = next(i for i in seen["items"] if i["kind"] == "unavailability")
     assert closure["reason_category"] == "Maintenance"
     # A Coordinator sees that it is taken, Venue Staff also see by whom.
@@ -187,13 +187,13 @@ def test_scrum37_ac4_the_date_range_narrows_what_is_shown(client, make_user, db,
     hall, _sh, _e = _calendar_world(client, make_user, db, venues)
 
     only_closure = client.get(f"/venues/{hall}/availability", headers=coordinator_h,
-                              params={"start": "2026-11-04T00:00:00Z", "end": "2026-11-07T00:00:00Z"}).json()
+                              params={"start": "2099-11-04T00:00:00Z", "end": "2099-11-07T00:00:00Z"}).json()
     assert [i["kind"] for i in only_closure["items"]] == ["unavailability"]
     nothing = client.get(f"/venues/{hall}/availability", headers=coordinator_h,
-                         params={"start": "2026-12-01T00:00:00Z", "end": "2026-12-31T00:00:00Z"}).json()
+                         params={"start": "2099-12-01T00:00:00Z", "end": "2099-12-31T00:00:00Z"}).json()
     assert nothing["items"] == [] and nothing["busy"] == []
     backwards = client.get(f"/venues/{hall}/availability", headers=coordinator_h,
-                           params={"start": "2026-11-07T00:00:00Z", "end": "2026-11-04T00:00:00Z"})
+                           params={"start": "2099-11-07T00:00:00Z", "end": "2099-11-04T00:00:00Z"})
     assert backwards.status_code == 422
 
 
@@ -246,8 +246,8 @@ def test_scrum58_only_the_assigned_coordinator_can_run_the_check(client, make_us
 
 def _book(db, event_id, coordinator, venue_id, **needs):
     booking = VenueBooking(event_id=event_id, venue_id=venue_id, requested_by=coordinator.id,
-                           status=BookingStatus.pending, start_time="2026-11-02T09:00:00Z",
-                           end_time="2026-11-02T17:00:00Z", **needs)
+                           status=BookingStatus.pending, start_time="2099-11-02T09:00:00Z",
+                           end_time="2099-11-02T17:00:00Z", **needs)
     db.add(booking)
     db.commit()
     return booking.id

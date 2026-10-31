@@ -1,4 +1,4 @@
-"""US3 - Process Event Change Request.
+"""SCRUM-34 - Process Event Change Request (earlier notes called it US3).
 
 Each test is named after the acceptance criterion it proves:
 
@@ -129,7 +129,7 @@ def _decision_entries(db_session, event_id):
     )
 
 
-# --- AC1 / AC5 --------------------------------------------------------------------
+# --- SCRUM-34 AC1 / AC5 --------------------------------------------------------------------
 
 
 def test_ac1_ac5_unassigned_change_request_is_visible_to_lead_then_only_lead_and_assignee(
@@ -264,7 +264,7 @@ def test_ac1_a_change_request_that_does_not_exist_is_not_found(client, db_sessio
     assert response.json() == {"detail": "Change request not found"}
 
 
-# --- AC3 / AC4 / AC7 ----------------------------------------------------------------
+# --- SCRUM-34 AC3 / AC4 / AC7 ----------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -377,7 +377,7 @@ def test_ac3_the_organiser_of_another_event_is_not_notified(client, db_session):
     ).count() == 0
 
 
-# --- AC2 / AC6 / AC8 / AC9 ----------------------------------------------------------
+# --- SCRUM-34 AC2 / AC6 / AC8 / AC9 ----------------------------------------------------------
 
 
 def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turnaround_conflicts(
@@ -394,8 +394,8 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
     _assign(db_session, event_id, coordinator)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.safety_check_passed
-    event.proposed_start = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-    event.proposed_end = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+    event.proposed_start = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+    event.proposed_end = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
     venue = Venue(
         name="Small Hall",
         location="Building A",
@@ -422,8 +422,8 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
         organiser_id=organiser.id,
         name="Another event",
         status=EventStatus.event_approved,
-        proposed_start=datetime(2026, 11, 3, 14, tzinfo=timezone.utc),
-        proposed_end=datetime(2026, 11, 3, 15, tzinfo=timezone.utc),
+        proposed_start=datetime(2099, 11, 3, 14, tzinfo=timezone.utc),
+        proposed_end=datetime(2099, 11, 3, 15, tzinfo=timezone.utc),
         expected_attendance=20,
     )
     db_session.add_all([own_booking, other_event])
@@ -433,8 +433,8 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
             event_id=other_event.id,
             venue_id=venue.id,
             requested_by=organiser.id,
-            start_time=datetime(2026, 11, 3, 14, tzinfo=timezone.utc),
-            end_time=datetime(2026, 11, 3, 15, tzinfo=timezone.utc),
+            start_time=datetime(2099, 11, 3, 14, tzinfo=timezone.utc),
+            end_time=datetime(2099, 11, 3, 15, tzinfo=timezone.utc),
             status=BookingStatus.approved,
         )
     )
@@ -467,8 +467,8 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
         event_id,
         organiser_headers,
         {
-            "proposed_start": "2026-11-03T12:00:00Z",
-            "proposed_end": "2026-11-03T13:00:00Z",
+            "proposed_start": "2099-11-03T12:00:00Z",
+            "proposed_end": "2099-11-03T13:00:00Z",
             "expected_attendance": 150,
         },
     )
@@ -496,7 +496,7 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
     db_session.refresh(own_booking)
     db_session.refresh(equipment_request)
     assert own_booking.status == BookingStatus.pending
-    assert own_booking.start_time.isoformat().startswith("2026-11-03T12:00")
+    assert own_booking.start_time.isoformat().startswith("2099-11-03T12:00")
     assert equipment_request.status == EquipmentStatus.requested
     assert db_session.get(Event, event_id).status == EventStatus.planning_event
 
@@ -609,7 +609,7 @@ def test_ac2_attendance_change_reopens_venue_only_and_preserves_equipment_reserv
     assert db_session.get(Event, event_id).status == EventStatus.planning_event
 
 
-# --- AC2: "unless I choose otherwise" ------------------------------------------------
+# --- SCRUM-34 AC2: "unless I choose otherwise" ------------------------------------------------
 
 
 def test_ac2_a_pending_request_offers_the_unaffected_arrangements_as_choices(
@@ -728,7 +728,7 @@ def test_ac2_frozen_literal_a_decided_request_offers_no_choices(client, db_sessi
     assert rejected["other_equipment_reservations"] == []
 
 
-# --- AC9 / AC10 ---------------------------------------------------------------------
+# --- SCRUM-34 AC9 / AC10 ---------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

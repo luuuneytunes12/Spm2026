@@ -55,8 +55,8 @@ from app.models.user import User
 from app.services.reservation_gateway import ErcongReservationGateway
 from datetime import datetime, timezone
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 _unique = itertools.count()
 
 # The statuses people see: the Definition of Done's (11b), and only those.
@@ -285,8 +285,8 @@ def _service(db_session, gateway=None, links=None, activity=None, **gateway_opti
 
 
 def _after_the_event():
-    """A clock that says the event (it ends on 2 Nov 2026) is over."""
-    return lambda: datetime(2026, 11, 3, tzinfo=timezone.utc)
+    """A clock that says the event (it ends on 2 Nov 2099) is over."""
+    return lambda: datetime(2099, 11, 3, tzinfo=timezone.utc)
 
 
 def _links(db_session):
@@ -796,7 +796,7 @@ def _held(db_session, world):
 
 def test_a_reservation_is_held_until_the_events_end_time(db_session, world):
     _held(db_session, world)
-    during = lambda: datetime(2026, 11, 2, 12, tzinfo=timezone.utc)  # noqa: E731
+    during = lambda: datetime(2099, 11, 2, 12, tzinfo=timezone.utc)  # noqa: E731
 
     progress = RequirementReservationLinks(db_session, clock=during).progress_for(world.requirement)
 

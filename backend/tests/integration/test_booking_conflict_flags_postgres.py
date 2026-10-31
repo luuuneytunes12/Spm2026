@@ -45,7 +45,7 @@ def test_ac1_ac2_ac3_ac4_flag_notify_list_and_clear_on_postgres(client, make_use
 
     rows = client.get("/venue-bookings/flagged", headers=staff_h).json()
     assert [r["id"] for r in rows] == [first, second]
-    assert rows[0]["conflicts"][0]["overlap_start"].startswith("2026-11-02T12:30")
+    assert rows[0]["conflicts"][0]["overlap_start"].startswith("2099-11-02T12:30")
     assert rows[0]["status"] == "approved"
     assert client.get("/venue-bookings/flagged", headers=sam_h).status_code == 403
 

@@ -12,7 +12,7 @@ from app.models.enums import EventStatus
 from app.models.events import Event, EventStatusHistory
 from app.routers.events import SAFETY_RESULT_NOTES
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
 DECIDED = datetime(2026, 10, 10, 8, tzinfo=timezone.utc)
 
 

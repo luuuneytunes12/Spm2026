@@ -1,4 +1,14 @@
-"""Unit tests for approving a submitted event request."""
+"""SCRUM-25: API-level tests for approving an event request.
+
+Positive: the assigned coordinator approves and the organiser is notified.
+Negative: other statuses, an unassigned event and unauthorised users fail
+without changing the event. The test client uses an isolated test database;
+this suite does not prove that the browser hides or disables the action.
+
+Jira describes approval from Submitted; the current workflow first assigns
+the event and changes it to Under Review. The tests describe the implemented
+workflow, so the product owner should resolve that wording discrepancy.
+"""
 
 import pytest
 
@@ -14,6 +24,7 @@ pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 
 def test_coordinator_can_approve_assigned_request_and_notify_organiser(client, db_session):
+    """SCRUM-25 AC01/AC04: approval records the actor and notifies the owner."""
     organiser, _, coordinator, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.under_review
@@ -49,6 +60,7 @@ def test_coordinator_can_approve_assigned_request_and_notify_organiser(client, d
     ],
 )
 def test_request_outside_reviewable_status_cannot_be_approved(client, db_session, status):
+    """SCRUM-25 AC03: reject each listed invalid state without changing it."""
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus(status)
@@ -61,6 +73,7 @@ def test_request_outside_reviewable_status_cannot_be_approved(client, db_session
 
 
 def test_only_the_assigned_coordinator_can_approve(client, db_session):
+    """A different coordinator cannot approve someone else's assigned event."""
     _, _, _, _, event_id = review_setup(client, db_session)
     _, other_headers = user(
         client,
@@ -77,6 +90,7 @@ def test_only_the_assigned_coordinator_can_approve(client, db_session):
 
 
 def test_unassigned_submitted_request_cannot_be_approved(client, db_session):
+    """An unassigned submission must be assigned before it can be approved."""
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.coordinator_id = None
@@ -90,6 +104,7 @@ def test_unassigned_submitted_request_cannot_be_approved(client, db_session):
 
 
 def test_non_coordinator_cannot_approve(client, db_session):
+    """An organiser cannot bypass the coordinator-only approval decision."""
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
 
     response = client.post(f"/events/{event_id}/approve", headers=organiser_headers)

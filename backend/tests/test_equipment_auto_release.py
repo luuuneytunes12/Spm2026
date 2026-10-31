@@ -1,4 +1,12 @@
-"""Tests for releasing stock when an Event reaches a release status."""
+"""SCRUM-59: equipment availability after an event is completed early.
+
+Jira AC1 releases reservations on cancellation or completion; AC2 reflects
+released stock in the catalogue; AC3 permits a normal later reservation. This
+file exercises the early-completion stock/reuse scenario through the API and
+an isolated database. It does not alone cover every cancellation scenario.
+SCRUM-59 is outside SCRUM-1–55, but relates to SCRUM-45/46 availability and
+reservation. Test data and credentials are synthetic.
+"""
 
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +24,12 @@ from event_review_test_helpers import user
 
 
 def test_event_completed_releases_reserved_stock_before_its_scheduled_end(client, db_session):
+    """SCRUM-59 AC1–AC3: completion frees stock for an overlapping new event.
+
+    The finished event previously reserved five of eight projectors. The new
+    event overlaps its scheduled time, so successfully reserving five checks
+    that the completed event no longer consumes the stock.
+    """
     _, tech_headers = user(
         client, db_session, Role.TECH_SUPPORT, "tech@example.com", "Tess Tech"
     )
