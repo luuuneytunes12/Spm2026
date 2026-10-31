@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventVenueSuitability } from './EventVenueSuitability'
 import { ApiError } from '../lib/api'
 
-vi.mock('../lib/venues', () => ({
+vi.mock('../lib/venues', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/venues')>()),
   checkEventVenueSuitability: vi.fn(),
   checkVenueBookingSuitability: vi.fn(),
 }))
@@ -59,6 +60,31 @@ const RESULT: EventVenueSuitabilityResult = {
 
 describe('event-wide venue suitability', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('AC3: marks only the venue booking outside its operating hours as Not suitable', async () => {
+    mockCheck.mockResolvedValue({
+      ...RESULT,
+      venues: [
+        RESULT.venues[0],
+        {
+          ...RESULT.venues[1],
+          checks: [{
+            category: 'operating_hours',
+            requirement: 'Mon 02 Nov 2026 18:00 to Mon 02 Nov 2026 20:00',
+            available: 'Mon-Fri 09:00-17:00',
+            met: false,
+            message: 'Outside operating hours',
+          }],
+        },
+      ],
+    })
+    render(<EventVenueSuitability eventId={7} />)
+
+    expect(await screen.findByText('Garden Room: Not suitable')).toBeInTheDocument()
+    expect(screen.getByText('Main Hall: Suitable')).toBeInTheDocument()
+    expect(screen.getByText('operating hours:')).toBeInTheDocument()
+    expect(screen.getByText(/Outside operating hours/)).toBeInTheDocument()
+  })
 
   it('shows each venue result and the separate combined-capacity result', async () => {
     mockCheck.mockResolvedValue(RESULT)

@@ -2,13 +2,23 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '../../lib/api'
 import { listAssignedEvents } from '../../lib/events'
 import type { EventSummary } from '../../lib/events'
-import { checkVenueSuitability } from '../../lib/venues'
+import { checkVenueSuitability, suitabilityCategoryLabel } from '../../lib/venues'
 import type { VenueSuitability as VenueSuitabilityResult } from '../../lib/venues'
 
 function nextStep(
   category: VenueSuitabilityResult['checks'][number]['category'],
   requirement: string,
+  message: string,
 ): string {
+  if (category === 'operating_hours') {
+    if (requirement.includes('not recorded')) {
+      return 'Edit the event and enter its start and end time, then check again.'
+    }
+    if (message.startsWith('Cannot read')) {
+      return 'Ask Venue Staff to record the hours one entry per line, e.g. Mon-Fri 08:00-22:00.'
+    }
+    return 'Choose a venue that is open for the whole event, or change the event time.'
+  }
   if (category === 'capacity') {
     if (requirement.includes('not recorded')) {
       return 'Edit the event and enter its expected attendance, then check again.'
@@ -199,14 +209,14 @@ export function VenueSuitability({ venueId, venueName }: { venueId: number; venu
             <ul className="detail-value-list" aria-label={`Suitability results for ${venueName}`}>
               {result.checks.map((check, index) => (
                 <li key={`${check.category}-${check.requirement}-${index}`}>
-                  <strong>{check.category}: {check.met ? 'Pass' : 'Needs attention'}</strong>
+                  <strong>{suitabilityCategoryLabel(check.category)}: {check.met ? 'Pass' : 'Needs attention'}</strong>
                   <p>{check.message}</p>
                   <p className="text-muted">
                     Required: {check.requirement}; available: {check.available}
                   </p>
                   {!check.met && (
                     <p className="suitability-next-step">
-                      <strong>How to resolve:</strong> {nextStep(check.category, check.requirement)}
+                      <strong>How to resolve:</strong> {nextStep(check.category, check.requirement, check.message)}
                     </p>
                   )}
                 </li>

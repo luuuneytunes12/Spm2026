@@ -128,7 +128,7 @@ def test_important_change_shows_existing_bookings_and_reservations(client, db_se
                 start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
                 end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
                 status=BookingStatus.tentative_hold,
-                expires_at=datetime(2026, 10, 31, 12, tzinfo=timezone.utc),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
             ),
             VenueBooking(
                 event_id=event_id,

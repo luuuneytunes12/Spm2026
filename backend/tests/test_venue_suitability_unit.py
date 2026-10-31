@@ -11,12 +11,15 @@ def _venue(*, capacity: int, layouts: list[str], accessibility: list[str], facil
         supported_layouts=layouts,
         accessibility_features=accessibility,
         facilities=facilities,
+        operating_hours=None,
     )
 
 
 def _booking(venue, *, attendance: int, layout: str, accessibility: str, facilities: str):
     return SimpleNamespace(
         venue=venue,
+        start_time=None,
+        end_time=None,
         expected_attendance=attendance,
         room_layout_preference=layout,
         accessibility_needs=accessibility,

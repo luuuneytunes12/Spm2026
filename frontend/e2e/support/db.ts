@@ -135,13 +135,13 @@ from app.models.venues import Venue
 v = json.loads(sys.argv[1])
 db = SessionLocal()
 if not db.query(Venue).filter(Venue.name == v["name"]).first():
-    db.add(Venue(name=v["name"], location=v["location"], capacity=v["capacity"], is_active=True))
+    db.add(Venue(name=v["name"], location=v["location"], capacity=v["capacity"], operating_hours=v.get("operating_hours"), facilities=v.get("facilities"), accessibility_features=v.get("accessibility_features"), is_active=True))
     db.commit()
 db.close()
 `
 
 /** Make sure a bookable venue with this name exists. */
-export function seedVenue(venue: { name: string; location: string; capacity: number }): void {
+export function seedVenue(venue: { name: string; location: string; capacity: number; operating_hours?: string; facilities?: string[]; accessibility_features?: string[] }): void {
   python(SEED_VENUE, venue)
 }
 

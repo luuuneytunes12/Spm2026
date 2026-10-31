@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ApiError } from '../lib/api'
-import { checkEventVenueSuitability, checkVenueBookingSuitability } from '../lib/venues'
+import {
+  checkEventVenueSuitability,
+  checkVenueBookingSuitability,
+  suitabilityCategoryLabel,
+} from '../lib/venues'
 import type { EventVenueSuitability as EventVenueSuitabilityResult } from '../lib/venues'
 
 export function EventVenueSuitability({ eventId }: { eventId: number }) {
@@ -138,7 +142,7 @@ export function EventVenueSuitability({ eventId }: { eventId: number }) {
                   <ul className="detail-value-list">
                     {venue.checks.map((check, index) => (
                       <li key={`${venue.booking_id}-${check.category}-${index}`}>
-                        <strong>{check.category}:</strong> {check.message}
+                        <strong>{suitabilityCategoryLabel(check.category)}:</strong> {check.message}
                         {' '}Required: {check.requirement}; available: {check.available}.
                       </li>
                     ))}

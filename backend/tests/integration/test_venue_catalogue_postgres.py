@@ -215,19 +215,19 @@ def test_scrum58_ac1_ac2_a_venue_meeting_every_requirement_is_suitable(client, m
     _c, coord_h, event_id = _assigned(client, make_user, db, expected_attendance=250,
                                       room_layout_preference="theatre",
                                       accessibility_needs="Step-free access, hearing loop",
-                                      venue_requirements="Projector; Stage")
+                                      venue_requirements="Projector; Stage", **IN_HOURS)
 
     res = client.get(f"/venues/{venues['Main Hall']}/suitability/{event_id}", headers=coord_h).json()
 
     assert res["suitable"] is True
-    assert {c["category"] for c in res["checks"]} == {"capacity", "layout", "accessibility", "facility"}
+    assert {c["category"] for c in res["checks"]} == {"capacity", "layout", "accessibility", "facility", "operating_hours"}
     assert all(c["met"] for c in res["checks"])
 
 
 def test_scrum58_ac3_each_unmet_requirement_is_named(client, make_user, db, venues):
     _c, coord_h, event_id = _assigned(client, make_user, db, expected_attendance=250,
                                       room_layout_preference="Theatre",
-                                      accessibility_needs="Hearing loop", venue_requirements="Stage")
+                                      accessibility_needs="Hearing loop", venue_requirements="Stage", **IN_HOURS)
 
     res = client.get(f"/venues/{venues['Seminar Room 3']}/suitability/{event_id}", headers=coord_h).json()
 
@@ -244,10 +244,13 @@ def test_scrum58_only_the_assigned_coordinator_can_run_the_check(client, make_us
     assert client.get(f"/venues/{venues['Main Hall']}/suitability/{event_id}", headers=other_h).status_code == 404
 
 
-def _book(db, event_id, coordinator, venue_id, **needs):
+# 10:00-16:00 at the venue, inside every fixture venue's operating hours.
+IN_HOURS = {"proposed_start": "2026-11-02T02:00:00Z", "proposed_end": "2026-11-02T08:00:00Z"}
+
+
+def _book(db, event_id, coordinator, venue_id, start="2026-11-02T02:00:00Z", end="2026-11-02T08:00:00Z", **needs):
     booking = VenueBooking(event_id=event_id, venue_id=venue_id, requested_by=coordinator.id,
-                           status=BookingStatus.pending, start_time="2026-11-02T09:00:00Z",
-                           end_time="2026-11-02T17:00:00Z", **needs)
+                           status=BookingStatus.pending, start_time=start, end_time=end, **needs)
     db.add(booking)
     db.commit()
     return booking.id
@@ -270,6 +273,25 @@ def test_scrum104_ac1_ac2_each_booking_is_judged_on_its_own_needs(client, make_u
     unmet = [c for c in by_id[garden]["checks"] if not c["met"]]
     assert [c["category"] for c in unmet] == ["accessibility"]  # its own facility need IS met
     assert res["combined_capacity"]["available_capacity"] == 300 + 40 + 120
+
+
+def test_operating_hours_ac1_ac2_ac3_are_judged_on_the_venues_clock(client, make_user, db, venues):
+    coordinator, coord_h, event_id = _assigned(client, make_user, db, expected_attendance=30,
+                                               accessibility_needs="Step-free access",
+                                               venue_requirements="Projector", **IN_HOURS)
+    # 11:00-13:00 UTC is 19:00-21:00 at the venue: open till 22:00, closed from
+    # 18:00, and both the other way round if the times were read as UTC.
+    open_late = _book(db, event_id, coordinator, venues["Main Hall"],
+                      start="2026-11-02T11:00:00Z", end="2026-11-02T13:00:00Z")
+    closed = _book(db, event_id, coordinator, venues["Seminar Room 3"],
+                   start="2026-11-02T11:00:00Z", end="2026-11-02T13:00:00Z")
+
+    res = client.get(f"/venues/events/{event_id}/suitability", headers=coord_h).json()
+
+    by_id = {v["booking_id"]: v for v in res["venues"]}
+    assert by_id[open_late]["suitable"] is True
+    assert by_id[closed]["suitable"] is False
+    assert [c["message"] for c in by_id[closed]["checks"] if not c["met"]] == ["Outside operating hours"]
 
 
 def test_scrum104_ac2_a_failing_booking_shows_the_capacity_shortfall(client, make_user, db, venues):
