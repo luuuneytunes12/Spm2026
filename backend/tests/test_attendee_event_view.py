@@ -1,7 +1,8 @@
 """As an Attendee, I want to view the attendee-facing details of a confirmed
 Event, so that I have the information I need to attend.
 
-Test names carry the acceptance criterion they prove.
+SCRUM-51 - Attendee-facing details of a confirmed Event.
+Test names carry the acceptance criterion they prove (AC1-AC4).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -53,8 +54,8 @@ def test_ac1_attendee_sees_the_public_details_of_a_confirmed_open_event(client, 
     assert body["name"] == "Regional Partner Conference"
     assert body["description"] == "A day of partner briefings."
     assert body["event_type"] == "conference"
-    assert body["proposed_start"].startswith("2026-11-02T09:00")
-    assert body["proposed_end"].startswith("2026-11-02T17:00")
+    assert body["proposed_start"].startswith("2099-11-02T09:00")
+    assert body["proposed_end"].startswith("2099-11-02T17:00")
     assert {(v["name"], v["location"]) for v in body["venues"]} == {
         ("Marina Hall", "10 Bayfront Ave"),
         ("Garden Pavilion", "10 Bayfront Ave"),

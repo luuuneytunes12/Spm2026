@@ -341,7 +341,7 @@ def test_scrum73_venue_staff_count_pending_booking_requests(client, make_user, d
     db.commit()
     for venue, status in zip(venues, ("pending", "pending", "approved")):
         db.add(VenueBooking(event_id=event_id, venue_id=venue.id, requested_by=coordinator.id, status=status,
-                            start_time="2026-11-02T09:00:00Z", end_time="2026-11-02T17:00:00Z"))
+                            start_time="2099-11-02T09:00:00Z", end_time="2099-11-02T17:00:00Z"))
     db.commit()
 
     assert len(client.get("/venue-bookings/queue", headers=staff_h).json()) == 2

@@ -97,7 +97,7 @@ def test_ac1_submitting_notifies_the_safety_officer_with_name_date_and_coordinat
     [notice] = _inbox(client, w["officer_h"])
     assert notice["event_id"] == w["event_id"]
     assert notice["message"] == (
-        "'Regional Partner Conference' on 2 Nov 2026 (Event Coordinator: Casey Coordinator) "
+        "'Regional Partner Conference' on 2 Nov 2099 (Event Coordinator: Casey Coordinator) "
         "was submitted for a Safety Check."
     )
     assert _status(db_session, w["event_id"]) == EventStatus.awaiting_safety_check
@@ -151,7 +151,7 @@ def test_ac1_resubmitting_after_being_sent_back_says_resubmitted(client, db_sess
 
     [notice] = _inbox(client, s["officer_h"])
     assert notice["message"] == (
-        "'Regional Partner Conference' on 2 Nov 2026 (Event Coordinator: Coordinator) "
+        "'Regional Partner Conference' on 2 Nov 2099 (Event Coordinator: Coordinator) "
         "was resubmitted for a Safety Check."
     )
 
@@ -256,7 +256,7 @@ def test_ac2_leaving_the_queue_tells_the_safety_officer_which_event_and_why(clie
     [notice] = _withdrawn(client, w["officer_h"])
     assert notice["event_id"] == w["event_id"]
     assert notice["message"] == (
-        "'Regional Partner Conference' on 2 Nov 2026 (Event Coordinator: Casey Coordinator) "
+        "'Regional Partner Conference' on 2 Nov 2099 (Event Coordinator: Casey Coordinator) "
         "has left your Safety Check queue and is back in planning: its expected attendance "
         "changed from 120 to 400, so its venue and safety arrangements must be reviewed again. "
         "Do not review it until it is submitted again."
@@ -269,7 +269,7 @@ def test_ac2_a_new_date_and_time_also_takes_it_out_of_the_queue_and_says_so(clie
         f"/events/{w['event_id']}/change-requests",
         json={
             "description": "Moved",
-            "proposed_changes": {"proposed_start": "2026-11-09T09:00:00Z", "proposed_end": "2026-11-09T17:00:00Z"},
+            "proposed_changes": {"proposed_start": "2099-11-09T09:00:00Z", "proposed_end": "2099-11-09T17:00:00Z"},
         },
         headers=w["org_h"],
     )

@@ -20,8 +20,8 @@ def test_ac1_ac2_ac5_overlap_is_flagged_and_calendar_shows_it_busy(client, make_
     assert _approve(client, staff_h, first).status_code == 200
     [c] = client.get(f"/venue-bookings/{second}", headers=staff_h).json()["conflicts"]
     assert c["booking_id"] == first
-    assert c["overlap_start"].startswith("2026-11-02T12:30")
-    assert c["overlap_end"].startswith("2026-11-02T12:45")
+    assert c["overlap_start"].startswith("2099-11-02T12:30")
+    assert c["overlap_end"].startswith("2099-11-02T12:45")
 
     # the Coordinator never sees it
     mine = client.get(f"/venue-bookings/events/{flagged['event']['id']}", headers=sam_h).json()
@@ -29,11 +29,11 @@ def test_ac1_ac2_ac5_overlap_is_flagged_and_calendar_shows_it_busy(client, make_
 
     cal = client.get(
         f"/venues/{venue_id}/availability",
-        params={"start": "2026-11-02T00:00:00Z", "end": "2026-11-03T00:00:00Z"},
+        params={"start": "2099-11-02T00:00:00Z", "end": "2099-11-03T00:00:00Z"},
         headers=sam_h,
     ).json()
     [busy] = cal["busy"]
-    assert busy["start"].startswith("2026-11-02T09:30") and busy["end"].startswith("2026-11-02T12:45")
+    assert busy["start"].startswith("2099-11-02T09:30") and busy["end"].startswith("2099-11-02T12:45")
     assert busy["event_name"] is None
 
 

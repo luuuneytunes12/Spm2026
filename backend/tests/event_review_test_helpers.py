@@ -1,3 +1,11 @@
+"""Shared setup for event-review, booking, notification and profile tests.
+
+The helpers register real test users and create records through the test API,
+then put an event into review using the isolated test database. They reduce
+repeated setup; individual tests remain responsible for checking behaviour.
+`COMPLETE` is reusable valid input, and its credentials are test-only values.
+"""
+
 from app.core.roles import Role
 from app.models.enums import EventStatus
 from app.models.events import Event, EventStatusHistory
@@ -7,8 +15,8 @@ COMPLETE = {
     "name": "Regional Partner Conference",
     "purpose": "Annual partner briefing",
     "event_type": "conference",
-    "proposed_start": "2026-11-02T09:00:00Z",
-    "proposed_end": "2026-11-02T17:00:00Z",
+    "proposed_start": "2099-11-02T09:00:00Z",
+    "proposed_end": "2099-11-02T17:00:00Z",
     "expected_attendance": 120,
     "venue_requirements": "Main hall",
     "accessibility_needs": "Step-free access",
@@ -16,6 +24,11 @@ COMPLETE = {
 
 
 def user(client, db_session, role, email, name):
+    """Register a test user, set their role, and return the user and auth headers.
+
+    The role is assigned in the test database because public registration does
+    not allow a person to grant themselves privileged staff permissions.
+    """
     password = "password123"
     assert client.post(
         "/auth/register", json={"name": name, "email": email, "password": password}
@@ -30,12 +43,19 @@ def user(client, db_session, role, email, name):
 
 
 def submitted_event(client, organiser_headers):
+    """Create and submit a valid event as the organiser; return its identifier."""
     event_id = client.post("/events", json=COMPLETE, headers=organiser_headers).json()["id"]
     assert client.post(f"/events/{event_id}/submit", headers=organiser_headers).status_code == 200
     return event_id
 
 
 def review_setup(client, db_session):
+    """Prepare an assigned event under review and return users, headers and ID.
+
+    The assignment, status and history entry are inserted into the isolated
+    database to give each consuming test the same review-stage precondition.
+    This setup does not itself test the lead's assignment workflow.
+    """
     organiser, organiser_headers = user(
         client, db_session, Role.ORGANISER, "organiser@example.com", "Organiser"
     )

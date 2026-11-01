@@ -21,8 +21,8 @@ from tests.integration.test_coordinator_concurrency_postgres import THREADS, rac
 
 pytestmark = pytest.mark.integration
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 
 
 def _event(db, organiser, coordinator, *, status=EventStatus.planning_event, name="Conference"):

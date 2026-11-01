@@ -1,4 +1,15 @@
-"""Tests for the "Search and Filter Venues" story (Event Coordinator).
+"""SCRUM-35 - Search and Filter Venues (Event Coordinator).
+
+Scope notes:
+  * The "VS AC3 -- date and time" section is SCRUM-99 (Filter Venues by Available
+    Date and Time), OUTSIDE SCRUM-1 to 55. It is kept here because it shares
+    the search endpoint; those tests are labelled SCRUM-99.
+  * Jira SCRUM-35 asks for "fixed filters". The implementation offers the values
+    actually recorded on venues (see the filter-options tests). That is a
+    wording dispute to settle with the product owner, not a test failure.
+  * Jira AC5 (clicking a result opens its details) is a UI behaviour. It is not
+    tested in this file; see the frontend Venues tests.
+
 
     As an Event Coordinator, I want to search for venues by keyword and
     filter them by my event's requirements, so that I can quickly narrow
@@ -129,12 +140,12 @@ def _block(db_session, venue, start, end):
 
 
 def _at(hour, day=2):
-    """A moment on 2 Nov 2026, in UTC."""
-    return datetime(2026, 11, day, hour, tzinfo=timezone.utc)
+    """A moment on 2 Nov 2099, in UTC."""
+    return datetime(2099, 11, day, hour, tzinfo=timezone.utc)
 
 
-# The window every date test searches for: 2 Nov 2026, 09:00-17:00 UTC.
-WINDOW = {"start": "2026-11-02T09:00:00Z", "end": "2026-11-02T17:00:00Z"}
+# The window every date test searches for: 2 Nov 2099, 09:00-17:00 UTC.
+WINDOW = {"start": "2099-11-02T09:00:00Z", "end": "2099-11-02T17:00:00Z"}
 
 
 def _names(res):
@@ -163,7 +174,7 @@ def test_no_criteria_returns_every_venue_alphabetically(client, db_session):
 
 
 # ---------------------------------------------------------------------------
-# VS AC1 -- keyword matches name or location
+# SCRUM-35 AC1 -- keyword matches name or location
 # ---------------------------------------------------------------------------
 
 
@@ -201,7 +212,7 @@ def test_ac1_a_blank_keyword_is_no_keyword(client, db_session):
 
 
 # ---------------------------------------------------------------------------
-# VS AC2 -- layout, accessibility and facilities; every filter must hold
+# SCRUM-35 AC2 -- layout, accessibility and facilities; every filter must hold
 # ---------------------------------------------------------------------------
 
 
@@ -286,7 +297,7 @@ def test_ac2_keyword_and_every_kind_of_filter_combine(client, db_session):
 
 
 # ---------------------------------------------------------------------------
-# VS AC3 -- date and time: venues booked or blocked in the window are excluded
+# SCRUM-99 (outside 1-55): date and time: venues booked or blocked in the window are excluded
 # ---------------------------------------------------------------------------
 
 
@@ -397,11 +408,11 @@ def test_ac3_a_booking_of_another_venue_changes_nothing(client, db_session):
 @pytest.mark.parametrize(
     "params,case",
     [
-        ({"start": "2026-11-02T17:00:00Z", "end": "2026-11-02T09:00:00Z"}, "end before start"),
-        ({"start": "2026-11-02T09:00:00Z", "end": "2026-11-02T09:00:00Z"}, "end equals start"),
-        ({"start": "2026-11-02T09:00:00Z"}, "start without an end"),
-        ({"end": "2026-11-02T17:00:00Z"}, "end without a start"),
-        ({"start": "not-a-date", "end": "2026-11-02T17:00:00Z"}, "unreadable date"),
+        ({"start": "2099-11-02T17:00:00Z", "end": "2099-11-02T09:00:00Z"}, "end before start"),
+        ({"start": "2099-11-02T09:00:00Z", "end": "2099-11-02T09:00:00Z"}, "end equals start"),
+        ({"start": "2099-11-02T09:00:00Z"}, "start without an end"),
+        ({"end": "2099-11-02T17:00:00Z"}, "end without a start"),
+        ({"start": "not-a-date", "end": "2099-11-02T17:00:00Z"}, "unreadable date"),
     ],
 )
 def test_ac3_an_invalid_time_window_is_rejected(client, db_session, params, case):
@@ -415,7 +426,7 @@ def test_ac3_an_invalid_time_window_is_rejected(client, db_session, params, case
 
 
 # ---------------------------------------------------------------------------
-# VS AC3 -- expected attendance: venues below that capacity are excluded
+# SCRUM-35 AC3 -- expected attendance: venues below that capacity are excluded
 # ---------------------------------------------------------------------------
 
 
@@ -445,7 +456,7 @@ def test_ac3_an_attendance_that_is_not_a_positive_number_is_rejected(client, db_
 
 
 # ---------------------------------------------------------------------------
-# VS AC4 -- each result shows name, location, capacity and facilities
+# SCRUM-35 AC4 -- each result shows name, location, capacity and facilities
 # ---------------------------------------------------------------------------
 
 

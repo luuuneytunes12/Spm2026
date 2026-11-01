@@ -13,8 +13,8 @@ from app.models.notifications import Notification
 from app.models.venues import Venue, VenueBooking
 from tests.integration.test_coordinator_concurrency_postgres import THREADS, race
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 
 
 def test_ac1_a_double_clicked_submit_tells_each_safety_officer_once(make_client, db, make_user):

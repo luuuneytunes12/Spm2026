@@ -1,4 +1,10 @@
-"""Unit tests for rejecting an event request with a recorded reason."""
+"""SCRUM-26: event rejection, reason, audit, notification and access tests.
+
+Positive: an assigned coordinator rejects with a reason and the organiser
+can read the outcome. Negative: blank reasons and unauthorised decisions are
+refused without changing the event. These are API tests using a test database,
+not browser tests of the rejection form.
+"""
 
 import pytest
 
@@ -16,6 +22,7 @@ pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 
 def test_rejection_requires_a_non_blank_reason(client, db_session):
+    """SCRUM-26 AC01: whitespace alone cannot be a rejection reason."""
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
 
     response = client.post(
@@ -29,6 +36,7 @@ def test_rejection_requires_a_non_blank_reason(client, db_session):
 def test_rejection_records_reason_notifies_organiser_and_logs_coordinator(
     client, db_session
 ):
+    """SCRUM-26 AC02–AC04: save the decision, notify and audit the reason."""
     organiser, organiser_headers, coordinator, coordinator_headers, event_id = review_setup(
         client, db_session
     )
@@ -66,6 +74,7 @@ def test_rejection_records_reason_notifies_organiser_and_logs_coordinator(
 
 
 def test_only_the_assigned_coordinator_can_reject(client, db_session):
+    """Another coordinator cannot reject this coordinator's assigned event."""
     _, _, _, _, event_id = review_setup(client, db_session)
     _, other_headers = user(
         client,
@@ -84,6 +93,7 @@ def test_only_the_assigned_coordinator_can_reject(client, db_session):
 
 
 def test_coordinator_lead_is_view_only_for_event_rejection(client, db_session):
+    """A lead can oversee review but cannot make the coordinator's decision."""
     _, _, _, _, event_id = review_setup(client, db_session)
     _, lead_headers = user(
         client,
@@ -104,6 +114,7 @@ def test_coordinator_lead_is_view_only_for_event_rejection(client, db_session):
 
 
 def test_event_rejection_releases_all_of_its_live_venue_bookings(client, db_session):
+    """Rejecting an event releases its live bookings so venues can be reused."""
     _, _, coordinator, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     first_venue = _venue(db_session, "Main Hall")
@@ -142,6 +153,7 @@ def test_event_rejection_releases_all_of_its_live_venue_bookings(client, db_sess
 
 
 def test_organiser_cannot_read_another_organisers_rejection_activity(client, db_session):
+    """Another organiser cannot read the rejected event's private activity."""
     _, _, _, _, event_id = review_setup(client, db_session)
     _, other_headers = user(
         client, db_session, Role.ORGANISER, "other-organiser@example.com", "Other Organiser"

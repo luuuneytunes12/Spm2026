@@ -92,7 +92,7 @@ HOW = pytest.mark.parametrize("how", ["cancelled", "completed"])
 def test_ac1_approved_booking_is_released_and_venue_free_including_buffers(client, db_session, how):
     w = _world(client, db_session)
     # 12:45 is inside the hall's 45-minute turnaround, so it reads as occupied now.
-    window = {"start": "2026-11-02T13:00:00Z", "end": "2026-11-02T13:30:00Z"}
+    window = {"start": "2099-11-02T13:00:00Z", "end": "2099-11-02T13:30:00Z"}
     assert "Main Hall" not in _names(client.get("/venues", params=window, headers=w["coord_h"]))
 
     _finish(client, db_session, w, how)

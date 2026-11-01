@@ -24,8 +24,8 @@ COMPLETE = {
     "name": "Regional Partner Conference",
     "purpose": "Annual partner briefing",
     "event_type": "conference",
-    "proposed_start": "2026-11-02T09:00:00Z",
-    "proposed_end": "2026-11-02T17:00:00Z",
+    "proposed_start": "2099-11-02T09:00:00Z",
+    "proposed_end": "2099-11-02T17:00:00Z",
     "expected_attendance": 120,
     "venue_requirements": "Main hall, stage, podium",
     "accessibility_needs": "Step-free access, hearing loop",
@@ -540,3 +540,20 @@ def test_an_attendee_cannot_read_the_picker_options(client, db_session):
     _, headers = _user(client, db_session, Role.ATTENDEE, "attendee@example.com")
 
     assert client.get("/equipment/options", headers=headers).status_code == 403
+
+
+def test_scrum21_ac1_disputed_registration_need_does_not_block_submit(client, db_session):
+    """SCRUM-21 AC1 -- DISPUTED, not evidence that Jira's wording is met.
+
+    Jira lists "equipment requirements" and "registration needs" as mandatory.
+    The code deliberately does not: equipment is optional (see the test above),
+    and `registration_enabled` is a non-null boolean that defaults to false, so
+    "no registration" is always a complete answer. This pins the CURRENT rule so
+    the disagreement is visible; the product owner has to decide which is right.
+    """
+    _, headers = _organiser(client, db_session)
+    event_id = _create(client, headers, **COMPLETE)["id"]
+
+    res = client.post(f"/events/{event_id}/submit", headers=headers)
+
+    assert res.status_code == 200, res.text

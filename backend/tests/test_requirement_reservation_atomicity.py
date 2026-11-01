@@ -38,8 +38,8 @@ from app.models.user import User
 from app.routers.equipment_reservations import reserve_equipment  # Ercong's, unchanged
 from app.schemas.equipment_reservation import EquipmentReservationCreate
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 
 
 @pytest.fixture()

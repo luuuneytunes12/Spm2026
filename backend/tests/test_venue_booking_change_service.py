@@ -46,8 +46,8 @@ from app.models.user import User
 from app.models.venues import Venue, VenueBooking
 from app.routers.venue_bookings import BOOKABLE_EVENT_STATUSES
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 _n = itertools.count()
 
 

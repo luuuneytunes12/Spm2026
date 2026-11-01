@@ -56,7 +56,7 @@ def test_scrum20_ac1_ac2_a_partial_draft_round_trips_every_field_across_sessions
         "name": "Partner Day",
         "purpose": "Annual partner briefing",
         "event_type": "conference",
-        "proposed_start": "2026-11-02T09:00:00+08:00",  # a non-UTC offset on purpose
+        "proposed_start": "2099-11-02T09:00:00+08:00",  # a non-UTC offset on purpose
         "expected_attendance": 80,
         "programme": "09:00 welcome; 10:00 keynote",
         "room_layout_preference": "theatre",
@@ -77,7 +77,7 @@ def test_scrum20_ac1_ac2_a_partial_draft_round_trips_every_field_across_sessions
                   "room_layout_preference", "accessibility_needs", "equipment_requirements",
                   "special_arrangements", "registration_enabled"):
         assert reopened[field] == partial[field], field
-    assert reopened["proposed_start"].startswith("2026-11-02T01:00")  # stored as one instant
+    assert reopened["proposed_start"].startswith("2099-11-02T01:00")  # stored as one instant
     assert reopened["proposed_end"] is None and reopened["venue_requirements"] is None
 
     # Editing the draft later keeps what was not touched.
@@ -301,8 +301,8 @@ def test_scrum26_rejecting_releases_the_events_live_venue_bookings(client, make_
         db.add(venue)
         db.flush()
         db.add(VenueBooking(event_id=event_id, venue_id=venue.id, requested_by=coordinator.id,
-                            start_time="2026-11-02T09:00:00Z", end_time="2026-11-02T17:00:00Z", status=status,
-                            expires_at="2026-10-30T00:00:00Z" if status == BookingStatus.tentative_hold else None))
+                            start_time="2099-11-02T09:00:00Z", end_time="2099-11-02T17:00:00Z", status=status,
+                            expires_at="2099-10-30T00:00:00Z" if status == BookingStatus.tentative_hold else None))
     db.commit()
 
     assert client.post(f"/events/{event_id}/reject", json={"reason": "No budget"}, headers=coord_h).status_code == 200
@@ -346,7 +346,7 @@ def test_scrum22_ac1_a_change_request_is_pending_in_jsonb_and_the_event_is_untou
     _o, org_h, _l, _lh, _c, coord_h, event_id = _world(client, make_user)
 
     res = _request_change(client, org_h, event_id,
-                          {"expected_attendance": 160, "proposed_start": "2026-11-02T08:00:00Z"})
+                          {"expected_attendance": 160, "proposed_start": "2099-11-02T08:00:00Z"})
 
     assert res.status_code == 201 and res.json()["status"] == "pending"
     db.expire_all()
@@ -393,7 +393,7 @@ def test_scrum22_ac4_an_important_change_lists_the_bookings_to_reconsider(client
     db.add(venue)
     db.commit()
     db.add(VenueBooking(event_id=event_id, venue_id=venue.id, requested_by=coordinator.id,
-                        start_time="2026-11-02T09:00:00Z", end_time="2026-11-02T17:00:00Z",
+                        start_time="2099-11-02T09:00:00Z", end_time="2099-11-02T17:00:00Z",
                         status=BookingStatus.approved))
     db.commit()
 
@@ -426,14 +426,12 @@ def test_scrum22_ac6_nobody_but_the_organiser_may_request_a_change(client, make_
     assert db.query(EventChangeRequest).count() == 0
 
 
-# Not strict: the bug only shows when the threads actually collide, which a
-# small CI runner does not always manage -- an XPASS there is luck, not a fix.
-@pytest.mark.xfail(strict=False, reason=(
-    "BUG: POST /events/{id}/change-requests reads the Event without a row lock, so "
-    "simultaneous requests all pass the 'already pending' check and several pending "
-    "change requests are stored. Fix: _get_own_event(..., lock=True) in request_event_changes."
-))
 def test_scrum22_a_double_clicked_change_request_is_recorded_once(make_client, client, make_user, db):
+    """SCRUM-22 AC1: simultaneous submissions create only one pending request.
+
+    Real PostgreSQL is necessary because SQLite does not enforce row locks.
+    All workers start together; one succeeds and the rest see the pending row.
+    """
     _o, org_h, _l, _lh, _c, _ch, event_id = _world(client, make_user)
 
     results = race(make_client, THREADS,

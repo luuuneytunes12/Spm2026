@@ -1,4 +1,4 @@
-"""Tests for the Attendee's notifications about events they registered for.
+"""SCRUM-55 - Attendee notifications about events they registered for.
 
     AC1  A confirmed Event's date, time or Venue changes (including a
          replacement Venue): each registered Attendee gets ONE notification
@@ -33,13 +33,13 @@ from tests.test_venue_replacement import _approve_replacement, _confirmed_flagge
 CHANGED = NotificationType.event_details_changed.value
 SAVED = NotificationType.registration_status_changed.value
 
-NEW_START = "2026-11-03T10:00:00Z"
-NEW_END = "2026-11-03T18:00:00Z"
+NEW_START = "2099-11-03T10:00:00Z"
+NEW_END = "2099-11-03T18:00:00Z"
 
 
 def _confirmed_event(client, db_session):
     """A confirmed Event open for registration, with its Organiser and
-    Coordinator. Starts 2 Nov 2026, 09:00-17:00 UTC."""
+    Coordinator. Starts 2 Nov 2099, 09:00-17:00 UTC."""
     _, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.safety_check_passed
@@ -87,7 +87,7 @@ def _inbox(client, headers, type):
     return [n["message"] for n in client.get("/notifications", headers=headers).json() if n["type"] == type]
 
 
-# --- AC1: one notice per save, giving the new date / time ------------------
+# --- SCRUM-55 AC1: one notice per save, giving the new date / time ------------------
 
 
 def test_ac1_a_new_date_and_time_in_one_save_gives_one_notice_with_both(client, db_session):
@@ -99,7 +99,7 @@ def test_ac1_a_new_date_and_time_in_one_save_gives_one_notice_with_both(client, 
 
     assert _inbox(client, amy_h, CHANGED) == [
         "'Regional Partner Conference', which you are registered for, has changed: "
-        "it now starts 3 Nov 2026, 10:00 UTC; it now ends 3 Nov 2026, 18:00 UTC."
+        "it now starts 3 Nov 2099, 10:00 UTC; it now ends 3 Nov 2099, 18:00 UTC."
     ]
 
 
@@ -108,10 +108,10 @@ def test_ac1_a_new_time_only_names_just_what_changed(client, db_session):
     amy, amy_h = _attendee(client, db_session, "amy")
     _register(client, w, amy_h)
 
-    _change(client, w, proposed_end="2026-11-02T19:00:00Z")
+    _change(client, w, proposed_end="2099-11-02T19:00:00Z")
 
     [message] = _inbox(client, amy_h, CHANGED)
-    assert message.endswith("has changed: it now ends 2 Nov 2026, 19:00 UTC.")
+    assert message.endswith("has changed: it now ends 2 Nov 2099, 19:00 UTC.")
     assert "starts" not in message
 
 
@@ -172,7 +172,7 @@ def test_ac1_the_same_date_and_time_again_is_not_a_change(client, db_session):
     amy, amy_h = _attendee(client, db_session, "amy")
     _register(client, w, amy_h)
 
-    _change(client, w, proposed_start="2026-11-02T09:00:00Z", proposed_end="2026-11-02T17:00:00Z")
+    _change(client, w, proposed_start="2099-11-02T09:00:00Z", proposed_end="2099-11-02T17:00:00Z")
 
     assert _inbox(client, amy_h, CHANGED) == []
 
@@ -213,7 +213,7 @@ def test_ac1_the_change_is_still_applied(client, db_session):
     assert db_session.get(Event, w["event_id"]).proposed_start.hour == 10
 
 
-# --- AC1: the Coordinator editing the confirmed Event directly -------------
+# --- SCRUM-55 AC1: the Coordinator editing the confirmed Event directly -------------
 
 
 def _edit(client, w, **body):
@@ -232,7 +232,7 @@ def test_ac1_a_coordinator_edit_of_date_and_time_gives_one_notice_with_both(clie
 
     assert _inbox(client, amy_h, CHANGED) == [
         "'Regional Partner Conference', which you are registered for, has changed: "
-        "it now starts 3 Nov 2026, 10:00 UTC; it now ends 3 Nov 2026, 18:00 UTC."
+        "it now starts 3 Nov 2099, 10:00 UTC; it now ends 3 Nov 2099, 18:00 UTC."
     ]
 
 
@@ -241,10 +241,10 @@ def test_ac1_a_coordinator_edit_of_the_end_only_names_just_that(client, db_sessi
     amy, amy_h = _attendee(client, db_session, "amy")
     _register(client, w, amy_h)
 
-    _edit(client, w, proposed_end="2026-11-02T19:00:00Z")
+    _edit(client, w, proposed_end="2099-11-02T19:00:00Z")
 
     [message] = _inbox(client, amy_h, CHANGED)
-    assert message.endswith("has changed: it now ends 2 Nov 2026, 19:00 UTC.")
+    assert message.endswith("has changed: it now ends 2 Nov 2099, 19:00 UTC.")
 
 
 def test_ac1_a_coordinator_edit_not_touching_date_or_time_sends_nothing(client, db_session):
@@ -262,7 +262,7 @@ def test_ac1_a_coordinator_edit_to_the_same_date_and_time_sends_nothing(client, 
     amy, amy_h = _attendee(client, db_session, "amy")
     _register(client, w, amy_h)
 
-    _edit(client, w, proposed_start="2026-11-02T09:00:00Z", proposed_end="2026-11-02T17:00:00Z")
+    _edit(client, w, proposed_start="2099-11-02T09:00:00Z", proposed_end="2099-11-02T17:00:00Z")
 
     assert _inbox(client, amy_h, CHANGED) == []
 
@@ -314,7 +314,7 @@ def test_ac2_a_withdrawn_attendee_is_not_told_about_a_coordinator_edit(client, d
     assert _notes(db_session, ben.id, CHANGED) == []
 
 
-# --- AC2 / AC4: withdrawn or unregistered -> nothing -----------------------
+# --- SCRUM-55 AC2 / AC4: withdrawn or unregistered -> nothing -----------------------
 
 
 def test_ac2_a_withdrawn_attendee_is_not_told_about_the_change(client, db_session):
@@ -378,7 +378,7 @@ def test_ac4_nobody_but_registered_attendees_gets_the_change_notice(client, db_s
     assert {n.user_id for n in db_session.query(Notification).filter_by(type=CHANGED)} == {amy.id}
 
 
-# --- AC3: Registered / Withdrawn is confirmed ------------------------------
+# --- SCRUM-55 AC3: Registered / Withdrawn is confirmed ------------------------------
 
 
 def test_ac3_registering_confirms_the_event_and_registered(client, db_session):
@@ -389,7 +389,7 @@ def test_ac3_registering_confirms_the_event_and_registered(client, db_session):
 
     notices = [n for n in client.get("/notifications", headers=amy_h).json() if n["type"] == SAVED]
     assert [n["message"] for n in notices] == [
-        "Your registration for 'Regional Partner Conference' on 2 Nov 2026, 09:00 UTC is now Registered."
+        "Your registration for 'Regional Partner Conference' on 2 Nov 2099, 09:00 UTC is now Registered."
     ]
     assert notices[0]["event_id"] == w["event_id"]
 
@@ -402,7 +402,7 @@ def test_ac3_withdrawing_confirms_the_event_and_withdrawn(client, db_session):
     assert _withdraw(client, w, amy_h).status_code == 200
 
     assert _notes(db_session, amy.id, SAVED)[-1] == (
-        "Your registration for 'Regional Partner Conference' on 2 Nov 2026, 09:00 UTC is now Withdrawn."
+        "Your registration for 'Regional Partner Conference' on 2 Nov 2099, 09:00 UTC is now Withdrawn."
     )
 
 

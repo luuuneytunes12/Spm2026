@@ -1,4 +1,13 @@
-"""Unit tests for suitability checks scoped to an individual venue booking."""
+"""SCRUM-104 AC1–AC2: unit test of per-booking suitability decisions.
+
+The coordinator must see an independent result for each venue booking, based
+on that booking's attendance, layout, accessibility and facilities. A failed
+booking must show its unmet requirements without affecting another booking.
+
+This file exercises the suitability calculation with small in-memory objects;
+it does not connect to a database or make HTTP requests. The companion
+test_venue_suitability.py checks the API, access rules and recheck workflow.
+"""
 
 from types import SimpleNamespace
 
@@ -6,6 +15,7 @@ from app.routers.venues import _booking_suitability_checks
 
 
 def _venue(*, capacity: int, layouts: list[str], accessibility: list[str], facilities: list[str]):
+    """Build the venue attributes read by the calculation, without database setup."""
     return SimpleNamespace(
         capacity=capacity,
         supported_layouts=layouts,
@@ -16,6 +26,7 @@ def _venue(*, capacity: int, layouts: list[str], accessibility: list[str], facil
 
 
 def _booking(venue, *, attendance: int, layout: str, accessibility: str, facilities: str):
+    """Build one booking with its own venue and requirements for the calculation."""
     return SimpleNamespace(
         venue=venue,
         start_time=None,
@@ -28,6 +39,12 @@ def _booking(venue, *, attendance: int, layout: str, accessibility: str, facilit
 
 
 def test_suitability_checks_each_booking_against_its_own_attendance_and_needs():
+    """SCRUM-104 AC1–AC2: one booking fails capacity, the other still passes.
+
+    The event's general requirements intentionally differ from both bookings:
+    comparing against those defaults instead would give misleading results.
+    The failed booking must name the concrete capacity and attendance values.
+    """
     event = SimpleNamespace(
         expected_attendance=100,
         room_layout_preference="Theatre",

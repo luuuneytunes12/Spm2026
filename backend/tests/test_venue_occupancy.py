@@ -6,7 +6,7 @@ from app.domain.venue_occupancy import occupied_window
 
 
 def _t(h, m=0):
-    return datetime(2026, 11, 2, h, m, tzinfo=timezone.utc)
+    return datetime(2099, 11, 2, h, m, tzinfo=timezone.utc)
 
 
 def test_ac5_event_10_to_12_with_30_setup_and_45_turnaround_occupies_0930_to_1245():
@@ -21,7 +21,7 @@ def test_ac3_not_set_is_treated_as_zero():
 
 
 def test_naive_datetimes_are_read_as_utc():
-    w = occupied_window(datetime(2026, 11, 2, 10), datetime(2026, 11, 2, 12), 30, 0)
+    w = occupied_window(datetime(2099, 11, 2, 10), datetime(2099, 11, 2, 12), 30, 0)
     assert w.start == _t(9, 30)
 
 

@@ -25,6 +25,7 @@ import { My } from './My'
 type Session = { id: number; name: string; role: Role } | null
 let session: Session
 
+/** Render the real login and authentication redirect with an isolated, mocked session. */
 function setUp(loginImpl: () => Promise<void>, startAt = '/login') {
   vi.mocked(useAuth).mockImplementation(
     () =>
@@ -43,6 +44,11 @@ function setUp(loginImpl: () => Promise<void>, startAt = '/login') {
           <Route path="/" element={<My />} />
           <Route path="/organiser" element={<h1>Event Organiser landing page</h1>} />
           <Route path="/coordinator" element={<h1>Event Coordinator landing page</h1>} />
+          <Route path="/venue-staff" element={<h1>Venue Staff landing page</h1>} />
+          <Route path="/tech-support" element={<h1>Technical Support landing page</h1>} />
+          <Route path="/attendee" element={<h1>Attendee landing page</h1>} />
+          <Route path="/coordinator-lead" element={<h1>Coordinator Lead landing page</h1>} />
+          <Route path="/safety-checks" element={<h1>Safety checks page</h1>} />
           <Route path="/profile" element={<h1>Profile</h1>} />
         </Route>
       </Routes>
@@ -50,6 +56,7 @@ function setUp(loginImpl: () => Promise<void>, startAt = '/login') {
   )
 }
 
+/** Enter test credentials and submit the actual login form. */
 async function signIn() {
   await userEvent.type(screen.getByLabelText('Email'), 'someone@cs.local')
   await userEvent.type(screen.getByLabelText('Password'), 'a-password')
@@ -78,6 +85,20 @@ describe('logging in', () => {
     expect(await screen.findByRole('heading', { name: 'Event Coordinator landing page' })).toBeInTheDocument()
   })
 
+  // SCRUM-14: each valid role must reach its own home, not a generic page.
+  // The session is the controlled boundary; these tests exercise real routing.
+  it.each([
+    [Role.VENUE_STAFF, 'Venue Staff landing page'],
+    [Role.TECH_SUPPORT, 'Technical Support landing page'],
+    [Role.ATTENDEE, 'Attendee landing page'],
+    [Role.COORDINATOR_LEAD, 'Coordinator Lead landing page'],
+    [Role.SAFETY_OFFICER, 'Safety checks page'],
+  ])('SCRUM-14: %s is redirected to its role home after login', async (role, heading) => {
+    setUp(async () => { session = { id: 3, name: 'Test User', role } })
+    await signIn()
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+  })
+
   it('SCRUM-14: wrong details do not sign in, and the error does not say whether the account exists', async () => {
     setUp(async () => {
       throw new ApiError(401, 'Incorrect email or password')
@@ -93,4 +114,12 @@ describe('logging in', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument())
     expect(screen.queryByRole('heading', { name: /landing page/ })).not.toBeInTheDocument()
   })
+})
+
+describe('SCRUM-14 AC4 wording (not yet built)', () => {
+  // Jira AC4 says a visitor who is not logged in is "told to log in first".
+  // RequireAuth redirects silently to /login, which the test above proves;
+  // no message is shown. Recorded as a todo, not a pass, until someone decides
+  // whether the redirect alone is enough.
+  it.todo('SCRUM-14 AC4: a visitor sent to log in is told they must log in first')
 })
