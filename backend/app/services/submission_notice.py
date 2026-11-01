@@ -13,7 +13,7 @@ from app.core.roles import Role
 from app.models.enums import NotificationType
 from app.models.events import Event
 from app.models.user import User
-from app.services.notifications import notify
+from app.services.notifications import format_time, notify
 
 
 class EventNotice:
@@ -43,7 +43,7 @@ class SubmissionNotice(EventNotice):
     def message(self, event: Event) -> str:
         # Written into the text itself so the line still reads right if the
         # event is later renamed or the Organiser changes their name.
-        when = event.submitted_at.strftime("%d %b %Y, %H:%M UTC")
+        when = format_time(event.submitted_at)
         return (
             f"New Event Request '{event.name or 'Untitled event'}' from "
             f"{event.organiser.name}, submitted {when}."

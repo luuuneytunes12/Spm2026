@@ -30,6 +30,7 @@ from app.models.events import Event, EventStatusHistory
 from app.models.notifications import Notification
 from app.models.venues import VenueBooking
 from app.services.hold_sweeper import HoldSweeper
+from app.services.notifications import format_time
 from tests.test_venue_booking_decision import _setup
 from tests.test_venue_search import _someone
 
@@ -90,7 +91,7 @@ def test_ac1_the_coordinator_is_reminded_once_24_hours_before_expiry(client, db_
     assert _sweep(db_session, expiry - timedelta(hours=2)) == (0, 0)  # once only
 
     [reminder] = _reminders(db_session, s)
-    for part in ("Marina Hall", "expires at", f"{expiry:%d %b %Y %H:%M} UTC", f"Required action: {ACTION}"):
+    for part in ("Marina Hall", "expires at", format_time(expiry), f"Required action: {ACTION}"):
         assert part in reminder
     assert _status(db_session, s) == BookingStatus.tentative_hold  # still held
 

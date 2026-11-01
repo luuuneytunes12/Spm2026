@@ -175,7 +175,7 @@ def test_scrum101_ac1_each_lead_is_told_once_with_name_organiser_and_time(client
     [note] = [n for n in client.get("/notifications", headers=lead_a_h).json() if n["type"] == "event_submitted"]
     assert note["event_id"] == event_id
     assert COMPLETE_EVENT["name"] in note["message"] and "Olivia Organiser" in note["message"]
-    assert "UTC" in note["message"]
+    assert "SGT" in note["message"]
     recipients = sorted(n.user_id for n in db.query(Notification).filter_by(type="event_submitted"))
     assert recipients == sorted([lead_a.id, lead_b.id])
     assert client.get("/notifications", headers=coord_h).json() == []

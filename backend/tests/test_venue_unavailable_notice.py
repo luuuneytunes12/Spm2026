@@ -195,9 +195,9 @@ def test_ac3_the_notification_names_event_venue_period_reason_and_action(client,
     for part in (
         "Marina Hall",
         "'Alumni Gala'",
-        "02 Nov 2030 12:30 to 02 Nov 2030 14:00",  # the unavailable period
+        "2 Nov 2030, 20:30 SGT to 2 Nov 2030, 22:00 SGT",  # the unavailable period
         "Safety concern: Ceiling leak",  # the reason
-        f"your {what} for 'Alumni Gala' from 02 Nov 2030 12:30 to 02 Nov 2030 12:45 UTC",  # affected period
+        f"your {what} for 'Alumni Gala' from 2 Nov 2030, 20:30 SGT to 2 Nov 2030, 20:45 SGT",  # affected period
         "Venue Unavailable - Action Required",
         "alternative arrangements are required",
         "has not been cancelled",

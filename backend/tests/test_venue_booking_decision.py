@@ -11,10 +11,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.services.notifications import format_time
+
 from app.core.roles import Role
 from app.models.enums import BookingStatus, EventStatus, NotificationType
 from app.models.events import Event
-from app.models.notifications import Notification
 from app.models.notifications import Notification
 from app.models.venues import VenueBooking, VenueUnavailability
 from tests.event_review_test_helpers import review_setup, submitted_event, user
@@ -126,7 +127,7 @@ def test_ac1_venue_staff_can_place_an_expiring_hold_and_notify_the_coordinator(
         .one()
     )
     assert notification.user_id == db_session.get(Event, s["event_id"]).coordinator_id
-    assert expiry.isoformat() in notification.message
+    assert format_time(expiry) in notification.message
 
 
 def test_expired_hold_is_removed_from_staff_queue_and_notified(client, db_session):

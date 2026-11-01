@@ -43,7 +43,7 @@ test('TC-LN-1e: a submitted request appears in the Lead\'s Notifications with na
   const row = lead.locator('.notif-row').filter({ hasText: 'Partner Summit' })
   await expect(row).toBeVisible()
   await expect(row).toContainText('Olivia Organiser')
-  await expect(row).toContainText(/submitted \d{2} \w{3} \d{4}, \d{2}:\d{2} UTC/)
+  await expect(row).toContainText(/submitted \d{1,2} \w{3} \d{4}, \d{2}:\d{2} SGT/)
   await expect(row.getByRole('link', { name: 'View event' })).toHaveAttribute('href', /\/coordinator-lead\/queue\/\d+/)
 })
 

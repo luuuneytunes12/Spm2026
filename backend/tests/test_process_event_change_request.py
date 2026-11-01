@@ -38,7 +38,7 @@ from app.models.equipment import (
 )
 from app.models.events import Event, EventChangeRequest, EventStatusHistory
 from app.models.notifications import Notification
-from app.models.venues import Venue, VenueBooking
+from app.models.venues import Venue, VenueBooking, VenueUnavailability
 from event_review_test_helpers import submitted_event, user
 
 
@@ -438,6 +438,15 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
             status=BookingStatus.approved,
         )
     )
+    db_session.add(
+        VenueUnavailability(
+            venue_id=venue.id,
+            start_time=datetime(2026, 11, 3, 11, tzinfo=timezone.utc),
+            end_time=datetime(2026, 11, 3, 11, 45, tzinfo=timezone.utc),
+            reason_category="Maintenance",
+            created_by=coordinator.id,
+        )
+    )
     requirement = CoordinatorEquipmentRequirement(
         event_id=event_id,
         category="Projection",
@@ -480,7 +489,13 @@ def test_ac2_ac6_ac8_ac9_major_change_preview_rechecks_each_venue_and_setup_turn
     assert venue_impact["id"] == own_booking.id
     assert venue_impact["suitable"] is False
     assert any("Insufficient capacity" in item for item in venue_impact["unmet_requirements"])
-    assert any("setup and turnaround included" in item for item in venue_impact["conflicts"])
+    # 11:30-13:45 UTC occupied, shown in Singapore time.
+    assert venue_impact["conflicts"] == [
+        "Conflicts with another venue booking during 3 Nov 2026, 21:30-21:45 SGT "
+        "(setup and turnaround included).",
+        "Conflicts with a venue unavailability period during 3 Nov 2026, 19:30-19:45 SGT "
+        "(setup and turnaround included).",
+    ]
     assert [item["id"] for item in request["equipment_requirements_to_reconsider"]] == [
         requirement.id
     ]

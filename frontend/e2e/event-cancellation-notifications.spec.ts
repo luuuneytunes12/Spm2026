@@ -155,7 +155,7 @@ test('TC-EC-4e: Venue Staff read the Event, Venue and date/time, and open the bo
   const vic = await openAs(browser, VIC)
   await vic.goto('/notifications')
   const row = notice(vic, "'Venue Summit' has been cancelled. Its booking of EC Auditorium")
-  await expect(row).toContainText(/\(\d{1,2} \w{3} \d{4}, 09:00-17:00 UTC\) is no longer needed\./)
+  await expect(row).toContainText(/\(\d{1,2} \w{3} \d{4} 17:00 - \d{1,2} \w{3} \d{4} 01:00 SGT\) is no longer needed\./)
   await row.getByRole('link', { name: 'View event' }).click()
   await expect(vic).toHaveURL(/\/venue-staff\/bookings$/)
 })

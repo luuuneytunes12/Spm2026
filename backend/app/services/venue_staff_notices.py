@@ -31,7 +31,7 @@ from app.models.enums import BookingStatus, NotificationType
 from app.models.events import Event
 from app.models.venues import Venue, VenueBooking
 from app.services.submission_notice import EventNotice
-from app.services.tech_support_notices import when
+from app.services.notifications import format_time_range
 
 
 def _name(event: Event) -> str:
@@ -58,7 +58,7 @@ class BookingRequestedNotice(VenueStaffNotice):
         b = self.booking
         text = (
             f"New venue booking request for '{_name(event)}': {b.venue.name}, "
-            f"{when(b.start_time, b.end_time)}."
+            f"{format_time_range(b.start_time, b.end_time)}."
         )
         if self.replaces is not None:
             text += f" It replaces {self.replaces.venue.name}, which became unavailable."
@@ -101,8 +101,8 @@ class ApprovedEventChangedNotice(VenueStaffNotice):
         moved = _differs(before.start, event.proposed_start) or _differs(before.end, event.proposed_end)
         if moved:
             changes.append(
-                f"it now runs {when(event.proposed_start, event.proposed_end)} "
-                f"(was {when(before.start, before.end)})"
+                f"it now runs {format_time_range(event.proposed_start, event.proposed_end)} "
+                f"(was {format_time_range(before.start, before.end)})"
             )
         if before.attendance != event.expected_attendance:
             changes.append(

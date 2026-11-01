@@ -54,7 +54,7 @@ test('TC-TN-1e: a recorded requirement names the Event, equipment, quantity and 
   await tess.goto('/notifications')
   const row = notice(tess, "Equipment required for 'Required Summit'")
   await expect(row).toContainText(`2 x ${ITEM.category}. Notes: Front of hall`)
-  await expect(row).toContainText(/\d{1,2} \w{3} \d{4}, 09:00-17:00 UTC/)
+  await expect(row).toContainText(/\d{1,2} \w{3} \d{4} 17:00 - \d{1,2} \w{3} \d{4} 01:00 SGT/)
   await row.getByRole('link', { name: 'View event' }).click()
   await expect(tess).toHaveURL(new RegExp(`/equipment-requirements/${eventId}$`))
 })
@@ -76,7 +76,7 @@ test('TC-TN-3e: a rescheduled Event gives the old and new date/time', async ({ b
   await call(request, 'post', `/events/change-requests/${change.id}/approve`, await as(request, COORD), {})
   const tess = await openAs(browser, TESS)
   await tess.goto('/notifications')
-  await expect(notice(tess, "'Moved Summit' has moved from")).toContainText(/from .+ UTC to .+ UTC/)
+  await expect(notice(tess, "'Moved Summit' has moved from")).toContainText(/from .+ SGT to .+ SGT/)
 })
 
 test('TC-TN-4e: every Technical Support Staff member is told, and nobody else', async ({ browser, request }) => {

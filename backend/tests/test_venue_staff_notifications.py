@@ -108,7 +108,7 @@ def test_ac1_ac2_a_booking_request_names_the_event_the_venue_and_the_time(client
     _request(client, db_session, w, "Marina Hall")
 
     expected = [
-        "New venue booking request for 'Regional Partner Conference': Marina Hall, 2 Nov 2026, 09:00-17:00 UTC."
+        "New venue booking request for 'Regional Partner Conference': Marina Hall, 2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT."
     ]
     assert _inbox(client, w["vera_h"], REQUESTED) == expected
     assert _inbox(client, w["vic_h"], REQUESTED) == expected
@@ -135,7 +135,7 @@ def test_ac1_ac2_a_replacement_request_names_the_venue_it_replaces(client, db_se
     assert res.status_code == 201, res.text
     [message] = _inbox(client, rw["staff_h"], REQUESTED)
     assert message.startswith("New venue booking request for ")
-    assert "Other Hall, 2 Nov 2030, 10:00-12:00 UTC." in message
+    assert "Other Hall, 2 Nov 2030, 18:00-20:00 SGT." in message
     assert message.endswith("It replaces Marina Hall, which became unavailable.")
 
 
@@ -182,7 +182,7 @@ def test_ac4_a_new_date_names_the_event_the_venue_and_the_old_and_new_time(clien
 
     assert _inbox(client, w["vera_h"], CHANGED) == [
         "'Regional Partner Conference', approved at Marina Hall, has changed: "
-        "it now runs 3 Nov 2026, 09:00-17:00 UTC (was 2 Nov 2026, 09:00-17:00 UTC)."
+        "it now runs 3 Nov 2026 17:00 - 4 Nov 2026 01:00 SGT (was 2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT)."
     ]
 
 
@@ -203,7 +203,7 @@ def test_ac4_date_and_attendance_in_one_save_give_one_notice_with_both(client, d
     _edit(client, w, proposed_end="2026-11-02T19:00:00Z", expected_attendance=150)
 
     [message] = _inbox(client, w["vera_h"], CHANGED)
-    assert "it now runs 2 Nov 2026, 09:00-19:00 UTC" in message
+    assert "it now runs 2 Nov 2026 17:00 - 3 Nov 2026 03:00 SGT" in message
     assert "expected attendance is now 150 (was 120)" in message
 
 

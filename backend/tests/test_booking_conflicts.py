@@ -102,7 +102,7 @@ def test_ac1_approve_409_names_the_conflict_and_changes_nothing(client, db_sessi
     assert res.status_code == 409
     detail = res.json()["detail"]
     assert "already booked" in detail and "Alumni Gala" in detail
-    assert "2026-11-02 15:00 to 2026-11-02 17:00" in detail
+    assert "2 Nov 2026 23:00 - 3 Nov 2026 01:00 SGT" in detail
     db_session.expire_all()
     assert db_session.get(VenueBooking, s["booking_id"]).status == BookingStatus.pending
 

@@ -33,7 +33,7 @@ from app.schemas.venue_booking import (
 )
 from app.routers.venues import expire_tentative_holds
 from app.services.attendee_notices import CONFIRMED, EventChangedNotice
-from app.services.notifications import notify
+from app.services.notifications import format_time, format_time_range, notify
 from app.services.coordinator_notices import CoordinatorVenueDecisionNotice
 from app.services.organiser_notices import VenueBookingDecisionNotice
 from app.services.venue_staff_notices import BookingRequestedNotice
@@ -402,7 +402,7 @@ def create_tentative_hold(
             from_status=booking.event.status,
             to_status=booking.event.status,
             note=(
-                f"Tentative hold placed on '{booking.venue.name}' until {expires_at.isoformat()}. "
+                f"Tentative hold placed on '{booking.venue.name}' until {format_time(expires_at)}. "
                 f"Required action: {body.required_action}"
             ),
         )
@@ -415,7 +415,7 @@ def create_tentative_hold(
             type=NotificationType.venue_hold_expiring,
             message=(
                 f"The tentative hold for {booking.venue.name} will expire "
-                f"at {expires_at.isoformat()}. Required action: {body.required_action}"
+                f"at {format_time(expires_at)}. Required action: {body.required_action}"
             ),
             event_id=booking.event_id,
         )
@@ -859,8 +859,7 @@ def approve_venue_booking(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "The venue is already booked for another event at that time: "
-                f"{first.event_name}, {first.overlap_start:%Y-%m-%d %H:%M} to "
-                f"{first.overlap_end:%Y-%m-%d %H:%M} UTC."
+                f"{first.event_name}, {format_time_range(first.overlap_start, first.overlap_end)}."
             ),
         )
     # Setup and turnaround count (SCRUM-94): a booking whose occupied window

@@ -19,20 +19,20 @@ from datetime import datetime, timezone
 import pytest
 
 from app.core.roles import Role
-from app.models.enums import EquipmentStatus, EventStatus, NotificationType
+from app.models.enums import EquipmentStatus, NotificationType
 from app.models.equipment import Equipment
 from app.models.events import Event
 from app.models.notifications import Notification
 from app.schemas.event import EventIn
 from app.services.clarifications import reply_to_clarification
 from app.services.submission_notice import EventNotice
+from app.services.notifications import format_time_range
 from app.services.tech_support_notices import (
     EquipmentRequiredNotice,
     EquipmentRequirementChangedNotice,
     EquipmentRequirementRemovedNotice,
     EventRescheduledNotice,
     TechSupportNotice,
-    when,
 )
 from tests.test_equipment_requirement_fulfillment import _reserved
 from tests.test_equipment_requirements import _added, _equipment, _organiser_line, _user, _world
@@ -77,7 +77,7 @@ def test_ac1_recording_a_requirement_notifies_technical_support_with_the_details
     [notice] = _inbox(client, w.tech_h, REQUIRED)
     assert notice["event_id"] == w.event.id
     assert notice["message"] == (
-        "Equipment required for 'Regional Partner Conference' (2 Nov 2026, 09:00-17:00 UTC): "
+        "Equipment required for 'Regional Partner Conference' (2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT): "
         "6 x Audio. Notes: Wireless, two bands"
     )
 
@@ -125,7 +125,7 @@ def test_ac2_changing_the_quantity_says_from_what_to_what(client, db_session):
     _edit(client, w, rid, quantity_needed=8)
     [notice] = _inbox(client, w.tech_h, CHANGED)
     assert notice["message"] == (
-        "Equipment requirement changed for 'Regional Partner Conference' (2 Nov 2026, 09:00-17:00 UTC): "
+        "Equipment requirement changed for 'Regional Partner Conference' (2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT): "
         "Audio - quantity 6 -> 8."
     )
 
@@ -169,7 +169,7 @@ def test_ac2_removing_a_requirement_says_what_is_no_longer_needed(client, db_ses
     assert client.delete(f"/equipment-requirements/{rid}", headers=w.headers).status_code == 204
     [notice] = _inbox(client, w.tech_h, REMOVED)
     assert notice["message"] == (
-        "Equipment requirement removed for 'Regional Partner Conference' (2 Nov 2026, 09:00-17:00 UTC): "
+        "Equipment requirement removed for 'Regional Partner Conference' (2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT): "
         "2 x Projection is no longer needed."
     )
     assert len(_inbox(client, w.tech2_h, REMOVED)) == 1
@@ -223,8 +223,8 @@ def test_ac3_moving_an_event_with_a_requirement_gives_the_old_and_new_date_and_t
 
     [notice] = _inbox(client, w.tech_h, MOVED)
     assert notice["message"] == (
-        "'Regional Partner Conference' has moved from 2 Nov 2026, 09:00-17:00 UTC to "
-        "9 Nov 2026, 13:00-18:00 UTC. Check its equipment requirements and reservations "
+        "'Regional Partner Conference' has moved from 2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT to "
+        "9 Nov 2026 21:00 - 10 Nov 2026 02:00 SGT. Check its equipment requirements and reservations "
         "for the new date and time."
     )
     assert len(_inbox(client, w.tech2_h, MOVED)) == 1
@@ -244,7 +244,7 @@ def test_ac3_only_the_time_changing_is_a_move(client, db_session):
     _added(client, w.headers, w.event.id)
     _move(client, w, START, datetime(2026, 11, 2, 19, tzinfo=timezone.utc))
     [notice] = _inbox(client, w.tech_h, MOVED)
-    assert "from 2 Nov 2026, 09:00-17:00 UTC to 2 Nov 2026, 09:00-19:00 UTC" in notice["message"]
+    assert "from 2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT to 2 Nov 2026 17:00 - 3 Nov 2026 03:00 SGT" in notice["message"]
 
 
 def test_ac3_negative_an_event_with_no_equipment_tells_no_one(client, db_session):
@@ -287,7 +287,7 @@ def test_ac3_a_move_in_an_organisers_clarification_reply_is_covered_too(client, 
     )
     db_session.commit()
     [notice] = _inbox(client, w.tech_h, MOVED)
-    assert "to 9 Nov 2026, 13:00-18:00 UTC" in notice["message"]
+    assert "to 9 Nov 2026 21:00 - 10 Nov 2026 02:00 SGT" in notice["message"]
 
 
 # --- OOP and formatting ---------------------------------------------------------
@@ -299,7 +299,7 @@ def test_every_notice_extends_the_technical_support_base():
         assert issubclass(cls, TechSupportNotice)
 
 
-def test_when_reads_a_day_a_span_and_no_date():
-    assert when(START, END) == "2 Nov 2026, 09:00-17:00 UTC"
-    assert when(START, datetime(2026, 11, 3, 2, tzinfo=timezone.utc)) == "2 Nov 2026 09:00 - 3 Nov 2026 02:00 UTC"
-    assert when(None, None) == "no date set"
+def test_format_time_range_reads_a_day_a_span_and_no_date():
+    assert format_time_range(START, END) == "2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT"
+    assert format_time_range(START, datetime(2026, 11, 3, 2, tzinfo=timezone.utc)) == "2 Nov 2026 17:00 - 3 Nov 2026 10:00 SGT"
+    assert format_time_range(None, None) == "no date set"

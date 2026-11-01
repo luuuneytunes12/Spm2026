@@ -64,7 +64,7 @@ test('TC-AN-1e: registering confirms the Event and "Registered", and opens the E
   const amy = await openAs(browser, AMY)
   await amy.goto('/notifications')
   const row = notice(amy, "Your registration for 'Registered Summit' on")
-  await expect(row).toContainText(/09:00 UTC is now Registered\./)
+  await expect(row).toContainText(/17:00 SGT is now Registered\./)
   await row.getByRole('link', { name: 'View event' }).click()
   await expect(amy).toHaveURL(new RegExp(`/attendee/events/${eventId}$`))
 })
@@ -88,7 +88,7 @@ test('TC-AN-3e: a new date on the confirmed Event gives the new date/time', asyn
   await amy.goto('/notifications')
   await expect(
     notice(amy, "'Moved Summit', which you are registered for, has changed: it now starts"),
-  ).toContainText(/it now starts .* 09:00 UTC; it now ends .* 17:00 UTC\./)
+  ).toContainText(/it now starts .* 17:00 SGT; it now ends .* 01:00 SGT\./)
 })
 
 test('TC-AN-4e: an Attendee who withdrew is not told about the change', async ({ browser, request }) => {

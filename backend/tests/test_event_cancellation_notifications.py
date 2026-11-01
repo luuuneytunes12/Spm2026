@@ -110,7 +110,7 @@ def test_ac2_venue_staff_get_the_event_the_venue_and_the_date_and_time(client, d
     _cancel(client, w)
 
     assert _inbox(client, w["vic_h"], CANCELLED) == [
-        f"'{EVENT}' has been cancelled. Its booking of Marina Hall (2 Nov 2026, 09:00-17:00 UTC) is no longer needed."
+        f"'{EVENT}' has been cancelled. Its booking of Marina Hall (2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT) is no longer needed."
     ]
 
 
@@ -121,7 +121,7 @@ def test_ac2_the_staff_member_who_decided_it_is_told_once_with_the_same_facts(cl
 
     assert _inbox(client, w["staff_h"], CANCELLED) == []
     assert _inbox(client, w["staff_h"], RELEASED) == [
-        f"The venue booking for Marina Hall on '{EVENT}' (2 Nov 2026, 09:00-17:00 UTC) "
+        f"The venue booking for Marina Hall on '{EVENT}' (2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT) "
         "was released because the event was cancelled."
     ]
 
