@@ -1,8 +1,14 @@
-"""Tests for SCRUM-60 "Set Up Notification Infrastructure".
+"""Unit tests for the in-app notification service and its live broker.
+
+SCRUM-60  Set Up Notification Infrastructure
 
     As a developer, I want an in-app notification service set up, so that the
     system can deliver role-appropriate notifications to users when triggered
     events occur.
+
+    AC1  a trigger creates a notification record for the correct recipient
+    AC2  the recipient sees it in their panel with its message and timestamp
+    AC3  a user whose role is not the target receives nothing
 
 The broker behind GET /notifications/stream is tested directly: TestClient
 cannot hold an endless server-sent stream open.
@@ -36,7 +42,7 @@ def _run(coroutine):
 # --- AC1: a trigger creates a record for the correct recipient ----------------
 
 
-def test_ac1_a_notification_is_recorded_for_its_recipient_only(client, db_session):
+def test_scrum60_ac1_a_notification_is_recorded_for_its_recipient_only(client, db_session):
     recipient, _ = user(client, db_session, Role.COORDINATOR, "one@example.com", "One")
     other, _ = user(client, db_session, Role.COORDINATOR, "two@example.com", "Two")
 
@@ -48,7 +54,7 @@ def test_ac1_a_notification_is_recorded_for_its_recipient_only(client, db_sessio
     assert db_session.query(Notification).filter_by(user_id=other.id).count() == 0
 
 
-def test_ac1_nothing_is_recorded_when_the_work_that_caused_it_rolls_back(client, db_session):
+def test_scrum60_ac1_nothing_is_recorded_when_the_work_that_caused_it_rolls_back(client, db_session):
     recipient, _ = user(client, db_session, Role.COORDINATOR, "one@example.com", "One")
 
     notify(db_session, user_id=recipient.id, type=NotificationType.event_assigned, message="Undone")
@@ -60,7 +66,7 @@ def test_ac1_nothing_is_recorded_when_the_work_that_caused_it_rolls_back(client,
 # --- AC2: the panel shows the message and timestamp ---------------------------
 
 
-def test_ac2_the_recipient_sees_the_message_and_timestamp(client, db_session):
+def test_scrum60_ac2_the_recipient_sees_the_message_and_timestamp(client, db_session):
     recipient, headers = user(client, db_session, Role.COORDINATOR, "one@example.com", "One")
     notify(db_session, user_id=recipient.id, type=NotificationType.event_assigned, message="Yours")
     db_session.commit()
@@ -75,7 +81,7 @@ def test_ac2_the_recipient_sees_the_message_and_timestamp(client, db_session):
 # --- AC3: a role that is not the target receives nothing ----------------------
 
 
-def test_ac3_a_trigger_for_one_role_reaches_no_other_role(client, db_session):
+def test_scrum60_ac3_a_trigger_for_one_role_reaches_no_other_role(client, db_session):
     _, organiser = user(client, db_session, Role.ORGANISER, "org@example.com", "Org")
     _, lead = user(client, db_session, Role.COORDINATOR_LEAD, "lead@example.com", "Lead")
     others = [
@@ -94,7 +100,7 @@ def test_ac3_a_trigger_for_one_role_reaches_no_other_role(client, db_session):
 # --- The live broker ----------------------------------------------------------
 
 
-def test_ac1_a_published_notification_reaches_the_users_open_stream():
+def test_scrum60_ac1_a_published_notification_reaches_the_users_open_stream():
     async def scenario():
         hub = NotificationBroker()
         async with hub.subscribe(7) as queue:
@@ -104,7 +110,7 @@ def test_ac1_a_published_notification_reaches_the_users_open_stream():
     assert _run(scenario()) == PAYLOAD
 
 
-def test_ac1_each_open_tab_gets_its_own_copy():
+def test_scrum60_ac1_each_open_tab_gets_its_own_copy():
     async def scenario():
         hub = NotificationBroker()
         async with hub.subscribe(7) as first, hub.subscribe(7) as second:
@@ -114,7 +120,7 @@ def test_ac1_each_open_tab_gets_its_own_copy():
     assert _run(scenario()) == (PAYLOAD, PAYLOAD)
 
 
-def test_ac3_another_users_stream_receives_nothing():
+def test_scrum60_ac3_another_users_stream_receives_nothing():
     async def scenario():
         hub = NotificationBroker()
         async with hub.subscribe(8) as queue:
@@ -125,11 +131,11 @@ def test_ac3_another_users_stream_receives_nothing():
     assert _run(scenario()) is True
 
 
-def test_publishing_to_a_user_with_no_open_stream_does_nothing():
+def test_scrum60_ac1_publishing_with_no_open_stream_does_nothing():
     NotificationBroker().publish(7, PAYLOAD)
 
 
-def test_closing_a_stream_unsubscribes_it():
+def test_scrum60_ac1_closing_a_stream_unsubscribes_it():
     async def scenario():
         hub = NotificationBroker()
         async with hub.subscribe(7), hub.subscribe(7):
@@ -139,7 +145,7 @@ def test_closing_a_stream_unsubscribes_it():
     assert _run(scenario()) == {}
 
 
-def test_closing_one_tab_leaves_the_other_subscribed():
+def test_scrum60_ac1_closing_one_tab_leaves_the_other_subscribed():
     async def scenario():
         hub = NotificationBroker()
         async with hub.subscribe(7) as kept:
@@ -151,7 +157,7 @@ def test_closing_one_tab_leaves_the_other_subscribed():
     assert _run(scenario()) == PAYLOAD
 
 
-def test_publishing_from_a_worker_thread_reaches_the_event_loop():
+def test_scrum60_ac1_publishing_from_a_worker_thread_reaches_the_event_loop():
     # Most routes are sync and run in FastAPI's threadpool; the queues are the loop's.
     async def scenario():
         hub = NotificationBroker()
@@ -162,7 +168,7 @@ def test_publishing_from_a_worker_thread_reaches_the_event_loop():
     assert _run(scenario()) == PAYLOAD
 
 
-def test_the_stream_route_yields_the_callers_notifications_and_then_unsubscribes():
+def test_scrum60_ac1_the_stream_route_yields_the_callers_notifications_and_then_unsubscribes():
     async def scenario():
         stream = stream_my_notifications(user=User(id=4242, role=Role.ATTENDEE.value))
         pending = asyncio.ensure_future(anext(stream))

@@ -1,11 +1,19 @@
-"""Tests for SCRUM-64 "Declare Coordinator Per-Event Unavailability".
+"""Unit tests for a Coordinator declining an event they are assigned to.
+
+SCRUM-64  Declare Coordinator Per-Event Unavailability
 
     As an Event Coordinator, I want to decline a specific event I'm assigned
     to, so that it gets reassigned to someone else without affecting my
     availability for other events.
 
+    AC1  declining an event reassigns it to another Event Coordinator
+    AC2  I remain in the pool of assignable Coordinators for new assignments
+    AC3  my profile status is unaffected (it does not show "Unavailable")
+    AC4  the decline is in the event's activity log with a timestamp and my name
+
 The rule lives in `services.assignment.reassign_event`, so that is what these
-call. No route reaches it yet, which the last test records.
+call. No route reaches it yet: the xfail at the end records that AC1 cannot be
+used through the API.
 """
 
 import pytest
@@ -51,26 +59,26 @@ def _last_log_line(db_session, w):
     )
 
 
-def test_ac1_declining_reassigns_the_event_to_another_coordinator(db_session, w):
+def test_scrum64_ac1_declining_reassigns_the_event_to_another_coordinator(db_session, w):
     assert _decline(db_session, w).id == w["other"].id
     assert w["event"].coordinator_id == w["other"].id
 
 
-def test_ac1_the_status_and_details_are_left_as_they_were(db_session, w):
+def test_scrum64_ac1_the_status_and_details_are_left_as_they_were(db_session, w):
     name = w["event"].name
     _decline(db_session, w)
     assert w["event"].status == EventStatus.under_review
     assert w["event"].name == name
 
 
-def test_ac1_the_new_coordinator_the_outgoing_one_and_the_organiser_are_told(db_session, w):
+def test_scrum64_ac1_the_new_coordinator_the_outgoing_one_and_the_organiser_are_told(db_session, w):
     _decline(db_session, w)
     assert NotificationType.event_assigned in _types(db_session, w["other"].id)
     assert NotificationType.event_reassigned_away in _types(db_session, w["outgoing"].id)
     assert NotificationType.event_coordinator_assigned in _types(db_session, w["organiser"].id)
 
 
-def test_ac1_with_nobody_else_available_the_event_is_left_unassigned(db_session, w):
+def test_scrum64_ac1_with_nobody_else_available_the_event_is_left_unassigned(db_session, w):
     w["other"].is_available = False
     db_session.commit()
 
@@ -80,7 +88,7 @@ def test_ac1_with_nobody_else_available_the_event_is_left_unassigned(db_session,
     assert NotificationType.event_reassigned_away not in _types(db_session, w["outgoing"].id)
 
 
-def test_ac2_the_coordinator_stays_in_the_pool_for_other_events(client, db_session, w):
+def test_scrum64_ac2_the_coordinator_stays_in_the_pool_for_other_events(client, db_session, w):
     _decline(db_session, w)
     assert w["outgoing"].id in {c.id for c in available_coordinators(db_session)}
 
@@ -91,14 +99,14 @@ def test_ac2_the_coordinator_stays_in_the_pool_for_other_events(client, db_sessi
     assert picked.id == w["outgoing"].id
 
 
-def test_ac3_their_profile_status_is_unaffected(client, db_session, w):
+def test_scrum64_ac3_their_profile_status_is_unaffected(client, db_session, w):
     _decline(db_session, w)
     db_session.expire_all()
     assert w["outgoing"].is_available is True
     assert client.get("/auth/me", headers=w["outgoing_h"]).json()["user"]["is_available"] is True
 
 
-def test_ac4_the_decline_is_logged_with_their_name_and_the_time(db_session, w):
+def test_scrum64_ac4_the_decline_is_logged_with_their_name_and_the_time(db_session, w):
     _decline(db_session, w)
     line = _last_log_line(db_session, w)
     assert line.changed_by == w["outgoing"].id
@@ -107,7 +115,7 @@ def test_ac4_the_decline_is_logged_with_their_name_and_the_time(db_session, w):
     assert w["other"].name in line.note
 
 
-def test_ac4_the_decline_is_logged_even_when_nobody_takes_over(db_session, w):
+def test_scrum64_ac4_the_decline_is_logged_even_when_nobody_takes_over(db_session, w):
     w["other"].is_available = False
     db_session.commit()
     _decline(db_session, w)
@@ -121,6 +129,6 @@ def test_ac4_the_decline_is_logged_even_when_nobody_takes_over(db_session, w):
     raises=AssertionError,
     reason="SCRUM-64 is not reachable: no route calls reassign_event, so a Coordinator cannot decline.",
 )
-def test_ac1_a_coordinator_can_decline_through_the_api(client, w):
+def test_scrum64_ac1_a_coordinator_can_decline_through_the_api(client, w):
     res = client.post(f"/events/{w['event'].id}/decline", headers=w["outgoing_h"])
     assert res.status_code == 200

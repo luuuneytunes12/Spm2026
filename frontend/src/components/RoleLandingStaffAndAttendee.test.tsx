@@ -1,13 +1,24 @@
 /**
- * Component tests for the landing pages of the roles without a file of their
- * own: Venue Staff, Technical Support Staff and Attendee, rendered through the
- * real page components.
+ * Unit tests for the landing pages of Venue Staff, Technical Support Staff and
+ * Attendee, rendered through the real page components.
  *
- * Traceability:
- *   SCRUM-73  Login as Venue Staff
- *   SCRUM-74  Login as Technical Support Staff
- *   SCRUM-75  Login as Attendee
- *   AC1  welcomes them by name and role
+ * SCRUM-73  Login as Venue Staff
+ *   As Venue Staff, when I log in, I want to see a landing page where I can open
+ *   pending Venue Booking requests and browse Venues, so that I can decide on
+ *   bookings without searching for them.
+ *
+ * SCRUM-74  Login as Technical Support Staff
+ *   As Technical Support Staff, when I log in, I want to see a landing page where
+ *   I can open my Equipment Requests and the Equipment Catalogue, so that I can
+ *   start on the Equipment work waiting for me.
+ *
+ * SCRUM-75  Login as Attendee
+ *   As an Attendee, when I log in, I want to see a landing page where I can find
+ *   Events to register for and check the Events I have registered for, so that I
+ *   can secure and keep track of my place.
+ *
+ * Covers, for each story:
+ *   AC1  the landing page welcomes them by name and role
  *   AC2  shortcuts to the features of that role, each linking to it
  *   AC3  the matching shortcut shows how many; with none, no number is shown
  *

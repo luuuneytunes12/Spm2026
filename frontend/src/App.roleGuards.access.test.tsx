@@ -1,16 +1,22 @@
 /**
- * The screen guards around every role's pages, through the real routes in
- * App.tsx. A refused role never reaches the page, so only the pages let through
- * by the "allowed" cases are stubbed. The API's own refusals are the backend's:
- * backend/tests/test_scrum62_rbac.py.
+ * Unit tests for the screen guards around every role's pages, through the real
+ * routes in App.tsx. A refused role never reaches the page, so only the page let
+ * through by the "allowed" case is stubbed. The API's own refusals are
+ * backend/tests/test_role_based_access_control.py.
  *
- * Traceability:
- *   SCRUM-62 AC1  an Event Organiser is denied internal staff pages
- *   SCRUM-62 AC2  an Event Coordinator can open coordinator features
- *   SCRUM-62 AC3  someone not logged in is sent to the login page
- *   SCRUM-62 AC4  every other role keeps to its own pages
- *   SCRUM-77 AC4  a signed-in Safety Officer opening another role's page is told
- *                 they do not have access
+ * SCRUM-62  Set Up Role-Based Access Control (RBAC) Infrastructure
+ *   As a developer, I want a role-based access control system configured, so that
+ *   the application can enforce role-specific permissions across all features.
+ *   AC1  an Event Organiser opening an internal staff page is denied
+ *   AC2  an Event Coordinator opening coordinator features is granted access
+ *   AC3  someone not logged in is redirected to the login page
+ *   AC4  the correct set of permissions for the role is applied
+ *
+ * SCRUM-77  Login as Safety Officer
+ *   As a Safety Officer, when I log in, I want to see a landing page where I can
+ *   open the Events waiting for an Operational Safety Check, so that I can review
+ *   them without searching for them.
+ *   AC4  opening a page that belongs to another role, I am told I have no access
  */
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'

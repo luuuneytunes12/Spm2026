@@ -1,8 +1,15 @@
-"""Tests for SCRUM-61 "Set Up Core Database Schema".
+"""Unit tests for the core database schema.
+
+SCRUM-61  Set Up Core Database Schema
 
     As a developer, I want the core database schema set up with all primary
     entities, so that all user-facing features have a reliable and consistent
     data layer to build on.
+
+    AC1  tables exist for Users, Roles, Events, Venues, Equipment,
+         Registrations, Notifications and Activity Logs
+    AC2  foreign key constraints are defined between related tables
+    AC3  a record inserted into a table persists and can be retrieved
 
 Reads the models' metadata and db/schema.sql without a database server. That
 the constraints are enforced is PostgreSQL's job and is proved by
@@ -32,18 +39,18 @@ SQL_TABLES = set(re.findall(r"create table (\w+)", SCHEMA))
     "table",
     ["users", "events", "venues", "equipment", "registrations", "notifications", "event_status_history"],
 )
-def test_ac1_each_primary_entity_has_a_table_in_the_models_and_in_schema_sql(table):
+def test_scrum61_ac1_each_primary_entity_has_a_table_in_the_models_and_in_schema_sql(table):
     assert table in Base.metadata.tables
     assert table in SQL_TABLES
 
 
-def test_ac1_roles_are_the_native_enum_on_users_rather_than_a_table():
+def test_scrum61_ac1_roles_are_the_native_enum_on_users_rather_than_a_table():
     block = re.search(r"create type user_role as enum \((.*?)\);", SCHEMA, flags=re.S).group(1)
     assert {r.value for r in Role} == set(re.findall(r"'(\w+)'", block))
     assert "role" in Base.metadata.tables["users"].columns
 
 
-def test_ac1_every_model_table_is_created_by_schema_sql():
+def test_scrum61_ac1_every_model_table_is_created_by_schema_sql():
     assert set(Base.metadata.tables) <= SQL_TABLES
 
 
@@ -64,7 +71,7 @@ def test_ac1_every_model_table_is_created_by_schema_sql():
         ("notifications", "event_id", "events.id"),
     ],
 )
-def test_ac2_related_tables_are_joined_by_a_foreign_key(table, column, target):
+def test_scrum61_ac2_related_tables_are_joined_by_a_foreign_key(table, column, target):
     keys = Base.metadata.tables[table].columns[column].foreign_keys
     assert target in {key.target_fullname for key in keys}
 
@@ -83,28 +90,28 @@ def _read_back(db_session, row):
     return db_session.get(model, key)
 
 
-def test_ac3_a_user_persists(db_session):
+def test_scrum61_ac3_a_user_persists(db_session):
     owner, _ = _owner_and_event()
     assert _read_back(db_session, owner).email == "owner@example.com"
 
 
-def test_ac3_an_event_persists(db_session):
+def test_scrum61_ac3_an_event_persists(db_session):
     _, event = _owner_and_event()
     found = _read_back(db_session, event)
     assert found.name == "Summit" and found.organiser.name == "Owner"
 
 
-def test_ac3_a_venue_persists(db_session):
+def test_scrum61_ac3_a_venue_persists(db_session):
     venue = Venue(name="Marina Hall", location="10 Bayfront Ave", capacity=250)
     assert _read_back(db_session, venue).capacity == 250
 
 
-def test_ac3_equipment_persists(db_session):
+def test_scrum61_ac3_equipment_persists(db_session):
     item = Equipment(name="Projector", category="Projection", total_quantity=8)
     assert _read_back(db_session, item).total_quantity == 8
 
 
-def test_ac3_a_registration_persists(db_session):
+def test_scrum61_ac3_a_registration_persists(db_session):
     owner, event = _owner_and_event()
     db_session.add(event)
     db_session.flush()
@@ -112,7 +119,7 @@ def test_ac3_a_registration_persists(db_session):
     assert found.event_id == event.id and found.attendee_id == owner.id
 
 
-def test_ac3_a_notification_persists(db_session):
+def test_scrum61_ac3_a_notification_persists(db_session):
     owner, _ = _owner_and_event()
     db_session.add(owner)
     db_session.flush()
@@ -120,7 +127,7 @@ def test_ac3_a_notification_persists(db_session):
     assert _read_back(db_session, row).message == "Hello"
 
 
-def test_ac3_an_activity_log_line_persists(db_session):
+def test_scrum61_ac3_an_activity_log_line_persists(db_session):
     owner, event = _owner_and_event()
     db_session.add(event)
     db_session.flush()

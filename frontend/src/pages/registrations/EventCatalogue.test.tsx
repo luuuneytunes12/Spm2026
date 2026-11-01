@@ -1,12 +1,14 @@
 /**
- * Component tests for the Attendee's event catalogue. Which events are listed
- * is the server's decision: backend/tests/test_scrum68_event_catalogue.py.
+ * Unit tests for the Attendee's event catalogue page. Which events are listed is
+ * the server's decision: backend/tests/test_event_catalogue.py.
  *
- * Traceability (SCRUM-68):
+ * SCRUM-68  View Event Catalogue
+ *   As an Attendee, I want to browse a catalogue of events open for registration,
+ *   so that I can discover events and choose which ones to look into further.
  *   AC1  each listed event shows its name, date and time
  *   AC3  selecting an event opens its attendee-facing details
  *   AC4  no internal planning information appears
- *   AC5  with nothing open, a clear message is shown
+ *   AC5  with no events open, a clear "no events available" message is shown
  *   AC6  the current confirmed values are shown
  *
  * The it.todo lines are acceptance criteria the page does not meet yet.

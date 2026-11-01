@@ -1,10 +1,16 @@
-"""Tests for SCRUM-63 "Log Out System", on the server's side of it.
+"""Unit tests for logging out, on the server's side of it.
 
-    As a registered user, I want to log out of my account, so that my session
-    ends and no one else can use my account upon log out.
+SCRUM-63  Log Out System
 
-The redirect to the login page is the browser's:
-frontend/src/auth/Logout.test.tsx.
+    As a registered user (Event Organiser, Event Coordinator, Venue Staff, or
+    Technical Support Staff), I want to log out of my account, so that my
+    session ends and no one else can use my account upon log out.
+
+    AC1  when a logged-in user logs out, their session ends
+    AC2  after logging out, a page that needs an account is not shown
+    AC3  when logout finishes, they are taken back to the login page
+
+AC3 is the browser's: frontend/src/auth/Logout.test.tsx.
 """
 
 import pytest
@@ -18,7 +24,7 @@ ROLES = [Role.ORGANISER, Role.COORDINATOR, Role.VENUE_STAFF, Role.TECH_SUPPORT]
 
 
 @pytest.mark.parametrize("role", ROLES)
-def test_ac1_logging_out_ends_the_session(client, db_session, role):
+def test_scrum63_ac1_logging_out_ends_the_session(client, db_session, role):
     user(client, db_session, role, "someone@example.com", "Someone")
     assert client.post("/auth/refresh").status_code == 200
 
@@ -28,13 +34,13 @@ def test_ac1_logging_out_ends_the_session(client, db_session, role):
     assert client.post("/auth/refresh").status_code == 401
 
 
-def test_ac1_logging_out_twice_is_harmless(client, db_session):
+def test_scrum63_ac1_logging_out_twice_is_harmless(client, db_session):
     user(client, db_session, Role.ORGANISER, "someone@example.com", "Someone")
     assert client.post("/auth/logout").status_code == 204
     assert client.post("/auth/logout").status_code == 204
 
 
-def test_ac2_after_logging_out_no_new_token_can_be_issued_to_open_a_page(client, db_session):
+def test_scrum63_ac2_after_logging_out_no_new_token_can_be_issued_to_open_a_page(client, db_session):
     user(client, db_session, Role.ORGANISER, "someone@example.com", "Someone")
     client.post("/auth/logout")
 
@@ -51,12 +57,12 @@ def test_ac2_after_logging_out_no_new_token_can_be_issued_to_open_a_page(client,
         pytest.param(create_refresh_token(999999, "attendee"), id="account no longer exists"),
     ],
 )
-def test_ac2_a_refresh_cookie_that_names_no_account_is_refused(client, token):
+def test_scrum63_ac2_a_refresh_cookie_that_names_no_account_is_refused(client, token):
     client.cookies.set("refresh_token", token)
     assert client.post("/auth/refresh").status_code == 401
 
 
-def test_ac2_an_access_token_for_a_deleted_account_cannot_read_the_profile(client, db_session):
+def test_scrum63_ac2_an_access_token_for_a_deleted_account_cannot_read_the_profile(client, db_session):
     record, headers = user(client, db_session, Role.ORGANISER, "someone@example.com", "Someone")
     db_session.delete(db_session.get(User, record.id))
     db_session.commit()
