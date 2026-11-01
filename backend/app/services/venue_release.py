@@ -23,7 +23,7 @@ from app.models.enums import (
 from app.models.events import Event, EventStatusHistory
 from app.models.venues import VenueBooking
 from app.services.notifications import notify
-from app.services.tech_support_notices import when
+from app.services.notifications import format_time_range
 
 RELEASABLE_STATUSES = (BookingStatus.pending, BookingStatus.tentative_hold, BookingStatus.approved)
 
@@ -48,7 +48,7 @@ def release_venue_bookings(db: Session, event: Event) -> int:
         booking.decision_notes = f"Released because the event was {outcome}."
         message = (
             f"The venue booking for {booking.venue.name} on '{event.name or 'an event'}' "
-            f"({when(booking.start_time, booking.end_time)}) was released because the event was {outcome}."
+            f"({format_time_range(booking.start_time, booking.end_time)}) was released because the event was {outcome}."
         )
         db.add(
             EventStatusHistory(

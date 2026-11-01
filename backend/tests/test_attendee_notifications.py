@@ -39,7 +39,7 @@ NEW_END = "2099-11-03T18:00:00Z"
 
 def _confirmed_event(client, db_session):
     """A confirmed Event open for registration, with its Organiser and
-    Coordinator. Starts 2 Nov 2099, 09:00-17:00 UTC."""
+    Coordinator. Starts 2 Nov 2099 17:00 - 3 Nov 2099 01:00 SGT."""
     _, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.safety_check_passed
@@ -99,7 +99,7 @@ def test_ac1_a_new_date_and_time_in_one_save_gives_one_notice_with_both(client, 
 
     assert _inbox(client, amy_h, CHANGED) == [
         "'Regional Partner Conference', which you are registered for, has changed: "
-        "it now starts 3 Nov 2099, 10:00 UTC; it now ends 3 Nov 2099, 18:00 UTC."
+        "it now starts 3 Nov 2099, 18:00 SGT; it now ends 4 Nov 2099, 02:00 SGT."
     ]
 
 
@@ -111,7 +111,7 @@ def test_ac1_a_new_time_only_names_just_what_changed(client, db_session):
     _change(client, w, proposed_end="2099-11-02T19:00:00Z")
 
     [message] = _inbox(client, amy_h, CHANGED)
-    assert message.endswith("has changed: it now ends 2 Nov 2099, 19:00 UTC.")
+    assert message.endswith("has changed: it now ends 3 Nov 2099, 03:00 SGT.")
     assert "starts" not in message
 
 
@@ -232,7 +232,7 @@ def test_ac1_a_coordinator_edit_of_date_and_time_gives_one_notice_with_both(clie
 
     assert _inbox(client, amy_h, CHANGED) == [
         "'Regional Partner Conference', which you are registered for, has changed: "
-        "it now starts 3 Nov 2099, 10:00 UTC; it now ends 3 Nov 2099, 18:00 UTC."
+        "it now starts 3 Nov 2099, 18:00 SGT; it now ends 4 Nov 2099, 02:00 SGT."
     ]
 
 
@@ -244,7 +244,7 @@ def test_ac1_a_coordinator_edit_of_the_end_only_names_just_that(client, db_sessi
     _edit(client, w, proposed_end="2099-11-02T19:00:00Z")
 
     [message] = _inbox(client, amy_h, CHANGED)
-    assert message.endswith("has changed: it now ends 2 Nov 2099, 19:00 UTC.")
+    assert message.endswith("has changed: it now ends 3 Nov 2099, 03:00 SGT.")
 
 
 def test_ac1_a_coordinator_edit_not_touching_date_or_time_sends_nothing(client, db_session):
@@ -389,7 +389,7 @@ def test_ac3_registering_confirms_the_event_and_registered(client, db_session):
 
     notices = [n for n in client.get("/notifications", headers=amy_h).json() if n["type"] == SAVED]
     assert [n["message"] for n in notices] == [
-        "Your registration for 'Regional Partner Conference' on 2 Nov 2099, 09:00 UTC is now Registered."
+        "Your registration for 'Regional Partner Conference' on 2 Nov 2099, 17:00 SGT is now Registered."
     ]
     assert notices[0]["event_id"] == w["event_id"]
 
@@ -402,7 +402,7 @@ def test_ac3_withdrawing_confirms_the_event_and_withdrawn(client, db_session):
     assert _withdraw(client, w, amy_h).status_code == 200
 
     assert _notes(db_session, amy.id, SAVED)[-1] == (
-        "Your registration for 'Regional Partner Conference' on 2 Nov 2099, 09:00 UTC is now Withdrawn."
+        "Your registration for 'Regional Partner Conference' on 2 Nov 2099, 17:00 SGT is now Withdrawn."
     )
 
 

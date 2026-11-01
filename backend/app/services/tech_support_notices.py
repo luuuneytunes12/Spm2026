@@ -26,25 +26,12 @@ from app.models.enums import EquipmentStatus, NotificationType
 from app.models.equipment import CoordinatorEquipmentRequirement, EquipmentRequest
 from app.models.events import Event
 from app.models.user import User
+from app.services.notifications import format_time_range
 from app.services.submission_notice import EventNotice
 
 
-def when(start: datetime | None, end: datetime | None) -> str:
-    """'2 Nov 2026, 09:00-17:00 UTC', or both dates when it spans days."""
-    if start is None:
-        return "no date set"
-    start = as_utc(start)
-    day = f"{start.day} {start:%b %Y}"
-    if end is None:
-        return f"{day}, {start:%H:%M} UTC"
-    end = as_utc(end)
-    if end.date() == start.date():
-        return f"{day}, {start:%H:%M}-{end:%H:%M} UTC"
-    return f"{day} {start:%H:%M} - {end.day} {end:%b %Y} {end:%H:%M} UTC"
-
-
 def _event(event: Event) -> str:
-    return f"'{event.name or 'Untitled event'}' ({when(event.proposed_start, event.proposed_end)})"
+    return f"'{event.name or 'Untitled event'}' ({format_time_range(event.proposed_start, event.proposed_end)})"
 
 
 class TechSupportNotice(EventNotice):
@@ -103,12 +90,12 @@ class EventRescheduledNotice(TechSupportNotice):
     type = NotificationType.equipment_event_rescheduled
 
     def __init__(self, old_start: datetime | None, old_end: datetime | None) -> None:
-        self.old = when(old_start, old_end)
+        self.old = format_time_range(old_start, old_end)
 
     def message(self, event: Event) -> str:
         return (
             f"'{event.name or 'Untitled event'}' has moved from {self.old} to "
-            f"{when(event.proposed_start, event.proposed_end)}. Check its equipment requirements "
+            f"{format_time_range(event.proposed_start, event.proposed_end)}. Check its equipment requirements "
             "and reservations for the new date and time."
         )
 

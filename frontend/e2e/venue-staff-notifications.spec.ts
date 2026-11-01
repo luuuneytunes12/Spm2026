@@ -66,7 +66,7 @@ test('TC-VN-1e: a booking request names the Event, Venue and date/time, and open
   await vera.goto('/notifications')
   const row = notice(vera, 'Requested Summit')
   await expect(row).toBeVisible()
-  await expect(row).toContainText(/\d{1,2} \w{3} \d{4}, \d{2}:\d{2}-\d{2}:\d{2} UTC/)
+  await expect(row).toContainText(/\d{1,2} \w{3} \d{4}(, \d{2}:\d{2}-\d{2}:\d{2}| \d{2}:\d{2} - \d{1,2} \w{3} \d{4} \d{2}:\d{2}) SGT/)
   await row.getByRole('link', { name: 'View event' }).click()
   await expect(vera).toHaveURL(/\/venue-staff\/bookings$/)
   await expect(vera.getByRole('region', { name: /Requested Summit/ })).toBeVisible()

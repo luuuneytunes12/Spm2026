@@ -17,11 +17,10 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.core.datetimes import as_utc
 from app.models.enums import BookingStatus, NotificationType
 from app.models.events import EventStatusHistory
 from app.models.venues import VenueBooking
-from app.services.notifications import notify
+from app.services.notifications import format_time, notify
 
 
 def active_hold_filter(now: datetime):
@@ -132,7 +131,7 @@ def send_hold_reminders(db: Session, now: datetime | None = None) -> int:
             message=(
                 f"Reminder: your tentative hold on {hold.venue.name} for "
                 f"'{hold.event.name or 'your event'}' expires at "
-                f"{as_utc(hold.expires_at):%d %b %Y %H:%M} UTC. Required action: "
+                f"{format_time(hold.expires_at)}. Required action: "
                 f"{hold.hold_action or 'none given'}. If it is not done by then the hold expires "
                 "and the venue is released."
             ),

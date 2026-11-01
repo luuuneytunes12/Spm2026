@@ -20,6 +20,7 @@ from app.core.roles import Role
 from app.models.enums import EventStatus, NotificationType
 from app.models.events import Event, EventStatusHistory
 from app.models.user import User
+from app.services.notifications import format_date
 from app.services.submission_notice import EventNotice
 
 
@@ -29,11 +30,7 @@ def describe(event: Event) -> str:
     Written into the text itself, so the line still reads right if the event
     is later renamed, moved or handed to another Coordinator."""
     name = event.name or "Untitled event"
-    when = (
-        f"{event.proposed_start.day} {event.proposed_start:%b %Y}"
-        if event.proposed_start
-        else "no date set"
-    )
+    when = format_date(event.proposed_start) if event.proposed_start else "no date set"
     coordinator = event.coordinator.name if event.coordinator else "none assigned"
     return f"'{name}' on {when} (Event Coordinator: {coordinator})"
 

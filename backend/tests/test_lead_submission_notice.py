@@ -15,6 +15,7 @@ from app.core.roles import Role
 from app.models.enums import EventStatus, NotificationType
 from app.models.events import Event
 from app.models.notifications import Notification
+from app.services.notifications import format_time
 from app.services.submission_notice import EventNotice, SubmissionNotice
 from event_review_test_helpers import COMPLETE, user
 
@@ -61,7 +62,7 @@ def test_ac1_notification_carries_event_name_organiser_and_submitted_time(client
     submitted_at = db_session.get(Event, event_id).submitted_at
     assert "Partner Summit" in message
     assert "Olivia Organiser" in message
-    assert submitted_at.strftime("%d %b %Y, %H:%M") in message
+    assert format_time(submitted_at) in message
 
 
 def test_ac1_every_lead_is_notified(client, db_session, world):

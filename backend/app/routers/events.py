@@ -60,7 +60,7 @@ from app.services.attendee_notices import CONFIRMED, EventChangedNotice
 from app.services.cancellation_notices import EventCancellation
 from app.services.coordinator_notices import ChangeRequestSubmittedNotice
 from app.services.event_activity import event_activity
-from app.services.notifications import notify
+from app.services.notifications import format_time_range, notify
 from app.services.safety_notices import (
     SafetyCheckRequestedNotice,
     SafetyCheckWithdrawnNotice,
@@ -575,7 +575,7 @@ def _change_request_out(
                 if overlap is not None:
                     conflicts.append(
                         "Conflicts with another venue booking during "
-                        f"{overlap.start:%Y-%m-%d %H:%M}–{overlap.end:%Y-%m-%d %H:%M} UTC "
+                        f"{format_time_range(overlap.start, overlap.end)} "
                         "(setup and turnaround included)."
                     )
             closures = (
@@ -592,7 +592,7 @@ def _change_request_out(
                 if overlap is not None:
                     conflicts.append(
                         "Conflicts with a venue unavailability period during "
-                        f"{overlap.start:%Y-%m-%d %H:%M}–{overlap.end:%Y-%m-%d %H:%M} UTC "
+                        f"{format_time_range(overlap.start, overlap.end)} "
                         "(setup and turnaround included)."
                     )
 

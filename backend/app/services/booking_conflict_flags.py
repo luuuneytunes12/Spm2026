@@ -12,13 +12,12 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.datetimes import as_utc
 from app.domain.venue_occupancy import OccupiedWindow, occupied_window, overlap_of
 from app.models.enums import BookingStatus, NotificationType
 from app.models.events import EventStatusHistory
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking, VenueUnavailability
-from app.services.notifications import notify
+from app.services.notifications import format_time, notify
 from app.services.venue_holds import active_hold_filter
 
 # Bookings that hold the venue and so can be flagged: approved bookings and
@@ -87,10 +86,10 @@ def unavailable_notice(
     assert affected is not None
     reason = closure.reason_category + (f": {closure.reason}" if closure.reason else "")
     return (
-        f"{venue.name} is unavailable from {as_utc(closure.start_time):%d %b %Y %H:%M} to "
-        f"{as_utc(closure.end_time):%d %b %Y %H:%M} ({reason}), which affects your {what} for "
-        f"'{booking.event.name or 'Untitled event'}' from {affected.start:%d %b %Y %H:%M} to "
-        f"{affected.end:%d %b %Y %H:%M} UTC. Venue Unavailable - Action Required: alternative "
+        f"{venue.name} is unavailable from {format_time(closure.start_time)} to "
+        f"{format_time(closure.end_time)} ({reason}), which affects your {what} for "
+        f"'{booking.event.name or 'Untitled event'}' from {format_time(affected.start)} to "
+        f"{format_time(affected.end)}. Venue Unavailable - Action Required: alternative "
         "arrangements are required. The Event has not been cancelled."
     )
 

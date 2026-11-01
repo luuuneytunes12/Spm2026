@@ -57,7 +57,7 @@ def test_ac1_ac2_ac3_notices_are_written_with_the_change_on_postgres(client, db,
     assert res.status_code == 201, res.text
     rid = res.json()["id"]
     assert _messages(db, "equipment_required") == [
-        "Equipment required for 'Regional Partner Conference' (2 Nov 2099, 09:00-17:00 UTC): 6 x Audio."
+        "Equipment required for 'Regional Partner Conference' (2 Nov 2099 17:00 - 3 Nov 2099 01:00 SGT): 6 x Audio."
     ] * len(techs)
 
     # A refused change rolls back with no notification.
@@ -85,7 +85,7 @@ def test_ac1_ac2_ac3_notices_are_written_with_the_change_on_postgres(client, db,
     assert approved.status_code == 200, approved.text
     moved = _messages(db, "equipment_event_rescheduled")
     assert len(moved) == len(techs)
-    assert "from 2 Nov 2099, 09:00-17:00 UTC to 9 Nov 2099, 13:00-18:00 UTC" in moved[0]
+    assert "from 2 Nov 2099 17:00 - 3 Nov 2099 01:00 SGT to 9 Nov 2099 21:00 - 10 Nov 2099 02:00 SGT" in moved[0]
 
     # AC2: removed.
     assert client.delete(f"/equipment-requirements/{rid}", headers=coord_h).status_code == 204

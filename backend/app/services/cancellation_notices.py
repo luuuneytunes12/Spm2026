@@ -34,7 +34,8 @@ from app.services.attendee_notices import AttendeeNotice
 from app.services.coordinator_notices import CoordinatorNotice
 from app.services.organiser_notices import OrganiserNotice
 from app.services.safety_notices import SafetyCheckWithdrawnNotice, describe
-from app.services.tech_support_notices import TechSupportNotice, when
+from app.services.notifications import format_time_range
+from app.services.tech_support_notices import TechSupportNotice
 from app.services.venue_staff_notices import VenueStaffNotice
 
 # Live bookings: the ones a Venue is being prepared for (venue_release frees them).
@@ -102,7 +103,7 @@ class VenueCancelledNotice(VenueStaffNotice):
         b = self.booking
         return (
             f"'{_name(event)}' has been cancelled. Its booking of {b.venue.name} "
-            f"({when(b.start_time, b.end_time)}) is no longer needed."
+            f"({format_time_range(b.start_time, b.end_time)}) is no longer needed."
         )
 
 

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.models.enums import EventStatus, NotificationType, RegistrationStatus
 from app.models.events import Event
 from app.models.registrations import Registration
+from app.services.notifications import format_time
 from app.services.submission_notice import EventNotice
 
 # A change is only news to Attendees once the event is confirmed: before
@@ -40,10 +41,6 @@ def _as_datetime(value: datetime | str | None) -> datetime | None:
     if isinstance(value, str):
         value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     return _utc(value)
-
-
-def _when(value: datetime) -> str:
-    return f"{value.day} {value:%b %Y, %H:%M} UTC"
 
 
 class AttendeeNotice(EventNotice):
@@ -90,9 +87,9 @@ class EventChangedNotice(AttendeeNotice):
         """The new start and/or end, only for the ones that actually moved."""
         changes = []
         if _as_datetime(after_start) != _as_datetime(before_start) and after_start is not None:
-            changes.append(f"it now starts {_when(_as_datetime(after_start))}")
+            changes.append(f"it now starts {format_time(_as_datetime(after_start))}")
         if _as_datetime(after_end) != _as_datetime(before_end) and after_end is not None:
-            changes.append(f"it now ends {_when(_as_datetime(after_end))}")
+            changes.append(f"it now ends {format_time(_as_datetime(after_end))}")
         return changes
 
     @staticmethod
@@ -118,6 +115,6 @@ class RegistrationStatusNotice(EventNotice):
 
     def message(self, event: Event) -> str:
         name = event.name or "Untitled event"
-        when = f" on {_when(_utc(event.proposed_start))}" if event.proposed_start else ""
+        when = f" on {format_time(event.proposed_start)}" if event.proposed_start else ""
         status = self._LABELS[self.registration.status]
         return f"Your registration for '{name}'{when} is now {status}."

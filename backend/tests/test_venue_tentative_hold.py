@@ -108,6 +108,7 @@ def test_ac1_placing_a_hold_is_in_the_events_activity_log_with_who_and_what(clie
     ]
     assert entry.changed_by == s["staff"].id and entry.created_at is not None
     assert s["venue"].name in entry.note and ACTION in entry.note
+    assert " SGT. " in entry.note and "+00:00" not in entry.note
     assert entry.from_status == entry.to_status  # the Event status is unchanged
 
 
