@@ -52,7 +52,7 @@ def test_scrum39_ac1_to_ac3_a_request_reaches_the_queue_carrying_everything(clie
     [queued] = client.get("/venue-bookings/queue", headers=staff_h).json()  # AC2
     assert queued["status"] == "pending"
     assert queued["venue"]["name"] == "Marina Hall"  # AC3
-    assert queued["start_time"].startswith("2026-11-02T09:00")
+    assert queued["start_time"].startswith("2099-11-02T09:00")
     assert queued["expected_attendance"] == 120
     assert queued["room_layout_preference"] == "Theatre"
     assert queued["accessibility_needs"] == "Step-free access, hearing loop"

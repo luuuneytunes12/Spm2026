@@ -1,4 +1,4 @@
-"""Tests for Venue Staff's notifications about bookings and Events at their venues.
+"""SCRUM-54 - Venue Staff notifications about bookings and Events at their venues.
 
 Every Venue Staff member manages every venue (confirmed with the customer),
 so "a Venue I manage" is any venue, and "one I do not manage" reduces to:
@@ -99,7 +99,7 @@ def _edit(client, w, **body):
     return res.json()
 
 
-# --- AC1 / AC2: a request -> every Venue Staff member, Event, Venue, time ---
+# --- SCRUM-54 AC1 / AC2: a request -> every Venue Staff member, Event, Venue, time ---
 
 
 def test_ac1_ac2_a_booking_request_names_the_event_the_venue_and_the_time(client, db_session):
@@ -108,7 +108,7 @@ def test_ac1_ac2_a_booking_request_names_the_event_the_venue_and_the_time(client
     _request(client, db_session, w, "Marina Hall")
 
     expected = [
-        "New venue booking request for 'Regional Partner Conference': Marina Hall, 2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT."
+        "New venue booking request for 'Regional Partner Conference': Marina Hall, 2 Nov 2099 17:00 - 3 Nov 2099 01:00 SGT."
     ]
     assert _inbox(client, w["vera_h"], REQUESTED) == expected
     assert _inbox(client, w["vic_h"], REQUESTED) == expected
@@ -159,7 +159,7 @@ def test_ac1_the_request_is_still_made(client, db_session):
     assert queue[0]["status"] == BookingStatus.pending.value
 
 
-# --- AC3: nobody outside Venue Staff ----------------------------------------
+# --- SCRUM-54 AC3: nobody outside Venue Staff ----------------------------------------
 
 
 def test_ac3_only_venue_staff_get_the_request_notice(client, db_session):
@@ -171,18 +171,18 @@ def test_ac3_only_venue_staff_get_the_request_notice(client, db_session):
     assert _recipients(db_session, REQUESTED) == _venue_staff_ids(db_session)
 
 
-# --- AC4: an Approved booking's Event changes -> Event, Venue, what changed -
+# --- SCRUM-54 AC4: an Approved booking's Event changes -> Event, Venue, what changed -
 
 
 def test_ac4_a_new_date_names_the_event_the_venue_and_the_old_and_new_time(client, db_session):
     w = _world(client, db_session)
     _approved(client, db_session, w, "Marina Hall")
 
-    _edit(client, w, proposed_start="2026-11-03T09:00:00Z", proposed_end="2026-11-03T17:00:00Z")
+    _edit(client, w, proposed_start="2099-11-03T09:00:00Z", proposed_end="2099-11-03T17:00:00Z")
 
     assert _inbox(client, w["vera_h"], CHANGED) == [
         "'Regional Partner Conference', approved at Marina Hall, has changed: "
-        "it now runs 3 Nov 2026 17:00 - 4 Nov 2026 01:00 SGT (was 2 Nov 2026 17:00 - 3 Nov 2026 01:00 SGT)."
+        "it now runs 3 Nov 2099 17:00 - 4 Nov 2099 01:00 SGT (was 2 Nov 2099 17:00 - 3 Nov 2099 01:00 SGT)."
     ]
 
 
@@ -200,10 +200,10 @@ def test_ac4_date_and_attendance_in_one_save_give_one_notice_with_both(client, d
     w = _world(client, db_session)
     _approved(client, db_session, w, "Marina Hall")
 
-    _edit(client, w, proposed_end="2026-11-02T19:00:00Z", expected_attendance=150)
+    _edit(client, w, proposed_end="2099-11-02T19:00:00Z", expected_attendance=150)
 
     [message] = _inbox(client, w["vera_h"], CHANGED)
-    assert "it now runs 2 Nov 2026 17:00 - 3 Nov 2026 03:00 SGT" in message
+    assert "it now runs 2 Nov 2099 17:00 - 3 Nov 2099 03:00 SGT" in message
     assert "expected attendance is now 150 (was 120)" in message
 
 
@@ -250,12 +250,12 @@ def test_ac4_the_bookings_are_still_reopened_for_review(client, db_session):
     w = _world(client, db_session)
     _approved(client, db_session, w, "Marina Hall")
 
-    body = _edit(client, w, proposed_start="2026-11-03T09:00:00Z", proposed_end="2026-11-03T17:00:00Z")
+    body = _edit(client, w, proposed_start="2099-11-03T09:00:00Z", proposed_end="2099-11-03T17:00:00Z")
 
     assert body["affected_venue_bookings"] == ["Marina Hall"]
 
 
-# --- AC5: no Approved booking -> nothing; never anyone outside Venue Staff --
+# --- SCRUM-54 AC5: no Approved booking -> nothing; never anyone outside Venue Staff --
 
 
 def test_ac5_an_event_with_only_a_pending_booking_sends_nothing(client, db_session):
@@ -283,8 +283,8 @@ def test_ac5_another_events_change_does_not_mention_this_venue(client, db_sessio
     other = Event(
         name="Unrelated Event", organiser_id=w["organiser"].id, coordinator_id=w["coordinator"].id,
         status=EventStatus.planning_event, expected_attendance=10,
-        proposed_start=datetime(2026, 12, 1, 9, tzinfo=timezone.utc),
-        proposed_end=datetime(2026, 12, 1, 17, tzinfo=timezone.utc),
+        proposed_start=datetime(2099, 12, 1, 9, tzinfo=timezone.utc),
+        proposed_end=datetime(2099, 12, 1, 17, tzinfo=timezone.utc),
     )
     db_session.add(other)
     db_session.commit()
@@ -304,7 +304,7 @@ def test_ac5_only_venue_staff_get_the_change_notice(client, db_session):
     assert _recipients(db_session, CHANGED) == _venue_staff_ids(db_session)
 
 
-# --- AC6: back to Planning after the Safety Check -> told -------------------
+# --- SCRUM-54 AC6: back to Planning after the Safety Check -> told -------------------
 
 
 def _awaiting_safety(client, db_session):

@@ -847,3 +847,8 @@ def test_er_ac2_only_technical_support_can_use_the_support_view(client, db_sessi
 )
 def test_er_ac2_an_anonymous_caller_is_unauthenticated(client, db_session, path):
     assert client.get(path).status_code == 401
+
+
+# SCRUM-43 AC1: Jira mentions placement on the requirement; the implemented
+# workflow records placement during reservation. That wording is a product
+# decision and the tests above do not claim to verify requirement-level placement.

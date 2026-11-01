@@ -84,6 +84,26 @@ beforeEach(() => {
 })
 
 describe('venue list', () => {
+  // SCRUM-35 AC5: exercise the actual link and route, then check that the
+  // selected venue's details load. The venue API is mocked for this component test.
+  it('SCRUM-35 AC5: opens the selected search result with its full details', async () => {
+    mockList.mockResolvedValue([VENUE])
+    mockGet.mockResolvedValue(VENUE)
+    render(
+      <MemoryRouter initialEntries={['/venues']}>
+        <Routes>
+          <Route path="/venues" element={<Venues />} />
+          <Route path="/venues/:id" element={<VenueView />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await userEvent.click(await screen.findByRole('link', { name: 'View details of Marina Grand Ballroom' }))
+    expect(await screen.findByRole('heading', { name: 'Marina Grand Ballroom' })).toBeInTheDocument()
+    expect(screen.getByText('10 Bayfront Ave, Level 3')).toBeInTheDocument()
+    expect(mockGet).toHaveBeenCalledWith(4)
+  })
+
   it('shows each venue with its location and capacity, and links to its details', async () => {
     mockList.mockResolvedValue([VENUE, { ...VENUE, id: 5, name: 'Changi Suite', is_active: false }])
     render(

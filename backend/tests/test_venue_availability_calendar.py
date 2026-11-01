@@ -1,4 +1,11 @@
-"""Unit cases for the View Venue Availability Calendar user story."""
+"""SCRUM-37 - View Venue Availability Calendar (API cases).
+
+SCRUM-37 AC1  calendar laid out by date and time -- tested here as the order
+              and the buffered occupied period of each item (no UI layout)
+SCRUM-37 AC2  confirmed bookings shown -- test_calendar_shows_confirmed_...
+SCRUM-37 AC3  recorded unavailability shown -- same test
+SCRUM-37 AC4  filter by date range -- test_calendar_excludes_... and the range tests
+"""
 
 from datetime import datetime, timedelta, timezone
 
@@ -14,7 +21,7 @@ from test_venue_search import _at, _block, _coordinator, _headers, _venue
 
 
 def _window():
-    return {"start": "2026-11-02T09:00:00Z", "end": "2026-11-02T17:00:00Z"}
+    return {"start": "2099-11-02T09:00:00Z", "end": "2099-11-02T17:00:00Z"}
 
 
 def test_calendar_shows_confirmed_bookings_and_recorded_unavailability(client, db_session):
@@ -140,13 +147,45 @@ def test_calendar_shows_active_holds_for_each_venue_and_excludes_expired_holds(
     assert "expired" in expiry_notification.message.lower()
 
 
+def test_scrum37_ac1_items_come_back_in_time_order_with_their_buffered_period(client, db_session):
+    """SCRUM-37 AC1: the calendar lists busy periods in time order, and each
+    booking's occupied period is widened by the venue's setup (30 min before)
+    and turnaround (45 min after). Created later-first to prove the sort.
+    Expected: 10:00-11:00 then 14:00-15:00, with 09:30-11:45 and 13:30-15:45."""
+    headers = _coordinator(client, db_session)
+    venue = _venue(db_session, "Layout Hall")
+    venue.setup_minutes, venue.turnaround_minutes = 30, 45
+    db_session.commit()
+    user = db_session.query(User).filter(User.email == "coord@example.com").one()
+    # One live booking per (event, venue) is a database rule, so each booking has its own event.
+    for start, end in ((14, 15), (10, 11)):
+        event = Event(name=f"Layout Workshop {start}:00", organiser_id=user.id)
+        db_session.add(event)
+        db_session.flush()
+        db_session.add(
+            VenueBooking(
+                event_id=event.id, venue_id=venue.id, requested_by=user.id,
+                start_time=_at(start), end_time=_at(end), status=BookingStatus.approved,
+            )
+        )
+    db_session.commit()
+
+    items = client.get(f"/venues/{venue.id}/availability", params=_window(), headers=headers).json()["items"]
+
+    assert [item["start_time"][11:16] for item in items] == ["10:00", "14:00"]
+    assert items[0]["occupied_start"].startswith("2099-11-02T09:30")
+    assert items[0]["occupied_end"].startswith("2099-11-02T11:45")
+    assert items[1]["occupied_start"].startswith("2099-11-02T13:30")
+    assert items[1]["occupied_end"].startswith("2099-11-02T15:45")
+
+
 def test_calendar_rejects_a_date_range_that_ends_before_it_starts(client, db_session):
     headers = _coordinator(client, db_session)
     venue = _venue(db_session, "Calendar Hall")
 
     response = client.get(
         f"/venues/{venue.id}/availability",
-        params={"start": "2026-11-02T17:00:00Z", "end": "2026-11-02T09:00:00Z"},
+        params={"start": "2099-11-02T17:00:00Z", "end": "2099-11-02T09:00:00Z"},
         headers=headers,
     )
 

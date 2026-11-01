@@ -20,8 +20,8 @@ from app.models.equipment import Equipment, EquipmentRequest
 from app.models.events import Event
 from tests.event_review_test_helpers import user
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 HOUR = timedelta(hours=1)
 
 
@@ -79,8 +79,8 @@ def test_scrum45_ac1_shows_the_available_quantity_for_the_window(client, tech, i
     body = _check(client, tech[1], item).json()
 
     assert (body["total_quantity"], body["reserved_quantity"], body["available_quantity"]) == (10, 0, 10)
-    assert body["start_time"].startswith("2026-11-02T09:00")
-    assert body["end_time"].startswith("2026-11-02T17:00")
+    assert body["start_time"].startswith("2099-11-02T09:00")
+    assert body["end_time"].startswith("2099-11-02T17:00")
 
 
 def test_scrum45_ac2_units_reserved_for_an_overlapping_event_are_not_available(
@@ -157,8 +157,8 @@ def test_scrum46_ac2_the_reservation_records_equipment_quantity_event_date_and_t
     assert body["equipment_category"] == "Projection"
     assert body["quantity"] == 3
     assert body["event"] == {"id": event.id, "name": "Partner Conference"}
-    assert body["start_time"].startswith("2026-11-02T09:00")
-    assert body["end_time"].startswith("2026-11-02T17:00")
+    assert body["start_time"].startswith("2099-11-02T09:00")
+    assert body["end_time"].startswith("2099-11-02T17:00")
     assert body["reserved_by"]["name"] == "Tess Tech"  # audit: actor
     assert body["reserved_at"]  # audit: time
 

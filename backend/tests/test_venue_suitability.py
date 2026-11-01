@@ -1,4 +1,27 @@
-"""Unit cases for the Check Venue Suitability for an Event user story."""
+"""SCRUM-58 and SCRUM-104: venue suitability API tests.
+
+The coordinator checks whether a venue satisfies an assigned event's needs.
+The API compares attendance with capacity, then checks layout, accessibility
+and facilities. These tests use an isolated database and an HTTP test client;
+they check returned decisions and details, not the browser presentation.
+
+Jira acceptance criteria, numbered in their displayed order:
+* SCRUM-58 AC1: compare all four kinds of venue/event requirement.
+* SCRUM-58 AC2: mark a venue suitable when all requirements are met.
+* SCRUM-58 AC3: identify every unmet requirement when the venue fails.
+* SCRUM-104 AC1: check each booking using its own attendance and needs.
+* SCRUM-104 AC2: a failed booking reports its unmet needs independently.
+* SCRUM-104 AC3: rechecking one changed booking uses its current values and
+  leaves the other booking's result unchanged.
+
+The repository's venue-suitability document groups these requirements into
+four local ACs; the SCRUM-58 and SCRUM-104 labels above use Jira's own order.
+Combined capacity is an additional documented check, not SCRUM-104 AC3.
+Operating-hours suitability is tracked separately in SCRUM-112 and is not
+established by these tests.
+"""
+
+import pytest
 
 from app.core.roles import Role
 from app.models.enums import BookingStatus
@@ -9,6 +32,11 @@ from test_venue_search import _at, _coordinator, _venue
 
 
 def _assigned_event(db_session, coordinator: User, **overrides) -> Event:
+    """Create an assigned event with known requirements for suitability checks.
+
+    Keyword overrides replace defaults for cases such as missing attendance.
+    The helper writes the fixture directly; it does not test event creation.
+    """
     event = Event(
         name=overrides.pop("name", "Accessibility Workshop"),
         organiser_id=coordinator.id,
@@ -30,6 +58,11 @@ def _assigned_event(db_session, coordinator: User, **overrides) -> Event:
 def test_suitability_marks_a_venue_suitable_when_every_requirement_is_met(
     client, db_session
 ):
+    """SCRUM-58 AC1/AC2, positive: every category matches and suitability is true.
+
+    A venue for 100 people meets the event's 80-person requirement and has the
+    requested layout, both accessibility features, projector and stage.
+    """
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     venue = _venue(
@@ -60,6 +93,11 @@ def test_suitability_marks_a_venue_suitable_when_every_requirement_is_met(
 
 
 def test_suitability_reports_each_unmet_requirement(client, db_session):
+    """SCRUM-58 AC1/AC3, negative: list every failure, not only the first one.
+
+    Capacity 40 is below 80; layout, two accessibility features and stage
+    are missing. The existing projector must not be listed as a failure.
+    """
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     venue = _venue(
@@ -90,7 +128,44 @@ def test_suitability_reports_each_unmet_requirement(client, db_session):
     assert any("Missing facility" in check["message"] for check in result["checks"])
 
 
+@pytest.mark.parametrize(
+    ("capacity", "expected_met"),
+    [
+        pytest.param(79, False, id="one-below-attendance"),
+        pytest.param(80, True, id="equal-to-attendance"),
+        pytest.param(81, True, id="one-above-attendance"),
+    ],
+)
+def test_scrum58_capacity_boundary_around_attendance(client, db_session, capacity, expected_met):
+    """SCRUM-58 AC1–AC3, boundary: test one below, equal and one above 80.
+
+    All non-capacity needs are satisfied so the result isolates capacity.
+    Equality is sufficient for an individual venue; combined capacity has
+    a separate rule and is not asserted by this test.
+    """
+    headers = _coordinator(client, db_session)
+    coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
+    venue = _venue(
+        db_session,
+        "Boundary Hall",
+        capacity=capacity,
+        supported_layouts=["Theatre"],
+        accessibility_features=["Wheelchair access", "Hearing loop"],
+        facilities=["Projector", "Stage"],
+    )
+    event = _assigned_event(db_session, coordinator, expected_attendance=80)
+
+    response = client.get(f"/venues/{venue.id}/suitability/{event.id}", headers=headers)
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    capacity_check = next(check for check in result["checks"] if check["category"] == "capacity")
+    assert capacity_check["met"] is expected_met
+    assert result["suitable"] is expected_met
+
+
 def test_suitability_does_not_claim_success_when_attendance_is_missing(client, db_session):
+    """SCRUM-58 AC1/AC2, missing input: unknown attendance cannot pass capacity."""
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     venue = _venue(db_session, "Hall")
@@ -105,6 +180,7 @@ def test_suitability_does_not_claim_success_when_attendance_is_missing(client, d
 
 
 def test_suitability_only_exposes_events_assigned_to_the_coordinator(client, db_session):
+    """Access: another coordinator's event returns 404 without revealing details."""
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     other = User(
@@ -125,6 +201,7 @@ def test_suitability_only_exposes_events_assigned_to_the_coordinator(client, db_
 
 
 def test_suitability_rejects_non_coordinator_roles(client, db_session):
+    """Access: venue staff cannot call this coordinator-only suitability endpoint."""
     venue = _venue(db_session, "Hall")
     password = "password123"
     client.post(
@@ -148,6 +225,11 @@ def test_suitability_rejects_non_coordinator_roles(client, db_session):
 
 
 def test_event_suitability_checks_each_venue_and_combines_capacity(client, db_session):
+    """SCRUM-104 AC1/AC2: each venue keeps its result; capacity is separate.
+
+    The two capacities total 110 for 80 attendees, but the smaller venue fails
+    its own requirements, so combined capacity does not make the event suitable.
+    """
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     suitable_venue = _venue(
@@ -209,6 +291,7 @@ def test_event_suitability_checks_each_venue_and_combines_capacity(client, db_se
 def test_event_suitability_uses_each_bookings_attendance_and_needs_independently(
     client, db_session
 ):
+    """SCRUM-104 AC1/AC2: use each booking's own attendance and requirements."""
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     small_room = _venue(
@@ -276,6 +359,7 @@ def test_event_suitability_uses_each_bookings_attendance_and_needs_independently
 def test_booking_suitability_endpoint_reloads_only_the_selected_bookings_current_data(
     client, db_session
 ):
+    """SCRUM-104 AC3: recheck changed first booking; preserve the second result."""
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     first_venue = _venue(
@@ -335,6 +419,7 @@ def test_booking_suitability_endpoint_reloads_only_the_selected_bookings_current
 def test_booking_suitability_endpoint_hides_bookings_from_other_coordinators(
     client, db_session
 ):
+    """Access: a coordinator cannot inspect another coordinator's booking."""
     headers = _coordinator(client, db_session)
     coordinator = db_session.query(User).filter(User.email == "coord@example.com").one()
     other = User(

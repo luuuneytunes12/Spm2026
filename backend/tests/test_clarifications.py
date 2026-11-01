@@ -240,3 +240,21 @@ def test_no_notification_or_exchange_reaches_outsiders(client, w):
     out, out_h = user(client, w["db"], Role.VENUE_STAFF, "outsider@cs.local", "Outsider")
     assert w["db"].query(Notification).filter(Notification.user_id == out.id).count() == 0
     assert client.get(f"/events/{w['id']}/clarifications", headers=out_h).status_code == 404
+
+
+# SCRUM-27 AC7/AC8: Jira describes named-field amendment requests. The
+# current API supports text clarification and organiser replies; no separate
+# coordinator amendment contract exists. These criteria require clarification.
+
+
+def test_27_ac5_a_request_with_no_message_is_refused_and_unchanged(client, w):
+    """SCRUM-27 AC5: a request without a message is refused and nothing changes.
+    Named amendment fields are not a defined request contract."""
+    res = client.post(
+        f"/events/{w['id']}/clarifications",
+        json={"amended_fields": {"expected_attendance": 90}},
+        headers=w["coord_h"],
+    )
+    assert res.status_code == 422
+    assert _event(w).status == EventStatus.under_review
+    assert w["db"].query(EventClarification).count() == 0

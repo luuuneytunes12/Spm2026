@@ -129,8 +129,8 @@ def test_scrum39_ac3_the_request_carries_venue_timing_attendance_layout_and_need
 
     body = client.get(f"/venue-bookings/{booking_id}", headers=staff_h).json()
     assert body["venue"]["name"] == "Marina Hall"
-    assert body["start_time"].startswith("2026-11-02T09:00")
-    assert body["end_time"].startswith("2026-11-02T17:00")
+    assert body["start_time"].startswith("2099-11-02T09:00")
+    assert body["end_time"].startswith("2099-11-02T17:00")
     assert body["expected_attendance"] == 120
     assert body["room_layout_preference"] == "Theatre"
     assert body["accessibility_needs"] == "Step-free access"
@@ -363,8 +363,8 @@ def test_scrum39_ac4_each_booking_carries_the_needs_entered_for_its_venue(client
     a = client.get(f"/venue-bookings/{created[0]['id']}", headers=staff_h).json()
     assert a["event"]["id"] == event_id
     assert a["venue"]["name"] == "Hall A"
-    assert a["start_time"].startswith("2026-11-02T09:00")
-    assert a["end_time"].startswith("2026-11-02T17:00")
+    assert a["start_time"].startswith("2099-11-02T09:00")
+    assert a["end_time"].startswith("2099-11-02T17:00")
     assert a["expected_attendance"] == 120
     assert a["room_layout_preference"] == "Banquet"
     assert a["accessibility_needs"] == "Ramp at the side door"

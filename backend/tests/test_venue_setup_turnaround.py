@@ -1,4 +1,24 @@
-"""Tests for "Configure Venue Setup & Turnaround Time" (SCRUM-78), AC1-AC6."""
+"""SCRUM-78: venue setup and turnaround time, tested through the API.
+
+Venue staff configure time in minutes before an event for setup and after it
+for turnaround. Both periods occupy the venue, even though they are outside
+the event's advertised start/end. Example: 10:00–12:00 with 30 minutes setup
+and 45 minutes turnaround occupies 09:30–12:45.
+
+Acceptance criteria (numbered in Jira's displayed order):
+* SCRUM-78 AC1: authorised venue staff save both whole-minute values.
+* SCRUM-78 AC2: empty, negative or non-integer values are rejected with an
+  explanation; the tests also check that neither stored value changes.
+* SCRUM-78 AC3: unset values count as zero and staff are told they are unset.
+* SCRUM-78 AC4: internal users can see configured values on the venue.
+* SCRUM-78 AC5: occupancy includes setup before and turnaround after the event.
+* SCRUM-78 AC6: booking/calendar views show event time and buffer periods.
+
+This file tests HTTP responses and database state using isolated fixtures; it
+does not prove what the browser displays. For example, AC3's staff-facing
+message and AC6's calendar rendering need separate frontend checks. Search
+for SCRUM-78 and the AC number to locate the relevant cases.
+"""
 
 import pytest
 
@@ -14,14 +34,17 @@ pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 
 def _put(client, headers, venue_id, body):
+    """Send the setup/turnaround update as the supplied authenticated user."""
     return client.put(f"/venues/{venue_id}/setup-turnaround", json=body, headers=headers)
 
 
 def _staff(client, db_session):
+    """Create authenticated venue-staff headers for an authorised update."""
     return _headers(client, db_session, Role.VENUE_STAFF, "vs@example.com")
 
 
 def _row(db_session, venue):
+    """Reload the venue before reading both values, exposing persisted state."""
     db_session.expire_all()
     return venue.setup_minutes, venue.turnaround_minutes
 
@@ -30,6 +53,7 @@ def _row(db_session, venue):
 
 
 def test_ac1_venue_staff_save_setup_and_turnaround(client, db_session):
+    """SCRUM-78 AC1, positive: 30/45 minutes persist and record an audit actor/time."""
     venue = _venue(db_session)
     staff_h = _staff(client, db_session)
     res = _put(client, staff_h, venue.id, {"setup_minutes": 30, "turnaround_minutes": 45})
@@ -41,6 +65,7 @@ def test_ac1_venue_staff_save_setup_and_turnaround(client, db_session):
 
 
 def test_ac1_zero_is_valid_and_saving_again_is_idempotent(client, db_session):
+    """SCRUM-78 AC1, boundary: zero is valid; the same update can be repeated."""
     venue = _venue(db_session)
     staff_h = _staff(client, db_session)
     body = {"setup_minutes": 0, "turnaround_minutes": 15}
@@ -52,11 +77,13 @@ def test_ac1_zero_is_valid_and_saving_again_is_idempotent(client, db_session):
 
 
 def test_ac1_unknown_venue_is_404(client, db_session):
+    """SCRUM-78 AC1, negative: an update cannot create a nonexistent venue."""
     staff_h = _staff(client, db_session)
     assert _put(client, staff_h, 9999, {"setup_minutes": 1, "turnaround_minutes": 1}).status_code == 404
 
 
 def test_ac1_only_venue_staff_may_save(client, db_session):
+    """SCRUM-78 AC1, access: coordinators, attendees and visitors cannot save."""
     venue = _venue(db_session)
     coord_h = _headers(client, db_session, Role.COORDINATOR, "c@example.com")
     res = _put(client, coord_h, venue.id, {"setup_minutes": 30, "turnaround_minutes": 45})
@@ -94,6 +121,11 @@ def test_ac1_only_venue_staff_may_save(client, db_session):
     ],
 )
 def test_ac2_invalid_values_are_blocked_with_no_partial_write(client, db_session, body, field):
+    """SCRUM-78 AC2, negative/boundary: identify the bad field and keep 5/6.
+
+    Parameter cases include missing, null, empty, negative, fractional, string
+    and boolean values. Keeping both old values checks for partial writes.
+    """
     venue = _venue(db_session, setup_minutes=5, turnaround_minutes=6)
     staff_h = _staff(client, db_session)
     res = _put(client, staff_h, venue.id, body)
@@ -107,6 +139,7 @@ def test_ac2_invalid_values_are_blocked_with_no_partial_write(client, db_session
 
 
 def test_ac3_ac4_unset_venue_reads_null_and_internal_users_see_values(client, db_session):
+    """SCRUM-78 AC3/AC4: internal readers see null before save and 30/45 after."""
     venue = _venue(db_session)
     staff_h = _staff(client, db_session)
     coord_h = _headers(client, db_session, Role.COORDINATOR, "c@example.com")
@@ -120,6 +153,7 @@ def test_ac3_ac4_unset_venue_reads_null_and_internal_users_see_values(client, db
 
 
 def test_ac4_attendees_still_cannot_view_a_venue(client, db_session):
+    """SCRUM-78 AC4, access: the venue detail API refuses an attendee."""
     venue = _venue(db_session)
     client.post("/auth/register", json={"name": "A", "email": "a@example.com", "password": "password123"})
     token = client.post("/auth/login", json={"email": "a@example.com", "password": "password123"}).json()[
@@ -129,7 +163,11 @@ def test_ac4_attendees_still_cannot_view_a_venue(client, db_session):
 
 
 def test_ac3_unset_venue_search_unchanged_frozen_literal(client, db_session):
-    """Null buffers: exactly the pre-story behaviour (touching edges free)."""
+    """SCRUM-78 AC3: unset buffers act as zero in a venue search.
+
+    A booking ending when the requested window begins does not conflict;
+    an actually overlapping booking still removes the venue from results.
+    """
     venue = _venue(db_session, "Plain Hall")
     coord_h = _headers(client, db_session, Role.COORDINATOR, "c@example.com")
     _booking(db_session, venue, _at(7), _at(9))
@@ -142,6 +180,7 @@ def test_ac3_unset_venue_search_unchanged_frozen_literal(client, db_session):
 
 
 def test_ac5_search_window_includes_setup_and_turnaround(client, db_session):
+    """SCRUM-78 AC5: padded periods can clash even when event times do not."""
     venue = _venue(db_session, "Buffered Hall", setup_minutes=30, turnaround_minutes=45)
     coord_h = _headers(client, db_session, Role.COORDINATOR, "c@example.com")
     # Existing booking 06:00-08:00 holds the hall until 08:45; searching from
@@ -150,12 +189,13 @@ def test_ac5_search_window_includes_setup_and_turnaround(client, db_session):
     assert _names(client.get("/venues", params=WINDOW, headers=coord_h)) == []
     # Search starting 09:30 occupies from 09:00; the booking ends occupied 08:45.
     res = client.get(
-        "/venues", params={"start": "2026-11-02T09:30:00Z", "end": "2026-11-02T17:00:00Z"}, headers=coord_h
+        "/venues", params={"start": "2099-11-02T09:30:00Z", "end": "2099-11-02T17:00:00Z"}, headers=coord_h
     )
     assert _names(res) == ["Buffered Hall"]
 
 
 def test_ac5_a_booking_after_the_window_is_buffered_too(client, db_session):
+    """SCRUM-78 AC5: a later booking's setup also participates in conflicts."""
     venue = _venue(db_session, "Buffered Hall", setup_minutes=30, turnaround_minutes=45)
     coord_h = _headers(client, db_session, Role.COORDINATOR, "c@example.com")
     _booking(db_session, venue, _at(17), _at(19))  # touches the window end
@@ -163,8 +203,11 @@ def test_ac5_a_booking_after_the_window_is_buffered_too(client, db_session):
 
 
 def _two_bookings(client, db_session, setup, turnaround, gap_start_hour):
-    """An approved booking 10:00-12:00, and a pending one starting at
-    `gap_start_hour` for the same venue."""
+    """Create an approved 10:00–12:00 booking and a pending one at the gap.
+
+    Both use the same venue and its configured buffers. Return staff headers
+    and the pending ID so each test can exercise the approval decision.
+    """
     _, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.event_approved
@@ -178,6 +221,7 @@ def _two_bookings(client, db_session, setup, turnaround, gap_start_hour):
 
 
 def test_ac5_approval_is_refused_when_the_buffers_leave_no_room(client, db_session):
+    """SCRUM-78 AC5, negative: overlapping occupied periods leave it pending."""
     staff_h, booking_id = _two_bookings(client, db_session, 30, 45, 13)  # 13:00 -30 = 12:30 < 12:45
     res = client.post(f"/venue-bookings/{booking_id}/approve", headers=staff_h)
     assert res.status_code == 409
@@ -185,11 +229,13 @@ def test_ac5_approval_is_refused_when_the_buffers_leave_no_room(client, db_sessi
 
 
 def test_ac5_approval_succeeds_when_buffers_fit(client, db_session):
+    """SCRUM-78 AC5, positive: non-overlapping occupied periods can be approved."""
     staff_h, booking_id = _two_bookings(client, db_session, 30, 45, 14)  # 13:30 > 12:45
     assert client.post(f"/venue-bookings/{booking_id}/approve", headers=staff_h).status_code == 200
 
 
 def test_ac5_back_to_back_without_buffers_is_still_allowed(client, db_session):
+    """SCRUM-78 AC3/AC5, boundary: zero buffers allow bookings that just touch."""
     staff_h, booking_id = _two_bookings(client, db_session, None, None, 12)
     assert client.post(f"/venue-bookings/{booking_id}/approve", headers=staff_h).status_code == 200
 
@@ -198,6 +244,7 @@ def test_ac5_back_to_back_without_buffers_is_still_allowed(client, db_session):
 
 
 def test_ac6_booking_responses_show_event_time_and_buffers(client, db_session):
+    """SCRUM-78 AC6: queue, booking detail and event list return the periods."""
     _, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.event_approved
@@ -213,12 +260,13 @@ def test_ac6_booking_responses_show_event_time_and_buffers(client, db_session):
         client.get(f"/venue-bookings/events/{event_id}", headers=coord_h).json()[0],
     ):
         assert (body["setup_minutes"], body["turnaround_minutes"]) == (30, 45)
-        assert body["occupied_start"].startswith("2026-11-02T09:30:00")
-        assert body["occupied_end"].startswith("2026-11-02T12:45:00")
-        assert body["start_time"].startswith("2026-11-02T10:00:00")
+        assert body["occupied_start"].startswith("2099-11-02T09:30:00")
+        assert body["occupied_end"].startswith("2099-11-02T12:45:00")
+        assert body["start_time"].startswith("2099-11-02T10:00:00")
 
 
 def test_ac6_unset_buffers_read_as_zero(client, db_session):
+    """SCRUM-78 AC3/AC6: unset buffers return zero and do not widen the event."""
     _, org_h, coordinator, coord_h, event_id = review_setup(client, db_session)
     db_session.get(Event, event_id).status = EventStatus.event_approved
     db_session.commit()
@@ -230,6 +278,7 @@ def test_ac6_unset_buffers_read_as_zero(client, db_session):
 
 
 def test_ac6_safety_check_booking_shows_buffers_and_occupied_period(client, db_session):
+    """SCRUM-78 AC6: safety-check booking details expose both occupied ends."""
     from tests.test_safety_checks import _setup
 
     s = _setup(client, db_session)

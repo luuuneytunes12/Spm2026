@@ -1,3 +1,15 @@
+"""Authentication API tests, including SCRUM-14 login acceptance criteria.
+
+SCRUM-14 AC1: valid credentials create an access token and identify the user.
+SCRUM-14 AC3: unknown accounts and incorrect passwords receive the same error,
+and a failed login grants no access. AC4's protected API access is checked here;
+the login redirect and role-home presentation require frontend tests.
+
+Additional security cases cover default roles, permissions, token expiration,
+tampering, refresh and logout. The FastAPI client uses an isolated test database
+and synthetic passwords. A successful API test does not prove browser routing.
+"""
+
 import time
 
 import jwt
@@ -9,14 +21,17 @@ from app.routers.auth import REFRESH_COOKIE_NAME
 
 
 def _register(client, name="Test User", email="user@example.com", password="password123"):
+    """Create an account through the public endpoint with test-only credentials."""
     return client.post("/auth/register", json={"name": name, "email": email, "password": password})
 
 
 def _login(client, email="user@example.com", password="password123"):
+    """Submit credentials to the real login endpoint and return its response."""
     return client.post("/auth/login", json={"email": email, "password": password})
 
 
 def test_register_assigns_default_role(client, db_session):
+    """Public registration creates an attendee and returns an access token."""
     res = _register(client)
     assert res.status_code == 201
     assert "access_token" in res.json()
@@ -28,6 +43,7 @@ def test_register_assigns_default_role(client, db_session):
 
 
 def test_register_ignores_client_supplied_role(client, db_session):
+    """A caller cannot grant themselves organiser privileges during registration."""
     res = client.post(
         "/auth/register",
         json={"name": "Sneaky", "email": "sneaky@example.com", "password": "password123", "role": "organiser"},
@@ -38,6 +54,7 @@ def test_register_ignores_client_supplied_role(client, db_session):
 
 
 def test_login_returns_access_token(client):
+    """SCRUM-14 AC1, positive: valid credentials receive a bearer access token."""
     _register(client)
     res = _login(client)
     assert res.status_code == 200
@@ -47,12 +64,14 @@ def test_login_returns_access_token(client):
 
 
 def test_login_unknown_email_generic_message(client):
+    """SCRUM-14 AC3, negative: an unknown email gets a generic 401 response."""
     res = _login(client, email="ghost@example.com")
     assert res.status_code == 401
     assert res.json()["detail"] == "Invalid credentials"
 
 
 def test_login_wrong_password_generic_message(client):
+    """SCRUM-14 AC3, negative: a wrong password gets the same generic response."""
     _register(client)
     res = _login(client, password="wrong-password")
     assert res.status_code == 401
@@ -60,6 +79,7 @@ def test_login_wrong_password_generic_message(client):
 
 
 def test_me_reflects_role(client):
+    """SCRUM-14 AC1: the authenticated profile exposes role, not sensitive fields."""
     _register(client)
     login_res = _login(client)
     token = login_res.json()["access_token"]
@@ -149,6 +169,7 @@ def test_unrecognized_role_in_token_gets_no_permissions_not_500(client):
 
 
 def test_expired_access_token_401(client):
+    """An expired access token cannot authenticate a protected request."""
     _register(client)
     expired_payload = {
         "sub": "1",
@@ -163,6 +184,7 @@ def test_expired_access_token_401(client):
 
 
 def test_tampered_token_401(client):
+    """Changing a signed token invalidates it and returns unauthorised."""
     _register(client)
     token = _login(client).json()["access_token"]
     tampered = token[:-2] + ("aa" if token[-2:] != "aa" else "bb")
@@ -171,6 +193,7 @@ def test_tampered_token_401(client):
 
 
 def test_refresh_token_cannot_be_used_as_access_token(client):
+    """A refresh token cannot be substituted for an access token."""
     _register(client)
     refresh_cookie = client.cookies.get("refresh_token")
     assert refresh_cookie is not None
@@ -180,6 +203,7 @@ def test_refresh_token_cannot_be_used_as_access_token(client):
 
 
 def test_refresh_flow_issues_new_access_token(client):
+    """A valid refresh cookie can obtain another access token."""
     _register(client)
     res = client.post("/auth/refresh")
     assert res.status_code == 200
@@ -187,12 +211,14 @@ def test_refresh_flow_issues_new_access_token(client):
 
 
 def test_refresh_without_cookie_401(client):
+    """Refresh without a cookie is rejected rather than creating a session."""
     # No register/login call on this client, so no refresh cookie is set.
     res = client.post("/auth/refresh")
     assert res.status_code == 401
 
 
 def test_logout_clears_cookie(client):
+    """A logged-in client can call logout and receives the expected 204 status."""
     _register(client)
     assert client.cookies.get("refresh_token") is not None
     res = client.post("/auth/logout")
@@ -210,6 +236,7 @@ def test_special_use_email_domains_are_accepted(client):
 
 
 def test_unusable_email_domains_are_still_rejected(client):
+    """Malformed or unusable email domains remain invalid."""
     for email in ("admin@foo.invalid", "admin@x.onion", "no-at-sign"):
         res = client.post(
             "/auth/register",
@@ -219,7 +246,7 @@ def test_unusable_email_domains_are_still_rejected(client):
 
 
 def test_invalid_credentials_refuse_access_without_revealing_account_existence(client):
-    """Acceptance criterion: for BOTH an unknown account and a wrong
+    """SCRUM-14 AC3: for BOTH an unknown account and a wrong
     password, login is refused, no session is created, an error is shown,
     and the response does not reveal whether the account exists."""
     _register(client, email="real@example.com", password="correct-password")
@@ -247,7 +274,7 @@ def test_invalid_credentials_refuse_access_without_revealing_account_existence(c
 
 
 def test_failed_login_does_not_grant_access_to_protected_route(client):
-    """No session created means the failed login leaves nothing usable."""
+    """SCRUM-14 AC3/AC4: failed login leaves no usable protected API session."""
     _register(client, email="real@example.com", password="correct-password")
     client.cookies.clear()
 

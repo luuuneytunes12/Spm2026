@@ -1,4 +1,4 @@
-"""Tests for the Event Coordinator's notifications about their Events.
+"""SCRUM-53 - Event Coordinator notifications about their Events.
 
     AC1  The Lead assigns or reassigns an Event Request to me: I get a
          notification with the Event name and the Event Organiser.
@@ -65,7 +65,7 @@ def _move_to(db_session, event_id, coordinator):
     db_session.commit()
 
 
-# --- AC1: assigned or reassigned to me -> Event name and Organiser ---------
+# --- SCRUM-53 AC1: assigned or reassigned to me -> Event name and Organiser ---------
 
 
 def test_ac1_an_assignment_names_the_event_and_the_organiser(client, w):
@@ -103,7 +103,7 @@ def test_ac1_a_refused_assignment_tells_nobody(client, w):
     assert len(_inbox(client, w["sam_h"], ASSIGNED)) == 1
 
 
-# --- AC2: reassigned away -> told it has moved -----------------------------
+# --- SCRUM-53 AC2: reassigned away -> told it has moved -----------------------------
 
 
 def test_ac2_the_previous_coordinator_is_told_it_has_moved(client, w):
@@ -117,7 +117,7 @@ def test_ac2_the_previous_coordinator_is_told_it_has_moved(client, w):
     assert _inbox(client, w["priya_h"], MOVED) == []
 
 
-# --- AC3: the Organiser replies to a clarification -> told -----------------
+# --- SCRUM-53 AC3: the Organiser replies to a clarification -> told -----------------
 
 
 def test_ac3_the_organisers_reply_reaches_the_coordinator(client, db_session):
@@ -135,7 +135,7 @@ def test_ac3_the_organisers_reply_reaches_the_coordinator(client, db_session):
     ]
 
 
-# --- AC4 / AC5: one Venue Booking decided -> that Venue, decision, reason --
+# --- SCRUM-53 AC4 / AC5: one Venue Booking decided -> that Venue, decision, reason --
 
 
 def _two_bookings(client, db_session):
@@ -223,7 +223,7 @@ def test_ac4_a_refused_or_repeated_decision_sends_nothing_new(client, db_session
     assert len(_inbox(client, e["coord_h"], VENUE)) == 1
 
 
-# --- AC6: a Change Request is submitted -> told ----------------------------
+# --- SCRUM-53 AC6: a Change Request is submitted -> told ----------------------------
 
 
 def _request_changes(client, e, description="Move it a day later"):
@@ -251,7 +251,7 @@ def test_ac6_a_refused_change_request_sends_nothing(client, db_session):
     refused = client.post(
         f"/events/{e['event_id']}/change-requests",
         json={"description": "Bad dates", "proposed_changes": {
-            "proposed_start": "2026-11-03T18:00:00Z", "proposed_end": "2026-11-03T09:00:00Z"}},
+            "proposed_start": "2099-11-03T18:00:00Z", "proposed_end": "2099-11-03T09:00:00Z"}},
         headers=e["org_h"],
     )
 
@@ -270,7 +270,7 @@ def test_ac6_each_change_request_is_its_own_notice(client, db_session):
     assert [m.rsplit(": ", 1)[1] for m in _inbox(client, e["coord_h"], CHANGE)] == ["First", "Second"]
 
 
-# --- AC7: not mine, or reassigned away -> nothing ---------------------------
+# --- SCRUM-53 AC7: not mine, or reassigned away -> nothing ---------------------------
 
 
 def _another_coordinator(client, db_session):
@@ -340,7 +340,7 @@ def test_ac7_an_event_with_no_coordinator_tells_no_coordinator(client, db_sessio
     assert db_session.query(Notification).filter_by(type=CHANGE).count() == 0
 
 
-# --- AC8: equipment reserved in full or unavailable -> Event and equipment --
+# --- SCRUM-53 AC8: equipment reserved in full or unavailable -> Event and equipment --
 
 
 def test_ac8_reserved_in_full_names_the_event_and_the_equipment(client, db_session):

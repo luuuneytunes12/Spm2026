@@ -26,8 +26,8 @@ FULL = {
     "purpose": "Annual partner briefing",
     "description": "A full-day briefing for our regional partners.",
     "event_type": "conference",
-    "proposed_start": "2026-11-02T09:00:00Z",
-    "proposed_end": "2026-11-02T17:00:00Z",
+    "proposed_start": "2099-11-02T09:00:00Z",
+    "proposed_end": "2099-11-02T17:00:00Z",
     "expected_attendance": 120,
     "venue_requirements": "Main hall, stage, podium",
     "accessibility_needs": "Step-free access, hearing loop",
@@ -109,8 +109,8 @@ def test_ac3_each_row_carries_the_review_fields(client, world):
     row = client.get(QUEUE, headers=world["lead"]).json()[0]
     assert row["name"] == "Regional Partner Conference"
     assert row["event_type"] == "conference"
-    assert row["proposed_start"].startswith("2026-11-02T09:00")
-    assert row["proposed_end"].startswith("2026-11-02T17:00")
+    assert row["proposed_start"].startswith("2099-11-02T09:00")
+    assert row["proposed_end"].startswith("2099-11-02T17:00")
     assert row["expected_attendance"] == 120
     assert row["organiser"]["name"] == "Olivia Organiser"
     assert row["submitted_at"] is not None
@@ -145,8 +145,8 @@ def test_ac4_opening_a_request_shows_everything_the_organiser_entered(client, wo
         "registration_enabled": True,
     }.items():
         assert body[field] == expected, field
-    assert body["proposed_start"].startswith("2026-11-02T09:00")
-    assert body["proposed_end"].startswith("2026-11-02T17:00")
+    assert body["proposed_start"].startswith("2099-11-02T09:00")
+    assert body["proposed_end"].startswith("2099-11-02T17:00")
     assert body["organiser"]["name"] == "Olivia Organiser"
 
 

@@ -1,4 +1,16 @@
-"""Acceptance tests for requesting changes to a submitted event."""
+"""SCRUM-22: submitted-event change requests, decisions and access rules.
+
+AC1: an allowed organiser's change request becomes pending without changing
+the event. AC2: coordinator approval applies the proposal. AC3: rejection
+leaves the event unchanged and exposes the reason. AC4: important changes
+show affected bookings and reservations. AC5: terminal events cannot receive
+requests. AC6: another organiser cannot submit a request.
+
+The FastAPI test client and isolated database verify API responses and stored
+state. The tests do not by themselves prove that buttons are shown or hidden
+in the browser, or that PostgreSQL prevents concurrent duplicate requests.
+Search for SCRUM-22 and the AC number in this file for individual cases.
+"""
 
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +35,7 @@ pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 
 def test_change_request_is_pending_and_does_not_mutate_event(client, db_session):
+    """SCRUM-22 AC1: a proposed attendance change stays pending and unapplied."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
 
     response = client.post(
@@ -45,6 +58,7 @@ def test_change_request_is_pending_and_does_not_mutate_event(client, db_session)
 
 
 def test_organiser_cannot_submit_another_request_while_one_is_pending(client, db_session):
+    """SCRUM-22 AC1, negative: reject a second pending request without duplication."""
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
     first = {
         "description": "Increase attendance",
@@ -67,6 +81,7 @@ def test_organiser_cannot_submit_another_request_while_one_is_pending(client, db
 
 
 def test_coordinator_must_decide_pending_change_before_event(client, db_session):
+    """A pending change must be decided before the coordinator decides the event."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     client.post(
         f"/events/{event_id}/change-requests",
@@ -81,6 +96,7 @@ def test_coordinator_must_decide_pending_change_before_event(client, db_session)
 
 
 def test_coordinator_approval_applies_proposed_values(client, db_session):
+    """SCRUM-22 AC2: approval applies the proposed values to the event."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     requested = client.post(
         f"/events/{event_id}/change-requests",
@@ -100,6 +116,7 @@ def test_coordinator_approval_applies_proposed_values(client, db_session):
 
 
 def test_important_change_shows_existing_bookings_and_reservations(client, db_session):
+    """SCRUM-22 AC4: an important change exposes affected venue and equipment."""
     _, organiser_headers, organiser, _, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.event_approved
@@ -117,25 +134,26 @@ def test_important_change_shows_existing_bookings_and_reservations(client, db_se
                 event_id=event_id,
                 venue_id=venue.id,
                 requested_by=organiser.id,
-                start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
-                end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
+                start_time=datetime(2099, 11, 2, 9, tzinfo=timezone.utc),
+                end_time=datetime(2099, 11, 2, 17, tzinfo=timezone.utc),
                 status=BookingStatus.approved,
             ),
             VenueBooking(
                 event_id=event_id,
                 venue_id=second_venue.id,
                 requested_by=organiser.id,
-                start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
-                end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
+                start_time=datetime(2099, 11, 2, 9, tzinfo=timezone.utc),
+                end_time=datetime(2099, 11, 2, 17, tzinfo=timezone.utc),
                 status=BookingStatus.tentative_hold,
+                # Keep this hold active regardless of the day the suite runs.
                 expires_at=datetime.now(timezone.utc) + timedelta(days=1),
             ),
             VenueBooking(
                 event_id=event_id,
                 venue_id=expired_venue.id,
                 requested_by=organiser.id,
-                start_time=datetime(2026, 11, 2, 9, tzinfo=timezone.utc),
-                end_time=datetime(2026, 11, 2, 17, tzinfo=timezone.utc),
+                start_time=datetime(2099, 11, 2, 9, tzinfo=timezone.utc),
+                end_time=datetime(2099, 11, 2, 17, tzinfo=timezone.utc),
                 status=BookingStatus.tentative_hold,
                 expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
             ),
@@ -168,6 +186,7 @@ def test_important_change_shows_existing_bookings_and_reservations(client, db_se
 def test_attendance_change_after_approval_returns_event_to_planning_for_safety_review(
     client, db_session
 ):
+    """A major approved attendance change returns the event to planning."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = EventStatus.event_approved
@@ -203,6 +222,7 @@ def test_attendance_change_after_approval_returns_event_to_planning_for_safety_r
 
 
 def test_only_assigned_coordinator_can_review_change_request(client, db_session):
+    """Another coordinator cannot decide this event's pending change request."""
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
     requested = client.post(
         f"/events/{event_id}/change-requests",
@@ -228,6 +248,7 @@ def test_only_assigned_coordinator_can_review_change_request(client, db_session)
 
 
 def test_coordinator_approval_applies_equipment_proposal(client, db_session):
+    """SCRUM-22 AC2: approval also applies proposed equipment changes."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     equipment = Equipment(name="Projector", total_quantity=4)
     db_session.add(equipment)
@@ -263,6 +284,7 @@ def test_coordinator_approval_applies_equipment_proposal(client, db_session):
     ],
 )
 def test_blocked_status_cannot_receive_change_request(client, db_session, blocked_status):
+    """SCRUM-22 AC5, negative: each terminal status rejects a new request."""
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = blocked_status
@@ -336,6 +358,7 @@ def test_ac3_finished_event_refuses_change_request_with_a_reason(
 
 
 def test_coordinator_rejection_keeps_values_and_exposes_reason(client, db_session):
+    """SCRUM-22 AC3: rejection keeps existing event values and shows the reason."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     requested = client.post(
         f"/events/{event_id}/change-requests",
@@ -360,6 +383,7 @@ def test_coordinator_rejection_keeps_values_and_exposes_reason(client, db_sessio
 
 
 def test_non_owner_cannot_request_event_changes(client, db_session):
+    """SCRUM-22 AC6: an organiser cannot request changes to someone else's event."""
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
     _, other_headers = user(client, db_session, Role.ORGANISER, "other@example.com", "Other")
 
@@ -374,13 +398,14 @@ def test_non_owner_cannot_request_event_changes(client, db_session):
 
 
 def test_partial_date_change_cannot_conflict_with_existing_date(client, db_session):
+    """A proposed partial date change must remain valid with the unchanged date."""
     _, organiser_headers, _, _, event_id = review_setup(client, db_session)
 
     response = client.post(
         f"/events/{event_id}/change-requests",
         json={
             "description": "Move the start later",
-            "proposed_changes": {"proposed_start": "2026-11-02T18:00:00Z"},
+            "proposed_changes": {"proposed_start": "2099-11-02T18:00:00Z"},
         },
         headers=organiser_headers,
     )
@@ -391,6 +416,7 @@ def test_partial_date_change_cannot_conflict_with_existing_date(client, db_sessi
 
 @pytest.mark.parametrize("decision", ["approve", "reject"])
 def test_change_request_rules_follow_the_event_status(client, db_session, decision):
+    """SCRUM-22 AC5: approval permits a request; rejection blocks a new one."""
     _, organiser_headers, _, coordinator_headers, event_id = review_setup(client, db_session)
     payload = {"reason": "The requested venue is unavailable."} if decision == "reject" else None
     assert (

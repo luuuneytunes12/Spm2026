@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("coordinator_auto
 
 
 def _at(hour, minute=0):
-    return datetime(2026, 11, 2, hour, minute, tzinfo=timezone.utc)
+    return datetime(2099, 11, 2, hour, minute, tzinfo=timezone.utc)
 
 
 def _world(client, make_user, db, setup, turnaround, starts):
@@ -63,12 +63,12 @@ def test_ac1_ac5_ac6_buffers_persist_gate_approval_and_show_in_responses(client,
 
     [seen] = [b for b in client.get("/venue-bookings/queue", headers=staff_h).json()]
     assert (seen["setup_minutes"], seen["turnaround_minutes"]) == (30, 45)
-    assert seen["occupied_start"].startswith("2026-11-02T12:30")
-    assert seen["occupied_end"].startswith("2026-11-02T15:45")
+    assert seen["occupied_start"].startswith("2099-11-02T12:30")
+    assert seen["occupied_end"].startswith("2099-11-02T15:45")
 
-    coord = {"start": "2026-11-02T13:00:00Z", "end": "2026-11-02T14:00:00Z"}
+    coord = {"start": "2099-11-02T13:00:00Z", "end": "2099-11-02T14:00:00Z"}
     assert [v["name"] for v in client.get("/venues", params=coord, headers=staff_h).json()] == []
-    later = {"start": "2026-11-02T13:30:00Z", "end": "2026-11-02T14:00:00Z"}
+    later = {"start": "2099-11-02T13:30:00Z", "end": "2099-11-02T14:00:00Z"}
     assert [v["name"] for v in client.get("/venues", params=later, headers=staff_h).json()] == ["Marina Hall"]
 
 

@@ -1,4 +1,12 @@
-"""Tests for cancelling an Event assigned to the signed-in Coordinator."""
+"""SCRUM-105: cancel an assigned event and release associated arrangements.
+
+Jira AC1 requires an active assigned event, a reason and cancelled status;
+AC2 rejects a missing reason; AC3 rejects completed, rejected or cancelled
+events; AC4 refuses an unassigned coordinator; AC5 records actor, time and
+reason. These are API tests with an isolated database, not browser tests.
+SCRUM-105 is outside the requested SCRUM-1–55 range; cancellation also affects
+equipment and venue availability tested in other stories.
+"""
 
 import pytest
 
@@ -20,6 +28,7 @@ pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
 
 def test_cancellation_requires_a_non_blank_reason_and_keeps_event_unchanged(client, db_session):
+    """SCRUM-105 AC2: missing or whitespace reasons cannot change the event."""
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
 
     for payload in ({}, {"reason": "   "}):
@@ -37,6 +46,7 @@ def test_cancellation_requires_a_non_blank_reason_and_keeps_event_unchanged(clie
     ],
 )
 def test_terminal_event_cannot_be_cancelled(client, db_session, terminal_status):
+    """SCRUM-105 AC3: each terminal status is refused and remains unchanged."""
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.status = terminal_status
@@ -54,6 +64,7 @@ def test_terminal_event_cannot_be_cancelled(client, db_session, terminal_status)
 
 
 def test_only_the_assigned_coordinator_can_cancel(client, db_session):
+    """SCRUM-105 AC4: a different coordinator cannot cancel the assigned event."""
     _, _, _, _, event_id = review_setup(client, db_session)
     _, other_headers = user(
         client,
@@ -75,6 +86,7 @@ def test_only_the_assigned_coordinator_can_cancel(client, db_session):
 
 
 def test_cancellation_refuses_an_unassigned_event(client, db_session):
+    """SCRUM-105 AC4: a coordinator cannot cancel an event without an assignee."""
     _, _, _, coordinator_headers, event_id = review_setup(client, db_session)
     event = db_session.get(Event, event_id)
     event.coordinator_id = None
@@ -94,6 +106,7 @@ def test_cancellation_refuses_an_unassigned_event(client, db_session):
 def test_cancellation_records_reason_actor_and_time_and_releases_event_reservations(
     client, db_session
 ):
+    """SCRUM-105 AC1/AC5: save the cancellation and audit it with the reason."""
     organiser, organiser_headers, coordinator, coordinator_headers, event_id = review_setup(
         client, db_session
     )

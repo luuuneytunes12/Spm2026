@@ -18,11 +18,11 @@ from tests.test_venue_search import _headers
 
 pytestmark = pytest.mark.usefixtures("coordinator_auto_assign")
 
-# The request under review (from _setup) is 2026-11-02 09:00-17:00 UTC.
+# The request under review (from _setup) is 2099-11-02 09:00-17:00 UTC.
 
 
 def _at(hour, minute=0, day=2):
-    return datetime(2026, 11, day, hour, minute, tzinfo=timezone.utc)
+    return datetime(2099, 11, day, hour, minute, tzinfo=timezone.utc)
 
 
 def _other(db_session, s, start, end, status=BookingStatus.approved, name="Alumni Gala"):
@@ -57,7 +57,7 @@ def _conflicts(client, s):
     return _review(client, s).json()["conflicts"]
 
 
-# --- AC1: overlap with an approved booking is flagged during review ----------
+# --- SCRUM-41 AC1: overlap with an approved booking is flagged during review ----------
 
 
 def test_ac1_overlap_with_an_approved_booking_is_flagged_on_get_and_queue(client, db_session):
@@ -76,8 +76,8 @@ def test_ac1_buffers_widen_the_overlap(client, db_session):
     assert _conflicts(client, s) == []
     _buffers(db_session, s, 60, 0)  # its setup starts 16:30, inside the request
     [c] = _conflicts(client, s)
-    assert c["occupied_start"].startswith("2026-11-02T16:30")
-    assert c["event_start"].startswith("2026-11-02T17:30")
+    assert c["occupied_start"].startswith("2099-11-02T16:30")
+    assert c["event_start"].startswith("2099-11-02T17:30")
 
 
 def test_ac1_no_overlap_means_no_conflicts(client, db_session):
@@ -102,12 +102,12 @@ def test_ac1_approve_409_names_the_conflict_and_changes_nothing(client, db_sessi
     assert res.status_code == 409
     detail = res.json()["detail"]
     assert "already booked" in detail and "Alumni Gala" in detail
-    assert "2 Nov 2026 23:00 - 3 Nov 2026 01:00 SGT" in detail
+    assert "2 Nov 2099 23:00 - 3 Nov 2099 01:00 SGT" in detail
     db_session.expire_all()
     assert db_session.get(VenueBooking, s["booking_id"]).status == BookingStatus.pending
 
 
-# --- AC2: availability calendar shows the occupied period as busy ------------
+# --- SCRUM-41 AC2: availability calendar shows the occupied period as busy ------------
 
 
 def _availability(client, headers, venue_id, start, end):
@@ -121,20 +121,19 @@ def _availability(client, headers, venue_id, start, end):
 def test_ac2_an_approved_booking_makes_its_occupied_period_busy(client, db_session):
     s = _setup(client, db_session)
     _buffers(db_session, s, 30, 45)
-    other = _other(db_session, s, _at(10, day=3), _at(12, day=3))
+    _other(db_session, s, _at(10, day=3), _at(12, day=3))
     res = _availability(client, s["staff_h"], s["venue"].id, _at(0, day=3), _at(23, day=3))
     assert res.status_code == 200
     body = res.json()
     assert body["venue_id"] == s["venue"].id
     [busy] = body["busy"]
     assert busy["kind"] == "booking"
-    assert busy["start"].startswith("2026-11-03T09:30") and busy["end"].startswith("2026-11-03T12:45")
-    assert busy["event_start"].startswith("2026-11-03T10:00") and busy["event_end"].startswith("2026-11-03T12:00")
+    assert busy["start"].startswith("2099-11-03T09:30") and busy["end"].startswith("2099-11-03T12:45")
+    assert busy["event_start"].startswith("2099-11-03T10:00") and busy["event_end"].startswith("2099-11-03T12:00")
     assert busy["event_name"] == "Alumni Gala"
     # the buffer alone (12:30) is busy even though the event has ended
     edge = _availability(client, s["staff_h"], s["venue"].id, _at(12, 30, day=3), _at(13, day=3))
     assert len(edge.json()["busy"]) == 1
-    assert other.id  # silence unused
 
 
 def test_ac2_closures_are_busy_and_a_range_outside_is_free(client, db_session):
@@ -164,7 +163,7 @@ def test_ac2_venue_search_agrees_with_the_calendar(client, db_session):
     assert s["venue"].id not in [v["id"] for v in found]
 
 
-# --- AC3: touching occupied periods do not conflict ---------------------------
+# --- SCRUM-41 AC3: touching occupied periods do not conflict ---------------------------
 
 
 def test_ac3_a_request_starting_exactly_when_an_approved_one_ends_is_not_a_conflict(client, db_session):
@@ -184,7 +183,7 @@ def test_ac3_touching_occupied_periods_with_buffers_are_not_a_conflict(client, d
     _other(db_session, s, _at(5, 46), _at(7, 46), name="Late One")
     [c] = _conflicts(client, s)
     assert c["event_name"] == "Late One"
-    assert c["overlap_start"].startswith("2026-11-02T08:30") and c["overlap_end"].startswith("2026-11-02T08:31")
+    assert c["overlap_start"].startswith("2099-11-02T08:30") and c["overlap_end"].startswith("2099-11-02T08:31")
 
 
 def test_ac3_availability_treats_touching_as_free(client, db_session):
@@ -193,7 +192,7 @@ def test_ac3_availability_treats_touching_as_free(client, db_session):
     assert _availability(client, s["staff_h"], s["venue"].id, _at(12, day=3), _at(13, day=3)).json()["busy"] == []
 
 
-# --- AC4: only approved bookings count ----------------------------------------
+# --- SCRUM-41 AC4: only approved bookings count ----------------------------------------
 
 
 @pytest.mark.parametrize("status", [BookingStatus.pending, BookingStatus.rejected, BookingStatus.cancelled])
@@ -260,7 +259,7 @@ def test_ac4_a_replaced_booking_stops_conflicting_until_it_is_approved_again(cli
     assert _approve(client, s["staff_h"], s["booking_id"]).status_code == 200
 
 
-# --- AC5: what it conflicts with, and the overlapping time --------------------
+# --- SCRUM-41 AC5: what it conflicts with, and the overlapping time --------------------
 
 
 def test_ac5_conflict_shape_and_overlap_are_exact(client, db_session):
@@ -275,8 +274,8 @@ def test_ac5_conflict_shape_and_overlap_are_exact(client, db_session):
     }
     assert c["kind"] == "booking" and c["reason"] is None and c["status"] == "approved"
     assert c["booking_id"] == other.id
-    assert (c["occupied_start"][:16], c["occupied_end"][:16]) == ("2026-11-02T15:45", "2026-11-02T20:30")
-    assert (c["overlap_start"][:16], c["overlap_end"][:16]) == ("2026-11-02T15:45", "2026-11-02T17:30")
+    assert (c["occupied_start"][:16], c["occupied_end"][:16]) == ("2099-11-02T15:45", "2099-11-02T20:30")
+    assert (c["overlap_start"][:16], c["overlap_end"][:16]) == ("2099-11-02T15:45", "2099-11-02T17:30")
 
 
 def test_ac5_several_conflicts_are_all_listed_in_start_order(client, db_session):
@@ -290,13 +289,13 @@ def test_ac5_this_requests_own_occupied_time_is_start_minus_setup_to_end_plus_tu
     s = _setup(client, db_session)
     _buffers(db_session, s, 30, 45)  # the request's event is 09:00-17:00
     review = _review(client, s).json()
-    assert review["start_time"].startswith("2026-11-02T09:00")
-    assert review["end_time"].startswith("2026-11-02T17:00")
-    assert review["occupied_start"].startswith("2026-11-02T08:30")
-    assert review["occupied_end"].startswith("2026-11-02T17:45")
+    assert review["start_time"].startswith("2099-11-02T09:00")
+    assert review["end_time"].startswith("2099-11-02T17:00")
+    assert review["occupied_start"].startswith("2099-11-02T08:30")
+    assert review["occupied_end"].startswith("2099-11-02T17:45")
     [queued] = client.get("/venue-bookings/queue", headers=s["staff_h"]).json()
-    assert queued["occupied_start"].startswith("2026-11-02T08:30")
-    assert queued["occupied_end"].startswith("2026-11-02T17:45")
+    assert queued["occupied_start"].startswith("2099-11-02T08:30")
+    assert queued["occupied_end"].startswith("2099-11-02T17:45")
 
 
 def test_ac5_with_no_setup_or_turnaround_the_occupied_time_is_the_event_time(client, db_session):
@@ -307,7 +306,7 @@ def test_ac5_with_no_setup_or_turnaround_the_occupied_time_is_the_event_time(cli
     assert review["occupied_end"][:16] == review["end_time"][:16]
 
 
-# --- AC6: an overlapping request cannot be approved --------------------------
+# --- SCRUM-41 AC6: an overlapping request cannot be approved --------------------------
 
 
 def test_ac6_a_buffer_only_overlap_refuses_approval_and_the_request_stays_pending(client, db_session):
@@ -381,10 +380,10 @@ def test_availability_access_denied_and_unknown_venue(client, db_session):
 @pytest.mark.parametrize(
     "params",
     [
-        {"start": "2026-11-02T10:00:00Z"},
-        {"end": "2026-11-02T10:00:00Z"},
-        {"start": "2026-11-02T10:00:00Z", "end": "2026-11-02T10:00:00Z"},
-        {"start": "2026-11-02T11:00:00Z", "end": "2026-11-02T10:00:00Z"},
+        {"start": "2099-11-02T10:00:00Z"},
+        {"end": "2099-11-02T10:00:00Z"},
+        {"start": "2099-11-02T10:00:00Z", "end": "2099-11-02T10:00:00Z"},
+        {"start": "2099-11-02T11:00:00Z", "end": "2099-11-02T10:00:00Z"},
         {},
     ],
 )
@@ -403,8 +402,8 @@ def test_frozen_a_booking_with_no_clash_has_empty_conflicts_and_existing_fields(
     assert body["conflicts"] == []
     assert body["status"] == "pending"
     assert (body["setup_minutes"], body["turnaround_minutes"]) == (0, 0)
-    assert body["occupied_start"].startswith("2026-11-02T09:00")
-    assert body["occupied_end"].startswith("2026-11-02T17:00")
+    assert body["occupied_start"].startswith("2099-11-02T09:00")
+    assert body["occupied_end"].startswith("2099-11-02T17:00")
 
 
 def test_frozen_venue_search_still_excludes_only_approved_overlaps(client, db_session):

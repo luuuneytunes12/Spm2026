@@ -29,8 +29,8 @@ from tests.integration.test_coordinator_concurrency_postgres import THREADS, rac
 
 pytestmark = pytest.mark.integration
 
-START = "2026-11-02T09:00:00Z"
-END = "2026-11-02T17:00:00Z"
+START = "2099-11-02T09:00:00Z"
+END = "2099-11-02T17:00:00Z"
 
 
 @pytest.fixture()
@@ -172,7 +172,7 @@ def test_scrum43_the_coordinator_can_edit_and_remove_a_requirement(client, world
 
 
 def test_scrum100_ac1_requested_rows_list_event_type_quantity_and_date_oldest_first(client, world):
-    later = world["approved_event"](name="Later Event", start="2026-12-01T09:00:00Z", end="2026-12-01T17:00:00Z")
+    later = world["approved_event"](name="Later Event", start="2099-12-01T09:00:00Z", end="2099-12-01T17:00:00Z")
     sooner = world["approved_event"](name="Sooner Event")
     _add_requirement(client, world["coord_h"], later, category="Projection", quantity_needed=1)
     _add_requirement(client, world["coord_h"], sooner, category="Audio", quantity_needed=2)
@@ -181,7 +181,7 @@ def test_scrum100_ac1_requested_rows_list_event_type_quantity_and_date_oldest_fi
 
     assert [r["event"]["name"] for r in rows] == ["Sooner Event", "Later Event"]
     assert (rows[0]["category"], rows[0]["quantity_needed"]) == ("Audio", 2)
-    assert rows[0]["event"]["proposed_start"].startswith("2026-11-02T09:00")
+    assert rows[0]["event"]["proposed_start"].startswith("2099-11-02T09:00")
 
 
 def test_scrum100_ac2_with_nothing_requested_the_list_is_empty(client, world):
@@ -223,12 +223,12 @@ def test_scrum45_ac1_free_stock_is_shown_for_a_window(client, world):
 
 def test_scrum45_ac2_scrum46_ac3_overlapping_reservations_are_deducted_and_touching_ones_are_not(client, world):
     mic = world["items"]["Shure BLX24"]
-    morning = world["approved_event"](name="Morning", start="2026-11-02T09:00:00Z", end="2026-11-02T12:00:00Z")
+    morning = world["approved_event"](name="Morning", start="2099-11-02T09:00:00Z", end="2099-11-02T12:00:00Z")
     assert _reserve(client, world["tech_h"], morning, mic, 3).status_code == 200
 
-    overlapping = _availability(client, world["tech_h"], mic, "2026-11-02T11:00:00Z", "2026-11-02T13:00:00Z")
-    touching = _availability(client, world["tech_h"], mic, "2026-11-02T12:00:00Z", "2026-11-02T13:00:00Z")
-    other_zone = _availability(client, world["tech_h"], mic, "2026-11-02T19:30:00+08:00", "2026-11-02T21:00:00+08:00")
+    overlapping = _availability(client, world["tech_h"], mic, "2099-11-02T11:00:00Z", "2099-11-02T13:00:00Z")
+    touching = _availability(client, world["tech_h"], mic, "2099-11-02T12:00:00Z", "2099-11-02T13:00:00Z")
+    other_zone = _availability(client, world["tech_h"], mic, "2099-11-02T19:30:00+08:00", "2099-11-02T21:00:00+08:00")
 
     assert overlapping["available_quantity"] == 1 and overlapping["reserved_quantity"] == 3
     assert touching["available_quantity"] == 4
@@ -255,8 +255,8 @@ def test_scrum46_ac1_ac2_a_reservation_records_type_quantity_event_and_window(cl
 
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["quantity"] == 2 and body["start_time"].startswith("2026-11-02T09:00")
-    assert body["end_time"].startswith("2026-11-02T17:00")
+    assert body["quantity"] == 2 and body["start_time"].startswith("2099-11-02T09:00")
+    assert body["end_time"].startswith("2099-11-02T17:00")
     db.expire_all()
     line = db.query(EquipmentRequest).filter_by(event_id=event_id, equipment_id=projector).one()
     assert line.status == EquipmentStatus.reserved and line.reviewed_by == world["tech"].id

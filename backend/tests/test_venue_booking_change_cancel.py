@@ -49,8 +49,8 @@ from app.models.notifications import Notification
 from app.models.user import User
 from app.models.venues import Venue, VenueBooking
 
-START = datetime(2026, 11, 2, 9, tzinfo=timezone.utc)
-END = datetime(2026, 11, 2, 17, tzinfo=timezone.utc)
+START = datetime(2099, 11, 2, 9, tzinfo=timezone.utc)
+END = datetime(2099, 11, 2, 17, tzinfo=timezone.utc)
 
 # Where a booking may be changed or cancelled: while the event is being
 # planned. Once it goes to the Safety Officer the arrangement is judged as it

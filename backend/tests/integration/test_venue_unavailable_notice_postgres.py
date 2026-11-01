@@ -54,8 +54,8 @@ def test_ac1_to_ac4_flag_notify_untouched_and_cleared_on_postgres(client, make_u
     # AC3: each Coordinator told, with the affected period.
     told = _messages(db, type="venue_booking_conflict") + _messages(db, type="venue_unavailability_recorded")
     assert len(told) == 2 and all("Action Required" in m for m in told)
-    assert "from 2 Nov 2026, 20:30 SGT to 2 Nov 2026, 20:45 SGT" in told[0]
-    assert "from 2 Nov 2026, 21:30 SGT to 2 Nov 2026, 21:45 SGT" in told[1]
+    assert "from 2 Nov 2099, 20:30 SGT to 2 Nov 2099, 20:45 SGT" in told[0]
+    assert "from 2 Nov 2099, 21:30 SGT to 2 Nov 2099, 21:45 SGT" in told[1]
 
     # AC4: moved clear of both -> both marks gone, both Coordinators told.
     pid = res.json()["id"]

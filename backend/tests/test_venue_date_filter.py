@@ -16,7 +16,7 @@ padded period clashes with
 Touching is not overlapping. Setup and turnaround are set per venue by Venue
 Staff (SCRUM-78); unset is read as 0.
 
-Every date test searches the same window: 2 Nov 2026, 09:00-17:00 UTC.
+Every date test searches the same window: 2 Nov 2099, 09:00-17:00 UTC.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -215,7 +215,7 @@ def test_ac1_a_window_given_in_singapore_time_is_compared_correctly(client, db_s
 
     res = client.get(
         "/venues",
-        params={"start": "2026-11-02T17:00:00+08:00", "end": "2026-11-03T01:00:00+08:00"},
+        params={"start": "2099-11-02T17:00:00+08:00", "end": "2099-11-03T01:00:00+08:00"},
         headers=headers,
     )
     assert _names(res) == []
@@ -276,8 +276,8 @@ def test_ac2_one_live_booking_still_excludes_a_venue_that_also_has_dead_ones(cli
 @pytest.mark.parametrize(
     "params,case",
     [
-        ({"start": "2026-11-02T17:00:00Z", "end": "2026-11-02T09:00:00Z"}, "end before start"),
-        ({"start": "2026-11-02T09:00:00Z", "end": "2026-11-02T09:00:00Z"}, "end equals start"),
+        ({"start": "2099-11-02T17:00:00Z", "end": "2099-11-02T09:00:00Z"}, "end before start"),
+        ({"start": "2099-11-02T09:00:00Z", "end": "2099-11-02T09:00:00Z"}, "end equals start"),
     ],
 )
 def test_ac3_an_end_earlier_than_the_start_is_refused_and_the_end_is_flagged(

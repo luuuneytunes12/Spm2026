@@ -41,8 +41,8 @@ COMPLETE = {
     "name": "Regional Partner Conference",
     "purpose": "Annual partner briefing",
     "event_type": "conference",
-    "proposed_start": "2026-11-02T09:00:00Z",
-    "proposed_end": "2026-11-02T17:00:00Z",
+    "proposed_start": "2099-11-02T09:00:00Z",
+    "proposed_end": "2099-11-02T17:00:00Z",
     "expected_attendance": 120,
     "venue_requirements": "Main hall, stage, podium",
     "accessibility_needs": "Step-free access, hearing loop",
@@ -253,3 +253,8 @@ def test_rolled_back_assignment_pushes_nothing(client, db_session):
 
     publish.assert_not_called()
     assert db_session.query(Notification).count() == 0
+
+
+# SCRUM-24 AC1/AC4: this branch has no coordinator self-service availability
+# or availability-history endpoint. The tests above cover assignment decisions
+# using the stored availability flag, but do not verify those two Jira criteria.

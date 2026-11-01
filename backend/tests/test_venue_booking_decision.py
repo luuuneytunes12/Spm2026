@@ -1,4 +1,4 @@
-"""Tests for the "Approve or Reject Venue Booking Request" story.
+"""SCRUM-40 - Process Venue Booking Request (approve or reject).
 
     As a Venue Staff member, I want to approve or reject a submitted booking
     request, so that the Event Coordinator receives a clear decision on the
@@ -62,7 +62,7 @@ def _as_coordinator(client, s):
     return client.get(f"/venue-bookings/events/{s['event_id']}", headers=s["coord_h"]).json()
 
 
-# --- AC1: pending requests appear in a queue for review ---------------------
+# --- SCRUM-40 AC1: pending requests appear in a queue for review ---------------------
 
 
 def test_ac1_a_new_request_is_in_the_queue_until_it_is_decided(client, db_session):
@@ -153,7 +153,7 @@ def test_expired_hold_is_removed_from_staff_queue_and_notified(client, db_sessio
     assert notice.user_id == db_session.get(Event, s["event_id"]).coordinator_id
 
 
-# --- AC2: Venue Staff can either approve or reject --------------------------
+# --- SCRUM-40 AC2: Venue Staff can either approve or reject --------------------------
 
 
 def test_ac2_venue_staff_can_approve_and_the_decision_records_who_and_when(client, db_session):
@@ -180,7 +180,7 @@ def test_ac2_venue_staff_can_reject_and_the_decision_records_who_and_when(client
     assert booking.reviewed_at is not None
 
 
-# --- AC3: a reason, an alternative, or both -- visible to the Coordinator ---
+# --- SCRUM-40 AC3: a reason, an alternative, or both -- visible to the Coordinator ---
 
 
 @pytest.mark.parametrize(
@@ -225,13 +225,22 @@ def test_ac3_a_rejection_with_neither_is_refused_and_the_request_stays_pending(c
     assert _queue_ids(client, s["staff_h"]) == [s["booking_id"]]
 
 
+def test_ac3_a_reason_of_exactly_2000_characters_is_accepted(client, db_session):
+    """SCRUM-40 AC3 boundary: 2000 is the limit, so 2000 is accepted and kept whole."""
+    s = _setup(client, db_session)
+    reason = "x" * 2000
+    assert _reject(client, s["staff_h"], s["booking_id"], reason=reason).status_code == 200
+    assert db_session.get(VenueBooking, s["booking_id"]).decision_notes == reason
+
+
 def test_ac3_an_overlong_reason_is_refused_and_nothing_is_saved(client, db_session):
+    """SCRUM-40 AC3 boundary: 2001 characters is one over the limit, so it is refused."""
     s = _setup(client, db_session)
     assert _reject(client, s["staff_h"], s["booking_id"], reason="x" * 2001).status_code == 422
     assert db_session.get(VenueBooking, s["booking_id"]).status == BookingStatus.pending
 
 
-# --- AC4: the outcome is visible to the Event Coordinator -------------------
+# --- SCRUM-40 AC4: the outcome is visible to the Event Coordinator -------------------
 
 
 def test_ac4_the_coordinator_sees_an_approval_with_who_decided_and_when(client, db_session):
@@ -265,7 +274,7 @@ def test_ac4_the_outcome_is_not_visible_to_another_coordinator(client, db_sessio
     assert client.get(f"/venue-bookings/{s['booking_id']}", headers=other_h).status_code == 403
 
 
-# --- AC5: a rejected request can be resubmitted and reviewed again ----------
+# --- SCRUM-40 AC5: a rejected request can be resubmitted and reviewed again ----------
 
 
 def test_ac5_a_rejected_request_can_be_resubmitted_and_reviewed_again_without_limit(client, db_session):
@@ -365,8 +374,8 @@ def test_a_back_to_back_booking_of_the_same_venue_can_be_approved(client, db_ses
         client,
         db_session,
         s,
-        proposed_start=datetime(2026, 11, 2, 17, 0),
-        proposed_end=datetime(2026, 11, 2, 20, 0),
+        proposed_start=datetime(2099, 11, 2, 17, 0),
+        proposed_end=datetime(2099, 11, 2, 20, 0),
     )
     assert _approve(client, s["staff_h"], s["booking_id"]).status_code == 200
     assert _approve(client, s["staff_h"], second).status_code == 200
@@ -377,8 +386,8 @@ def test_a_venue_blocked_out_for_that_time_cannot_be_approved(client, db_session
     db_session.add(
         VenueUnavailability(
             venue_id=s["venue"].id,
-            start_time=datetime(2026, 11, 2, 12, 0),
-            end_time=datetime(2026, 11, 2, 13, 0),
+            start_time=datetime(2099, 11, 2, 12, 0),
+            end_time=datetime(2099, 11, 2, 13, 0),
             reason="Maintenance",
             created_by=s["staff"].id,
         )
