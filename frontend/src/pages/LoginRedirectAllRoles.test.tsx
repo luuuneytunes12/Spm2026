@@ -1,14 +1,14 @@
 /**
- * Logging in takes every role to its own landing page: the real Login page,
- * the real "/" redirect (My) and the real RequireAuth guard, with only the
- * session mocked. LoginRedirect.test.tsx covers Organiser and Coordinator.
+ * Unit tests for logging in taking every role to its own landing page: the real
+ * Login page, the real "/" redirect (My) and the real RequireAuth guard, with
+ * only the session mocked. LoginRedirect.test.tsx covers Organiser and Coordinator.
  *
- * Traceability:
- *   SCRUM-73 AC1  Venue Staff
- *   SCRUM-74 AC1  Technical Support Staff
- *   SCRUM-75 AC1  Attendee
- *   SCRUM-76 AC1  Event Coordinator Lead
- *   SCRUM-77 AC1  Safety Officer, whose home is the Safety Checks queue
+ * Each story below is "Login as <role>", wanting a landing page after logging in.
+ *   SCRUM-73 AC1  Venue Staff are taken to the Venue Staff landing page
+ *   SCRUM-74 AC1  Technical Support Staff are taken to their landing page
+ *   SCRUM-75 AC1  an Attendee is taken to the Attendee landing page
+ *   SCRUM-76 AC1  an Event Coordinator Lead is taken to their landing page
+ *   SCRUM-77 AC1  a Safety Officer is taken to their home, the Safety Checks queue
  *
  * The it.todo lines are acceptance criteria the app does not meet yet.
  */

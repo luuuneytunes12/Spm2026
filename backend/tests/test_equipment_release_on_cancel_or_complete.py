@@ -1,8 +1,15 @@
-"""Tests for SCRUM-59 "Auto-Release Equipment on Event Cancellation or Completion".
+"""Unit tests for equipment being released when an Event ends.
+
+SCRUM-59  Auto-Release Equipment on Event Cancellation or Completion
 
     As a Technical Support Staff member, I want equipment reservations to be
     automatically released when an event is cancelled or completed, so that I
     do not need to manually free up equipment after every event.
+
+    AC1  when an Event becomes Event Cancelled or Event Completed, all its
+         Equipment Reservations are released
+    AC2  the released quantity is reflected in the catalogue's available count
+    AC3  a new reservation after a release is treated as a normal reservation
 
 The release follows the Event's status rather than a job that runs, so these
 reserve through the API and then move the Event on.
@@ -72,12 +79,12 @@ def _move_on(db_session, w, status):
     db_session.commit()
 
 
-def test_ac1_ac2_reserved_stock_is_counted_as_taken_until_then(client, w):
+def test_scrum59_ac1_ac2_reserved_stock_is_counted_as_taken_until_then(client, w):
     assert _available(client, w) == TOTAL - RESERVED
 
 
 @pytest.mark.parametrize("status", RELEASING)
-def test_ac1_ac2_the_released_quantity_returns_to_the_available_count(client, db_session, w, status):
+def test_scrum59_ac1_ac2_the_released_quantity_returns_to_the_available_count(client, db_session, w, status):
     _move_on(db_session, w, status)
     assert _available(client, w) == TOTAL
 
@@ -90,13 +97,13 @@ def test_ac1_ac2_the_released_quantity_returns_to_the_available_count(client, db
         EventStatus.safety_check_passed,
     ],
 )
-def test_ac1_other_status_changes_release_nothing(client, db_session, w, status):
+def test_scrum59_ac1_other_status_changes_release_nothing(client, db_session, w, status):
     _move_on(db_session, w, status)
     assert _available(client, w) == TOTAL - RESERVED
 
 
 @pytest.mark.parametrize("status", RELEASING)
-def test_ac3_a_new_reservation_after_a_release_is_a_normal_one(client, db_session, w, status):
+def test_scrum59_ac3_a_new_reservation_after_a_release_is_a_normal_one(client, db_session, w, status):
     _move_on(db_session, w, status)
     second = _approved_event(db_session, w, "Second")
 
@@ -107,6 +114,6 @@ def test_ac3_a_new_reservation_after_a_release_is_a_normal_one(client, db_sessio
     assert _available(client, w) == TOTAL - RESERVED
 
 
-def test_ac3_without_a_release_the_same_reservation_is_refused(client, db_session, w):
+def test_scrum59_ac3_without_a_release_the_same_reservation_is_refused(client, db_session, w):
     second = _approved_event(db_session, w, "Second")
     assert _reserve(client, w, second).status_code == 409

@@ -1,11 +1,14 @@
 /**
- * The route guards and the conditional-rendering helper on their own.
+ * Unit tests for the route guards and the conditional-rendering helper on their
+ * own.
  *
- * Traceability:
- *   SCRUM-62 AC1  a role that is not admitted is sent to /forbidden
- *   SCRUM-62 AC2  a role that is admitted reaches the page
- *   SCRUM-62 AC3  someone not logged in is sent to the login page
- *   SCRUM-62 AC4  the permission set of the role decides what is shown
+ * SCRUM-62  Set Up Role-Based Access Control (RBAC) Infrastructure
+ *   As a developer, I want a role-based access control system configured, so that
+ *   the application can enforce role-specific permissions across all features.
+ *   AC1  a role that is not admitted is denied (sent to /forbidden)
+ *   AC2  a role that is admitted reaches the page
+ *   AC3  someone not logged in is redirected to the login page
+ *   AC4  the permission set of the role decides what is shown
  */
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'

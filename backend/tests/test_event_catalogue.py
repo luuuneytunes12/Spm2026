@@ -1,11 +1,23 @@
-"""Tests for SCRUM-68 "View Event Catalogue", against GET /registrations/events.
+"""Unit tests for the Attendee's event catalogue, GET /registrations/events.
+
+SCRUM-68  View Event Catalogue
 
     As an Attendee, I want to browse a catalogue of events open for
     registration, so that I can discover events and choose which ones to look
     into further.
 
-The "no events" wording and the link to an event's details are the page's:
-frontend/src/pages/registrations/EventCatalogue.test.tsx.
+    AC1  confirmed, open events are listed with name, category, date, time and
+         venue name
+    AC2  an event not confirmed, closed for registration, cancelled or
+         completed is not listed
+    AC3  selecting an event opens its attendee-facing details
+    AC4  no internal planning information appears
+    AC5  with no events open, a clear "no events available" message is shown
+    AC6  changed confirmed details are shown as they are now
+
+AC3 and the wording of AC5 are the page's:
+frontend/src/pages/registrations/EventCatalogue.test.tsx. The xfails record
+the parts of AC1 and AC2 the API does not meet yet.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -54,7 +66,7 @@ def _catalogue(client, w):
     return res.json()
 
 
-def test_ac1_an_open_event_is_listed_with_its_name_date_and_time(client, db_session, w):
+def test_scrum68_ac1_an_open_event_is_listed_with_its_name_date_and_time(client, db_session, w):
     event = _event(db_session, w)
 
     [row] = _catalogue(client, w)
@@ -69,7 +81,7 @@ def test_ac1_an_open_event_is_listed_with_its_name_date_and_time(client, db_sess
     raises=KeyError,
     reason="SCRUM-68 AC1 not implemented: RegistrableEvent has no category.",
 )
-def test_ac1_each_event_shows_its_category(client, db_session, w):
+def test_scrum68_ac1_each_event_shows_its_category(client, db_session, w):
     _event(db_session, w)
     [row] = _catalogue(client, w)
     assert row["category"] == "conference"
@@ -80,7 +92,7 @@ def test_ac1_each_event_shows_its_category(client, db_session, w):
     raises=KeyError,
     reason="SCRUM-68 AC1 not implemented: RegistrableEvent has no venue name.",
 )
-def test_ac1_each_event_shows_its_venue_name(client, db_session, w):
+def test_scrum68_ac1_each_event_shows_its_venue_name(client, db_session, w):
     event = _event(db_session, w)
     venue = _venue(db_session)
     db_session.add(
@@ -99,12 +111,12 @@ def test_ac1_each_event_shows_its_venue_name(client, db_session, w):
 
 
 @pytest.mark.parametrize("status", [s for s in EventStatus if s != EventStatus.safety_check_passed])
-def test_ac2_an_event_that_is_not_confirmed_is_not_listed(client, db_session, w, status):
+def test_scrum68_ac2_an_event_that_is_not_confirmed_is_not_listed(client, db_session, w, status):
     _event(db_session, w, status=status)
     assert _catalogue(client, w) == []
 
 
-def test_ac2_an_event_not_taking_registrations_is_not_listed(client, db_session, w):
+def test_scrum68_ac2_an_event_not_taking_registrations_is_not_listed(client, db_session, w):
     _event(db_session, w, enabled=False)
     assert _catalogue(client, w) == []
 
@@ -114,23 +126,23 @@ def test_ac2_an_event_not_taking_registrations_is_not_listed(client, db_session,
     raises=AssertionError,
     reason="SCRUM-68 AC2 not met: an event closed for registration stays listed, marked closed.",
 )
-def test_ac2_an_event_closed_for_registration_is_not_listed(client, db_session, w):
+def test_scrum68_ac2_an_event_closed_for_registration_is_not_listed(client, db_session, w):
     _event(db_session, w, days=-1)
     assert _catalogue(client, w) == []
 
 
-def test_ac4_no_internal_planning_information_is_returned(client, db_session, w):
+def test_scrum68_ac4_no_internal_planning_information_is_returned(client, db_session, w):
     _event(db_session, w)
     [row] = _catalogue(client, w)
     leaked = [key for key in row if any(word in key for word in INTERNAL)]
     assert leaked == []
 
 
-def test_ac5_with_nothing_open_the_catalogue_is_empty(client, w):
+def test_scrum68_ac5_with_nothing_open_the_catalogue_is_empty(client, w):
     assert _catalogue(client, w) == []
 
 
-def test_ac6_changed_confirmed_details_are_shown_as_they_are_now(client, db_session, w):
+def test_scrum68_ac6_changed_confirmed_details_are_shown_as_they_are_now(client, db_session, w):
     event = _event(db_session, w)
     moved = event.proposed_start + timedelta(days=1)
     event.name = "Partner Summit 2027"
@@ -144,10 +156,10 @@ def test_ac6_changed_confirmed_details_are_shown_as_they_are_now(client, db_sess
 
 
 @pytest.mark.parametrize("role", [r for r in Role if r != Role.ATTENDEE])
-def test_only_an_attendee_opens_the_catalogue(client, db_session, role):
+def test_scrum68_negative_only_an_attendee_opens_the_catalogue(client, db_session, role):
     _, headers = user(client, db_session, role, "other@example.com", "Other")
     assert client.get("/registrations/events", headers=headers).status_code == 403
 
 
-def test_someone_not_logged_in_cannot_open_the_catalogue(client):
+def test_scrum68_negative_someone_not_logged_in_cannot_open_the_catalogue(client):
     assert client.get("/registrations/events").status_code == 401

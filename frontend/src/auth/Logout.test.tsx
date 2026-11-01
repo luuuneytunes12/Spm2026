@@ -1,12 +1,15 @@
 /**
- * Logging out from the navbar, through the real AuthProvider, Navbar and
- * RequireAuth, with only the network mocked. What the server does with the
- * cookie is backend/tests/test_scrum63_logout.py.
+ * Unit tests for logging out from the navbar, through the real AuthProvider,
+ * Navbar and RequireAuth, with only the network mocked. What the server does
+ * with the cookie is backend/tests/test_logout.py.
  *
- * Traceability (SCRUM-63):
- *   AC1  logging out ends the session
- *   AC2  afterwards a page that needs an account is not shown
- *   AC3  they are taken back to the login page
+ * SCRUM-63  Log Out System
+ *   As a registered user (Event Organiser, Event Coordinator, Venue Staff, or
+ *   Technical Support Staff), I want to log out of my account, so that my session
+ *   ends and no one else can use my account upon log out.
+ *   AC1  when a logged-in user logs out, their session ends
+ *   AC2  after logging out, a page that needs an account is not shown
+ *   AC3  when logout finishes, they are taken back to the login page
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

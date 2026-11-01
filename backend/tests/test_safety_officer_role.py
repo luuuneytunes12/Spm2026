@@ -1,7 +1,15 @@
-"""Tests for SCRUM-91 "Create Safety Officer Role".
+"""Unit tests for the Safety Officer role.
+
+SCRUM-91  Create Safety Officer Role
 
     As ConnectSphere, I want a Safety Officer role added to the system, so that
     only the Safety Officer can record Operational Safety Check decisions.
+
+    AC1  a Safety Officer account gets the role with its own permissions
+    AC2  logging in, logging out and editing the profile work as for other
+         internal users
+    AC3  anyone without the role is refused approve, reject and request changes
+    AC4  every existing role keeps exactly the access it had before
 """
 
 import pytest
@@ -23,7 +31,7 @@ def _officer(client, db_session):
     return user(client, db_session, Role.SAFETY_OFFICER, "safety@example.com", "Sasha Safety")
 
 
-def test_ac1_an_account_is_given_the_role_with_its_own_permissions(client, db_session):
+def test_scrum91_ac1_an_account_is_given_the_role_with_its_own_permissions(client, db_session):
     _, headers = _officer(client, db_session)
 
     body = client.get("/auth/me", headers=headers).json()
@@ -33,7 +41,7 @@ def test_ac1_an_account_is_given_the_role_with_its_own_permissions(client, db_se
     assert ROLE_LABELS[Role.SAFETY_OFFICER] == "Safety Officer"
 
 
-def test_ac2_logging_in_works_as_for_other_internal_users(client, db_session):
+def test_scrum91_ac2_logging_in_works_as_for_other_internal_users(client, db_session):
     _officer(client, db_session)
 
     res = client.post("/auth/login", json={"email": "safety@example.com", "password": "password123"})
@@ -42,7 +50,7 @@ def test_ac2_logging_in_works_as_for_other_internal_users(client, db_session):
     assert client.cookies.get("refresh_token")
 
 
-def test_ac2_logging_out_works_as_for_other_internal_users(client, db_session):
+def test_scrum91_ac2_logging_out_works_as_for_other_internal_users(client, db_session):
     _officer(client, db_session)
 
     assert client.post("/auth/logout").status_code == 204
@@ -50,7 +58,7 @@ def test_ac2_logging_out_works_as_for_other_internal_users(client, db_session):
     assert client.post("/auth/refresh").status_code == 401
 
 
-def test_ac2_editing_the_profile_works_as_for_other_internal_users(client, db_session):
+def test_scrum91_ac2_editing_the_profile_works_as_for_other_internal_users(client, db_session):
     _, headers = _officer(client, db_session)
 
     res = client.patch(
@@ -65,7 +73,7 @@ def test_ac2_editing_the_profile_works_as_for_other_internal_users(client, db_se
 
 @pytest.mark.parametrize("decision", DECISIONS)
 @pytest.mark.parametrize("role", OTHER_ROLES)
-def test_ac3_anyone_else_is_refused_a_decision_and_the_event_stays_put(client, db_session, role, decision):
+def test_scrum91_ac3_anyone_else_is_refused_a_decision_and_the_event_stays_put(client, db_session, role, decision):
     owner, _ = user(client, db_session, Role.ORGANISER, "owner@example.com", "Owner")
     event = Event(name="Summit", organiser_id=owner.id, status=EventStatus.awaiting_safety_check)
     db_session.add(event)
@@ -80,7 +88,7 @@ def test_ac3_anyone_else_is_refused_a_decision_and_the_event_stays_put(client, d
 
 
 @pytest.mark.parametrize("decision", DECISIONS)
-def test_ac3_someone_not_logged_in_is_refused_a_decision(client, decision):
+def test_scrum91_ac3_someone_not_logged_in_is_refused_a_decision(client, decision):
     assert client.post(f"/safety-checks/1/{decision}", json=DECISIONS[decision]).status_code == 401
 
 
@@ -104,9 +112,9 @@ def test_ac3_someone_not_logged_in_is_refused_a_decision(client, decision):
         (Role.ATTENDEE, {"event:read", "venue:read", "registration:read"}),
     ],
 )
-def test_ac4_existing_roles_keep_exactly_the_access_they_had(role, expected):
+def test_scrum91_ac4_existing_roles_keep_exactly_the_access_they_had(role, expected):
     assert {p.value for p in ROLE_PERMISSIONS[role]} == expected
 
 
-def test_ac4_the_organiser_still_holds_every_permission():
+def test_scrum91_ac4_the_organiser_still_holds_every_permission():
     assert ROLE_PERMISSIONS[Role.ORGANISER] == frozenset(Permission)
